@@ -30,7 +30,10 @@ function samplesPerFrame(sampleRate: number): number {
 /** Target buffer fill: ~3 frames of audio (~60ms). Below this we run a frame. */
 const TARGET_BUFFER_FRAMES = 3;
 
-export type SpectrumModel = '48k' | '128k';
+export type SpectrumModel = '48k' | '128k' | '+2';
+
+/** Returns true for any 128K-class model (128K, +2, future +2A/+3). */
+export function is128kClass(m: SpectrumModel): boolean { return m !== '48k'; }
 
 export interface IOActivity {
   /** Number of ULA port reads this frame (keyboard / tape) */
@@ -88,7 +91,7 @@ export class Spectrum {
   constructor(model: SpectrumModel, canvas: HTMLCanvasElement) {
     this.model = model;
 
-    this.memory = new SpectrumMemory(model === '128k');
+    this.memory = new SpectrumMemory(is128kClass(model));
     this.cpu = new Z80(this.memory.flat);
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
@@ -129,13 +132,13 @@ export class Spectrum {
       }
 
       // 128K bank switching: port 0x7FFD (A15=0, A1=0)
-      if ((port & 0x8002) === 0 && this.model === '128k') {
+      if ((port & 0x8002) === 0 && is128kClass(this.model)) {
         this.memory.bankSwitch(val);
         this.cpu.memory = this.memory.flat;
       }
 
       // AY ports — 128K only (48K has no AY chip)
-      if (this.model === '128k') {
+      if (is128kClass(this.model)) {
         // AY register select: port 0xFFFD (A15=1, A14=1, A1=0)
         if ((port & 0xC002) === 0xC000) {
           this.ay.selectedReg = val & 0x0F;
@@ -157,7 +160,7 @@ export class Spectrum {
       }
 
       // AY register read: port 0xFFFD — 128K only
-      if (this.model === '128k' && (port & 0xC002) === 0xC000) {
+      if (is128kClass(this.model) && (port & 0xC002) === 0xC000) {
         return this.ay.readRegister(this.ay.selectedReg);
       }
 
@@ -185,12 +188,9 @@ export class Spectrum {
     this.ula.reset();
     this.keyboard.reset();
     this.audio.reset();
-    this.memory.port7FFD = 0;
-    this.memory.pagingLocked = false;
-    this.memory.currentBank = 0;
-    this.memory.currentROM = 0;
-    this.memory.applyBanking();
+    this.memory.reset();
     this.cpu.memory = this.memory.flat;
+    this.kempstonState = 0;
     this.beeperAccum = 0;
     this.beeperTStatesAccum = 0;
     this.beeperDCPrev = 0;
@@ -268,7 +268,7 @@ export class Spectrum {
       const tBefore = this.cpu.tStates;
 
       // ROM trap: intercept LD-BYTES for instant tape loading
-      if (this.tape.loaded && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
+      if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
         this.trapTapeLoad();
         this.cpu.tStates += 2168; // nominal T-states for trapped load
       } else if (this.cpu.halted) {
@@ -307,7 +307,7 @@ export class Spectrum {
         const beeperOut = this.beeperDCOut;
 
         let left: number, right: number;
-        if (this.model === '128k') {
+        if (is128kClass(this.model)) {
           const aySample = this.ay.generateSampleStereo();
           left = aySample.left + beeperOut;
           right = aySample.right + beeperOut;

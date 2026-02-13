@@ -6,21 +6,39 @@
  * byte is an XOR checksum. The payload is everything between flag and checksum.
  */
 
+export type TZXBlockType = 'standard' | 'turbo' | 'pure-data';
+
+export interface TZXBlockMeta {
+  type: TZXBlockType;
+  pause: number;
+  pilotPulse?: number;
+  syncPulse1?: number;
+  syncPulse2?: number;
+  bit0Pulse?: number;
+  bit1Pulse?: number;
+  pilotCount?: number;
+  usedBits?: number;
+}
+
 export interface TAPBlock {
   /** Flag byte (0x00 = header, 0xFF = data) */
   flag: number;
   /** Payload data (excludes flag and checksum bytes) */
   data: Uint8Array;
+  /** TZX block metadata (only present for blocks loaded from TZX files) */
+  tzx?: TZXBlockMeta;
 }
 
 export class TapeDeck {
   blocks: TAPBlock[] = [];
   position = 0;
+  paused = false;
 
   /** Parse a TAP file into blocks */
   load(fileData: Uint8Array): void {
     this.blocks = [];
     this.position = 0;
+    this.paused = false;
 
     let offset = 0;
     while (offset + 2 <= fileData.length) {

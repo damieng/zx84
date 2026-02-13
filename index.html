@@ -59,7 +59,9 @@
       min-height: 1.1em;
     }
     .file-btn {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 5px 8px;
       border: 1px solid #555;
       border-radius: 4px;
@@ -70,7 +72,17 @@
       text-align: center;
     }
     .file-btn:hover { background: #3a3a5e; }
+    .file-btn .icon { font-size: 1rem; }
     input[type="file"] { display: none; }
+
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.85rem;
+    }
+    .icon-btn .icon { font-size: 1.1rem; }
 
     #main {
       display: flex;
@@ -89,42 +101,14 @@
       color: #888;
       text-align: center;
     }
-    #diag {
-      margin-top: 10px;
-      width: 100%;
-      max-width: 640px;
-    }
-    #diag-output {
-      width: 100%;
-      height: 200px;
-      background: #0a0a18;
-      color: #8f8;
-      border: 1px solid #333;
-      border-radius: 4px;
-      font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 0.75rem;
-      padding: 6px;
-      resize: vertical;
-      white-space: pre;
-      tab-size: 8;
-    }
-    #diag button {
-      padding: 4px 10px;
-      border: 1px solid #555;
-      border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
-      font-size: 0.8rem;
-      cursor: pointer;
-      margin-bottom: 4px;
-    }
-    #diag button:hover { background: #3a3a5e; }
 
     #activity {
       display: flex;
       gap: 8px;
       margin-top: 10px;
       flex-wrap: wrap;
+      justify-content: flex-end;
+      align-self: stretch;
     }
     .led {
       display: flex;
@@ -149,13 +133,24 @@
     .led[data-kind="tape"].on .led-dot { background: #f00; }
     .led[data-kind="tape"].on { color: #c88; }
 
-    /* Display panel */
+    /* Display panel — condensed inline row */
     #display-panel {
       border-top: 1px solid #333;
       padding-top: 10px;
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
+      align-items: center;
       gap: 8px;
+    }
+    #display-panel label {
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+    }
+    #display-panel select {
+      width: auto;
+      padding: 3px 6px;
+      font-size: 0.8rem;
     }
     .check-row {
       flex-direction: row !important;
@@ -217,14 +212,125 @@
     .joy-btn:active, .joy-btn.pressed { background: #5a5a8e; border-color: #88f; }
     .joy-spacer { visibility: hidden; }
     #joy-fire {
-      grid-column: 1 / 4;
-      height: 32px;
-      margin-top: 2px;
       background: #3e2a2a;
       border-color: #755;
+      font-size: 0.65rem;
     }
     #joy-fire:hover { background: #5e3a3a; }
     #joy-fire:active, #joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
+
+    /* Right sidebar */
+    #right-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      width: 260px;
+      flex-shrink: 0;
+      padding-top: 4px;
+    }
+    #right-sidebar label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    /* Tape panel — always visible */
+    #tape-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #tape-panel-label {
+      font-size: 0.8rem;
+      color: #999;
+    }
+    #tape-controls {
+      display: flex;
+      gap: 2px;
+    }
+    #tape-controls button {
+      flex: 1;
+      padding: 4px 0;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    #tape-controls button:hover { background: #3a3a5e; }
+    #tape-controls button.active {
+      background: #3e2a2a;
+      border-color: #a55;
+      color: #f88;
+    }
+    #tape-blocks {
+      max-height: 400px;
+      overflow-y: auto;
+      background: #0a0a18;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem;
+    }
+    .tape-block {
+      padding: 3px 6px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      color: #aaa;
+    }
+    .tape-block:hover { background: #1a1a2e; }
+    .tape-block.played { color: #555; }
+    .tape-block.current {
+      background: #1a0a0a;
+      border-left-color: #f44;
+      color: #f88;
+    }
+    .tb-detail {
+      font-size: 0.6rem;
+      color: #666;
+      padding-left: 14px;
+    }
+    .tape-block.current .tb-detail { color: #a66; }
+    .tape-empty {
+      padding: 8px;
+      color: #555;
+      font-size: 0.75rem;
+      font-style: italic;
+    }
+
+    /* Diag panel */
+    #diag {
+      margin-top: 10px;
+      width: 100%;
+    }
+    #diag-output {
+      width: 100%;
+      height: 200px;
+      background: #0a0a18;
+      color: #8f8;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.75rem;
+      padding: 6px;
+      resize: vertical;
+      white-space: pre;
+      tab-size: 8;
+    }
+    #diag button {
+      padding: 4px 10px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    #diag button:hover { background: #3a3a5e; }
   </style>
 </head>
 <body>
@@ -236,23 +342,24 @@
       <select id="model">
         <option value="48k">ZX Spectrum 48K</option>
         <option value="128k">ZX Spectrum 128K</option>
+        <option value="+2">ZX Spectrum +2 (Grey)</option>
       </select>
     </label>
 
     <div class="rom-row">
       <label>ROM</label>
-      <span class="file-btn" id="rom-btn">Select ROM...</span>
+      <span class="file-btn" id="rom-btn"><span class="icon">&#128190;</span> Select ROM...</span>
       <input type="file" id="rom-input" accept=".rom,.bin" multiple>
       <span class="rom-status" id="rom-status"></span>
     </div>
 
     <div class="rom-row">
-      <label>Snapshot</label>
-      <span class="file-btn" id="snap-btn">Load .sna / .z80 / .tap / .zip</span>
-      <input type="file" id="snap-input" accept=".sna,.z80,.tap,.zip">
+      <label>Load</label>
+      <span class="file-btn" id="snap-btn"><span class="icon">&#128194;</span> Load file...</span>
+      <input type="file" id="snap-input" accept=".sna,.z80,.tap,.tzx,.zip">
     </div>
 
-    <button id="reset-btn">Reset</button>
+    <button id="reset-btn" class="icon-btn" title="Reset the machine"><span class="icon">&#x27F3;</span> Reset</button>
 
     <div id="joystick-panel">
       <label>
@@ -269,29 +376,32 @@
         <div class="joy-btn" id="joy-up" data-dir="up">&#9650;</div>
         <div class="joy-spacer"></div>
         <div class="joy-btn" id="joy-left" data-dir="left">&#9664;</div>
-        <div class="joy-spacer"></div>
+        <div class="joy-btn" id="joy-fire">FIRE</div>
         <div class="joy-btn" id="joy-right" data-dir="right">&#9654;</div>
         <div class="joy-spacer"></div>
         <div class="joy-btn" id="joy-down" data-dir="down">&#9660;</div>
         <div class="joy-spacer"></div>
       </div>
-      <div class="joy-btn" id="joy-fire">FIRE</div>
     </div>
 
     <div id="display-panel">
       <label>
         Scale
         <select id="scale">
-          <option value="1">1x (320x256)</option>
-          <option value="2" selected>2x (640x512)</option>
-          <option value="3">3x (960x768)</option>
+          <option value="1">1x</option>
+          <option value="2" selected>2x</option>
+          <option value="3">3x</option>
         </select>
       </label>
       <label class="check-row">
-        <input type="checkbox" id="crt-toggle"> CRT filter
+        <input type="checkbox" id="crt-toggle"> CRT
       </label>
     </div>
+  </div>
 
+  <div id="main">
+    <canvas id="screen"></canvas>
+    <div id="status">Load a ROM to start</div>
     <div id="activity">
       <div class="led" id="led-kbd" data-kind="kbd"><span class="led-dot"></span>KBD</div>
       <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
@@ -301,9 +411,18 @@
     </div>
   </div>
 
-  <div id="main">
-    <canvas id="screen"></canvas>
-    <div id="status">Load a ROM to start</div>
+  <div id="right-sidebar">
+    <div id="tape-panel">
+      <div id="tape-panel-label">Tape</div>
+      <div id="tape-controls">
+        <button id="tape-rewind" title="Rewind">&#x23EE;</button>
+        <button id="tape-prev" title="Previous">&#x23EA;</button>
+        <button id="tape-pause" title="Pause">&#x23F8;</button>
+        <button id="tape-next" title="Next">&#x23E9;</button>
+      </div>
+      <div id="tape-blocks"></div>
+    </div>
+
     <div id="diag">
       <button id="stuck-btn">Stuck Loop?</button>
       <button id="diag-copy">Copy</button>

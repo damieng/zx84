@@ -29,7 +29,13 @@ export class Audio {
    * Initialize audio context (must be called from user gesture).
    */
   init(): void {
-    if (this.ctx) return;
+    if (this.ctx) {
+      // Resume suspended context (e.g. after tab backgrounding)
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume();
+      }
+      return;
+    }
 
     this.ctx = new AudioContext({ sampleRate: 44100 });
     this.sampleRate = this.ctx.sampleRate;

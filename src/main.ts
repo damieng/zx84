@@ -3,11 +3,12 @@
  * Entry point: DOM wiring, file I/O, ROM persistence, machine lifecycle.
  */
 
-import { Spectrum, type SpectrumModel } from './spectrum.ts';
+import { Spectrum, type SpectrumModel, is128kClass } from './spectrum.ts';
 import { loadSNA } from './formats/sna.ts';
 import { loadZ80 } from './formats/z80format.ts';
 import { diagnoseStuckLoop } from './diagnostics.ts';
 import { unzip } from './formats/zip.ts';
+import { parseTZX } from './formats/tzx.ts';
 import { showFilePicker } from './ui/zip-picker.ts';
 
 // ── IndexedDB ROM persistence ──────────────────────────────────────────────
@@ -78,7 +79,7 @@ function saveModel(model: SpectrumModel): void {
 function loadSavedModel(): SpectrumModel | null {
   try {
     const val = localStorage.getItem('ngspecz-model');
-    if (val === '48k' || val === '128k') return val;
+    if (val === '48k' || val === '128k' || val === '+2') return val as SpectrumModel;
   } catch { /* */ }
   return null;
 }
@@ -138,6 +139,12 @@ const ledTape = document.getElementById('led-tape') as HTMLDivElement;
 const ledBeep = document.getElementById('led-beep') as HTMLDivElement;
 const ledAy = document.getElementById('led-ay') as HTMLDivElement;
 
+const tapeBlocksContainer = document.getElementById('tape-blocks') as HTMLDivElement;
+const tapeRewindBtn = document.getElementById('tape-rewind') as HTMLButtonElement;
+const tapePrevBtn = document.getElementById('tape-prev') as HTMLButtonElement;
+const tapePauseBtn = document.getElementById('tape-pause') as HTMLButtonElement;
+const tapeNextBtn = document.getElementById('tape-next') as HTMLButtonElement;
+
 function setStatus(msg: string): void {
   statusEl.textContent = msg;
 }
@@ -160,7 +167,158 @@ function updateActivityLEDs(): void {
   ledBeep.classList.toggle('on', a.beeperToggled);
   // AY: AY register writes during this frame
   ledAy.classList.toggle('on', a.ayWrites > 0);
+  updateTapeHighlight();
 }
+
+// ── Tape viewer panel ───────────────────────────────────────────────────────
+
+import type { TAPBlock } from './formats/tap.ts';
+
+const HEADER_TYPES: Record<number, string> = {
+  0: 'Program',
+  1: 'Number array',
+  2: 'Character array',
+  3: 'Bytes',
+};
+
+function tzxTag(block: TAPBlock): string {
+  if (!block.tzx) return '';
+  const t = block.tzx.type;
+  if (t === 'standard') return ' [STD]';
+  if (t === 'turbo') return ' [TURBO]';
+  if (t === 'pure-data') return ' [PURE]';
+  return '';
+}
+
+function tzxTimingDetail(block: TAPBlock): string {
+  if (!block.tzx) return '';
+  const m = block.tzx;
+  const parts: string[] = [`pause=${m.pause}ms`];
+  if (m.pilotPulse !== undefined) parts.push(`pilot=${m.pilotPulse}T x${m.pilotCount}`);
+  if (m.syncPulse1 !== undefined) parts.push(`sync=${m.syncPulse1}/${m.syncPulse2}T`);
+  if (m.bit0Pulse !== undefined) parts.push(`bit=${m.bit0Pulse}/${m.bit1Pulse}T`);
+  if (m.usedBits !== undefined && m.usedBits !== 8) parts.push(`used=${m.usedBits}bits`);
+  return parts.join(' ');
+}
+
+function parseTapeBlockMeta(block: TAPBlock, index: number): { line: string; detail: string } {
+  const tag = tzxTag(block);
+  const timing = tzxTimingDetail(block);
+
+  if (block.flag === 0x00 && block.data.length >= 15) {
+    // Header block
+    const typeId = block.data[0];
+    const typeName = HEADER_TYPES[typeId] ?? `Type ${typeId}`;
+    let filename = '';
+    for (let i = 1; i <= 10; i++) filename += String.fromCharCode(block.data[i]);
+    const dataLen = block.data[11] | (block.data[12] << 8);
+    const param1 = block.data[13] | (block.data[14] << 8);
+    const line = `${index}: H "${filename.trimEnd()}"${tag}`;
+    let detail = `${typeName} ${dataLen}b`;
+    if (typeId === 0 && param1 < 10000) detail += ` LINE ${param1}`;
+    else if (typeId === 3) detail += ` @ ${param1}`;
+    if (timing) detail += `\n${timing}`;
+    return { line, detail };
+  }
+  // Data block
+  const size = block.data.length;
+  let detail = '';
+  if (timing) detail = timing;
+  return { line: `${index}: D ${size}b${tag}`, detail };
+}
+
+let tapeBlockElements: HTMLDivElement[] = [];
+let lastRenderedTapePosition = -1;
+
+function buildTapeBlockList(): void {
+  tapeBlocksContainer.innerHTML = '';
+  tapeBlockElements = [];
+  lastRenderedTapePosition = -1;
+
+  if (!spectrum || !spectrum.tape.loaded) {
+    const empty = document.createElement('div');
+    empty.className = 'tape-empty';
+    empty.textContent = 'No tape loaded';
+    tapeBlocksContainer.appendChild(empty);
+    return;
+  }
+
+  const blocks = spectrum.tape.blocks;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const meta = parseTapeBlockMeta(blocks[i], i);
+    const el = document.createElement('div');
+    el.className = 'tape-block';
+    el.textContent = meta.line;
+    if (meta.detail) {
+      for (const line of meta.detail.split('\n')) {
+        const detailEl = document.createElement('div');
+        detailEl.className = 'tb-detail';
+        detailEl.textContent = line;
+        el.appendChild(detailEl);
+      }
+    }
+    el.addEventListener('click', () => {
+      if (spectrum) {
+        spectrum.tape.position = i;
+        lastRenderedTapePosition = -1; // force refresh
+        updateTapeHighlight();
+      }
+    });
+    tapeBlocksContainer.appendChild(el);
+    tapeBlockElements.push(el);
+  }
+
+  updateTapeHighlight();
+}
+
+function updateTapeHighlight(): void {
+  if (!spectrum || !spectrum.tape.loaded) return;
+  const pos = spectrum.tape.position;
+  if (pos === lastRenderedTapePosition) return;
+  lastRenderedTapePosition = pos;
+
+  for (let i = 0; i < tapeBlockElements.length; i++) {
+    const el = tapeBlockElements[i];
+    el.classList.toggle('played', i < pos);
+    el.classList.toggle('current', i === pos);
+  }
+
+  // Auto-scroll current block into view
+  if (pos < tapeBlockElements.length) {
+    tapeBlockElements[pos].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// Transport controls
+tapeRewindBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  spectrum.tape.rewind();
+  lastRenderedTapePosition = -1;
+  updateTapeHighlight();
+});
+
+tapePrevBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  if (spectrum.tape.position > 0) spectrum.tape.position--;
+  lastRenderedTapePosition = -1;
+  updateTapeHighlight();
+});
+
+tapePauseBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  spectrum.tape.paused = !spectrum.tape.paused;
+  tapePauseBtn.classList.toggle('active', spectrum.tape.paused);
+  tapePauseBtn.textContent = spectrum.tape.paused ? '\u25B6' : '\u23F8';
+  tapePauseBtn.title = spectrum.tape.paused ? 'Resume' : 'Pause';
+});
+
+tapeNextBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  if (spectrum.tape.position < spectrum.tape.blocks.length) spectrum.tape.position++;
+  lastRenderedTapePosition = -1;
+  updateTapeHighlight();
+});
 
 // ── Auto-type for TAP auto-loading ──────────────────────────────────────────
 
@@ -270,6 +428,8 @@ function createMachine(): void {
     spectrum.reset();
     spectrum.start();
   }
+
+  buildTapeBlockList(); // hides panel — new machine has no tape
 }
 
 // ── Wire file-pick buttons to hidden inputs ────────────────────────────────
@@ -295,6 +455,7 @@ modelSelect.addEventListener('change', async () => {
   }
 
   createMachine();
+  modelSelect.blur(); // release focus so keys go to the emulator, not the dropdown
 });
 
 // ── Scale / CRT controls ────────────────────────────────────────────────────
@@ -318,7 +479,7 @@ async function applyROM(data: Uint8Array, fileLabel: string): Promise<void> {
   // Detect model from ROM size
   let detectedModel: SpectrumModel;
   if (data.length >= 32768) {
-    detectedModel = '128k';
+    detectedModel = is128kClass(currentModel) ? currentModel : '128k';
   } else if (data.length >= 16384) {
     detectedModel = '48k';
   } else {
@@ -374,13 +535,15 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
 
   try {
     if (ext === 'sna') {
-      if (data.length > 49179 && currentModel !== '128k') {
+      if (data.length > 49179 && !is128kClass(currentModel)) {
         const entry128 = await restoreROM('128k');
-        if (entry128) {
-          currentModel = '128k';
-          modelSelect.value = '128k';
-          romData = entry128.data;
-          setRomStatus(`128K — ${entry128.label}`);
+        const entryPlus2 = entry128 ? null : await restoreROM('+2');
+        const entry = entry128 || entryPlus2;
+        if (entry) {
+          currentModel = entry128 ? '128k' : '+2';
+          modelSelect.value = currentModel;
+          romData = entry.data;
+          setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
           createMachine();
         } else {
           setStatus('128K SNA requires a 128K ROM — load one first');
@@ -400,13 +563,15 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       spectrum.reset();
       const result = loadZ80(data, spectrum.cpu, spectrum.memory);
 
-      if (result.is128K && currentModel !== '128k') {
+      if (result.is128K && !is128kClass(currentModel)) {
         const entry128 = await restoreROM('128k');
-        if (entry128) {
-          currentModel = '128k';
-          modelSelect.value = '128k';
-          romData = entry128.data;
-          setRomStatus(`128K — ${entry128.label}`);
+        const entryPlus2 = entry128 ? null : await restoreROM('+2');
+        const entry = entry128 || entryPlus2;
+        if (entry) {
+          currentModel = entry128 ? '128k' : '+2';
+          modelSelect.value = currentModel;
+          romData = entry.data;
+          setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
           createMachine();
           spectrum!.stop();
           spectrum!.reset();
@@ -424,14 +589,24 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
         spectrum.start();
       }
       setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
-    } else if (ext === 'tap') {
-      spectrum.loadTAP(data);
+    } else if (ext === 'tap' || ext === 'tzx') {
+      if (ext === 'tzx') {
+        spectrum.tape.blocks = parseTZX(data);
+        spectrum.tape.position = 0;
+      } else {
+        spectrum.loadTAP(data);
+      }
       spectrum.tape.rewind();
+      spectrum.tape.paused = false;
+      tapePauseBtn.classList.remove('active');
+      tapePauseBtn.textContent = '\u23F8';
+      tapePauseBtn.title = 'Pause';
+      buildTapeBlockList();
       spectrum.stop();
       spectrum.reset();
       spectrum.start();
-      startAutoType(currentModel === '128k' ? AUTO_LOAD_128K : AUTO_LOAD_48K);
-      setStatus(`TAP loaded — auto-loading ${filename}`);
+      startAutoType(is128kClass(currentModel) ? AUTO_LOAD_128K : AUTO_LOAD_48K);
+      setStatus(`Tape loaded — auto-loading ${filename}`);
     } else {
       setStatus(`Unknown format: .${ext}`);
       return false;
@@ -497,8 +672,14 @@ snapInput.addEventListener('change', async () => {
 resetBtn.addEventListener('click', () => {
   cancelAutoType();
   if (spectrum) {
+    spectrum.tape.rewind();
+    spectrum.tape.paused = false;
+    tapePauseBtn.classList.remove('active');
+    tapePauseBtn.textContent = '\u23F8';
+    tapePauseBtn.title = 'Pause';
     spectrum.reset();
     if (romData) spectrum.start();
+    buildTapeBlockList();
   }
   diagOutput.value = '';
   try {
