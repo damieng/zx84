@@ -131,6 +131,8 @@ const tapeLoadBtn = document.getElementById('tape-load-btn') as HTMLButtonElemen
 const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
 const resetBtn = document.getElementById('reset-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
+import buildTime from 'virtual:buildtime';
+document.querySelector('#toolbar h1')!.textContent = buildTime;
 const stuckBtn = document.getElementById('stuck-btn') as HTMLButtonElement;
 const diagCopy = document.getElementById('diag-copy') as HTMLButtonElement;
 const diagOutput = document.getElementById('diag-output') as HTMLTextAreaElement;
@@ -145,6 +147,12 @@ const curvatureValue = document.getElementById('curvature-value') as HTMLSpanEle
 const scanlinesSlider = document.getElementById('scanlines-slider') as HTMLInputElement;
 const scanlinesValue = document.getElementById('scanlines-value') as HTMLSpanElement;
 const dotmaskSelect = document.getElementById('dotmask-select') as HTMLSelectElement;
+const borderSizeSelect = document.getElementById('border-size') as HTMLSelectElement;
+const fontSelect = document.getElementById('font-select') as HTMLSelectElement;
+const fontAddBtn = document.getElementById('font-add-btn') as HTMLButtonElement;
+const fontInput = document.getElementById('font-input') as HTMLInputElement;
+const fontPreview = document.getElementById('font-preview') as HTMLCanvasElement;
+const fontPreviewCtx = fontPreview.getContext('2d')!;
 
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
@@ -426,6 +434,7 @@ function getSaved(key: string, fallback: string): string {
 
 function applyDisplaySettings(): void {
   if (!spectrum) return;
+  spectrum.setBorderSize(Number(borderSizeSelect.value) as 0 | 1 | 2);
   spectrum.display.setScale(Number(scaleSelect.value));
   spectrum.display.setSmoothing(Number(smoothingSlider.value) / 100);
   spectrum.display.setCurvature(Number(curvatureSlider.value) / 100 * 0.15);
@@ -632,6 +641,122 @@ dotmaskSelect.addEventListener('change', () => {
   const v = Number(dotmaskSelect.value);
   if (spectrum) spectrum.display.setDotmask(v as 0 | 1 | 2);
   try { localStorage.setItem('ngspecz-dotmask', String(v)); } catch { /* */ }
+});
+
+borderSizeSelect.addEventListener('change', () => {
+  const v = Number(borderSizeSelect.value) as 0 | 1 | 2;
+  if (spectrum) spectrum.setBorderSize(v);
+  try { localStorage.setItem('ngspecz-border-size', String(v)); } catch { /* */ }
+  borderSizeSelect.blur();
+});
+
+// ── Font management ──────────────────────────────────────────────────────────
+
+function loadFontStore(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem('ngspecz-fonts');
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveFontStore(store: Record<string, string>): void {
+  try { localStorage.setItem('ngspecz-fonts', JSON.stringify(store)); } catch { /* */ }
+}
+
+function populateFontSelect(): void {
+  const store = loadFontStore();
+  const saved = getSaved('font', '');
+  while (fontSelect.options.length > 1) fontSelect.remove(1);
+  for (const name of Object.keys(store).sort()) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    fontSelect.appendChild(opt);
+  }
+  fontSelect.value = saved;
+}
+
+function renderFontPreview(): void {
+  const name = fontSelect.value;
+  if (!name) {
+    fontPreview.style.display = 'none';
+    return;
+  }
+  const store = loadFontStore();
+  const b64 = store[name];
+  if (!b64) { fontPreview.style.display = 'none'; return; }
+
+  const binary = atob(b64);
+  const font = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) font[i] = binary.charCodeAt(i);
+
+  const text = 'Flexible';
+  const scale = 2;
+  fontPreview.width = text.length * 8 * scale;
+  fontPreview.height = 8 * scale;
+  fontPreviewCtx.fillStyle = '#000';
+  fontPreviewCtx.fillRect(0, 0, fontPreview.width, fontPreview.height);
+
+  const img = fontPreviewCtx.createImageData(text.length * 8, 8);
+  const d = img.data;
+  for (let ci = 0; ci < text.length; ci++) {
+    const ch = text.charCodeAt(ci) - 32;
+    if (ch < 0 || ch >= 96) continue;
+    const offset = ch * 8;
+    for (let row = 0; row < 8; row++) {
+      const byte = font[offset + row];
+      for (let bit = 0; bit < 8; bit++) {
+        if (byte & (0x80 >> bit)) {
+          const px = (row * text.length * 8 + ci * 8 + bit) * 4;
+          d[px] = 0xCD; d[px + 1] = 0xCD; d[px + 2] = 0xCD; d[px + 3] = 0xFF;
+        }
+      }
+    }
+  }
+
+  // Scale up with imageSmoothingEnabled = false
+  const tmp = document.createElement('canvas');
+  tmp.width = img.width;
+  tmp.height = img.height;
+  tmp.getContext('2d')!.putImageData(img, 0, 0);
+  fontPreviewCtx.imageSmoothingEnabled = false;
+  fontPreviewCtx.drawImage(tmp, 0, 0, fontPreview.width, fontPreview.height);
+  fontPreview.style.display = '';
+}
+
+fontAddBtn.addEventListener('click', () => fontInput.click());
+
+fontInput.addEventListener('change', () => {
+  const file = fontInput.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = new Uint8Array(reader.result as ArrayBuffer);
+    if (data.length !== 768) {
+      setStatus(`Font must be 768 bytes (got ${data.length})`);
+      fontInput.value = '';
+      return;
+    }
+    const name = file.name.replace(/\.[^.]+$/, '');
+    let binary = '';
+    for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+    const store = loadFontStore();
+    store[name] = btoa(binary);
+    saveFontStore(store);
+    populateFontSelect();
+    fontSelect.value = name;
+    try { localStorage.setItem('ngspecz-font', name); } catch { /* */ }
+    renderFontPreview();
+    setStatus(`Font "${name}" added`);
+    fontInput.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+fontSelect.addEventListener('change', () => {
+  try { localStorage.setItem('ngspecz-font', fontSelect.value); } catch { /* */ }
+  renderFontPreview();
+  fontSelect.blur();
 });
 
 // ── ROM file input ─────────────────────────────────────────────────────────
@@ -1087,6 +1212,12 @@ async function init(): Promise<void> {
 
   const savedDotmask = getSaved('dotmask', '0');
   dotmaskSelect.value = savedDotmask;
+
+  const savedBorderSize = getSaved('border-size', '2');
+  borderSizeSelect.value = savedBorderSize;
+
+  populateFontSelect();
+  renderFontPreview();
 
   const savedCaptureCursor = getSaved('capture-cursor', '1');
   captureCursor.checked = savedCaptureCursor === '1';

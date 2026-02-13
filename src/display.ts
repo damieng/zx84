@@ -58,22 +58,28 @@ const FRAG_DISPLAY = `
       uv = barrel(uv, u_curvature);
     }
 
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    // Soft edge: fade to black over 1 pixel at the curved boundary
+    vec2 px = 1.0 / u_resolution;
+    float edgeAlpha = smoothstep(0.0, px.x, uv.x) * smoothstep(0.0, px.x, 1.0 - uv.x)
+                    * smoothstep(0.0, px.y, uv.y) * smoothstep(0.0, px.y, 1.0 - uv.y);
+
+    if (edgeAlpha <= 0.0) {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
 
-    vec3 col = sampleTex(uv).rgb;
+    vec3 col = sampleTex(uv).rgb * edgeAlpha;
 
-    float scale = floor(u_resolution.y / u_texSize.y + 0.5);
-
-    // -- Scanlines: gap on last pixel-row of each scaled group --
+    // -- Scanlines: darken every Nth physical pixel row (pure counting) --
     float scanFactor = 0.0;
-    if (u_scanlines > 0.0 && scale > 1.0) {
-      float pixelInRow = mod(floor(gl_FragCoord.y), scale);
-      float isGap = step(scale - 0.5, pixelInRow + 0.5);
-      scanFactor = isGap * u_scanlines;
-      col *= 1.0 - scanFactor;
+    if (u_scanlines > 0.0) {
+      float scale = floor(u_resolution.y / u_texSize.y + 0.5);
+      if (scale > 1.0) {
+        float row = mod(floor(gl_FragCoord.y), scale);
+        float isGap = step(scale - 1.0, row);
+        scanFactor = isGap * u_scanlines;
+        col *= 1.0 - scanFactor;
+      }
     }
 
     // -- Dot mask --
@@ -81,7 +87,7 @@ const FRAG_DISPLAY = `
     if (u_dotmask == 1) {
       // Shadow mask: staggered RGB triads
       float row = floor(gl_FragCoord.y);
-      float col_x = floor(gl_FragCoord.x) + mod(row, 2.0) * 1.5;
+      float col_x = floor(gl_FragCoord.x) + mod(row, 2.0);
       float stripe = mod(col_x, 3.0);
       vec3 mask = vec3(0.82);
       mask.r += 0.18 * step(stripe, 0.5);
@@ -108,7 +114,7 @@ const FRAG_DISPLAY = `
     // -- Vignette (scales with curvature) --
     if (u_curvature > 0.0) {
       vec2 vig = uv - 0.5;
-      col *= 1.0 - dot(vig, vig) * u_curvature * 8.75;
+      col *= 1.0 - dot(vig, vig) * u_curvature * 3.0;
     }
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -248,13 +254,10 @@ export class Display {
   }
 
   private applyScale(): void {
-    const w = this.width * this.scale;
-    const h = this.height * this.scale;
-
-    this.canvas.width = w;
-    this.canvas.height = h;
-    this.canvas.style.width = `${w}px`;
-    this.canvas.style.height = `${h}px`;
+    this.canvas.width = this.width * this.scale;
+    this.canvas.height = this.height * this.scale;
+    this.canvas.style.width = '';
+    this.canvas.style.height = '';
 
     // Canvas resize invalidates GL state; defer full restore to next draw
     this.glDirty = true;
@@ -283,6 +286,15 @@ export class Display {
   setDotmask(v: 0 | 1 | 2): void {
     this.dotmask = v;
     this.glDirty = true;
+  }
+
+  resize(width: number, height: number): void {
+    this.width = width;
+    this.height = height;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    this.applyScale();
   }
 
   /**

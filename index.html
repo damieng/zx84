@@ -31,7 +31,7 @@
       justify-content: space-between;
     }
     #toolbar h1 {
-      font-size: 1.3rem;
+      font-size: 0.75rem;
       color: #c0c0ff;
       margin: 0;
     }
@@ -241,6 +241,16 @@
       background: #8888ff;
       border: none;
       cursor: pointer;
+    }
+
+    /* Font row overrides */
+    #font-row select { flex: 1; min-width: 0; }
+    #font-row button { width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
+    #font-preview {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      height: 16px;
+      display: none;
     }
 
     /* Sound panel */
@@ -584,6 +594,14 @@
             <option value="4">4x</option>
           </select>
         </label>
+        <label>
+          Border
+          <select id="border-size">
+            <option value="2" selected>Normal</option>
+            <option value="1">Small</option>
+            <option value="0">None</option>
+          </select>
+        </label>
       </div>
       <div class="slider-row">
         <span class="slider-label">Smoothing</span>
@@ -608,6 +626,13 @@
           <option value="2">Trinitron</option>
         </select>
       </div>
+      <div class="slider-row" id="font-row">
+        <span class="slider-label">Font</span>
+        <select id="font-select"><option value="">(none)</option></select>
+        <button id="font-add-btn" title="Add font (.ch8, 768 bytes)">+</button>
+      </div>
+      <canvas id="font-preview" width="128" height="16"></canvas>
+      <input type="file" id="font-input" accept=".ch8,.bin">
     </div>
   </div>
 

@@ -33,18 +33,25 @@ const PALETTE: Uint32Array = new Uint32Array([
   0xFFFFFFFF, // 15: white (bright)
 ]);
 
-/** Screen dimensions including border */
+export type BorderMode = 0 | 1 | 2; // 0=none, 1=small, 2=normal
+
+/** Default screen dimensions including border */
 export const SCREEN_WIDTH = 320;
 export const SCREEN_HEIGHT = 256;
 
-/** Border size in pixels */
-const BORDER_LEFT = 32;
-const BORDER_TOP = 32;
+/** Border pixel sizes for each mode */
+const BORDER_PIXELS: Record<BorderMode, number> = { 0: 0, 1: 16, 2: 32 };
 
 export class ULA {
-  /** RGBA pixel buffer (320x256) */
+  /** RGBA pixel buffer */
   pixels: Uint8Array;
   private pixels32: Uint32Array;
+
+  /** Border dimensions */
+  private borderLeft = 32;
+  private borderTop = 32;
+  screenWidth = SCREEN_WIDTH;
+  screenHeight = SCREEN_HEIGHT;
 
   /** Border color (0-7) */
   borderColor = 0;
@@ -66,9 +73,20 @@ export class ULA {
   keyboard: SpectrumKeyboard;
 
   constructor(keyboard: SpectrumKeyboard) {
-    this.pixels = new Uint8Array(SCREEN_WIDTH * SCREEN_HEIGHT * 4);
+    this.pixels = new Uint8Array(this.screenWidth * this.screenHeight * 4);
     this.pixels32 = new Uint32Array(this.pixels.buffer);
     this.keyboard = keyboard;
+  }
+
+  setBorderMode(mode: BorderMode): void {
+    const b = BORDER_PIXELS[mode];
+    if (b === this.borderLeft) return;
+    this.borderLeft = b;
+    this.borderTop = b;
+    this.screenWidth = 256 + b * 2;
+    this.screenHeight = 192 + b * 2;
+    this.pixels = new Uint8Array(this.screenWidth * this.screenHeight * 4);
+    this.pixels32 = new Uint32Array(this.pixels.buffer);
   }
 
   reset(): void {
@@ -121,7 +139,7 @@ export class ULA {
 
     // Render 256x192 display area
     for (let y = 0; y < 192; y++) {
-      const screenY = y + BORDER_TOP;
+      const screenY = y + this.borderTop;
 
       // ZX Spectrum peculiar bitmap address decoding
       const bitmapAddr = 0x4000 |
@@ -151,8 +169,8 @@ export class ULA {
         const inkRGBA = PALETTE[ink];
         const paperRGBA = PALETTE[paper];
 
-        const px = BORDER_LEFT + (col << 3);
-        const baseIdx = screenY * SCREEN_WIDTH + px;
+        const px = this.borderLeft + (col << 3);
+        const baseIdx = screenY * this.screenWidth + px;
 
         for (let bit = 7; bit >= 0; bit--) {
           this.pixels32[baseIdx + (7 - bit)] =

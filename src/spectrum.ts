@@ -12,7 +12,7 @@
 import { Z80 } from './cores/z80.ts';
 import { AY3891x } from './cores/ay-3-8910.ts';
 import { SpectrumMemory } from './memory.ts';
-import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT } from './ula.ts';
+import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from './ula.ts';
 import { SpectrumKeyboard } from './keyboard.ts';
 import { Display } from './display.ts';
 import { Audio } from './audio.ts';
@@ -214,6 +214,11 @@ export class Spectrum {
     this.memory.applyBanking();
     this.cpu.memory = this.memory.flat;
     this.setStatus('ROM loaded');
+  }
+
+  setBorderSize(mode: BorderMode): void {
+    this.ula.setBorderMode(mode);
+    this.display.resize(this.ula.screenWidth, this.ula.screenHeight);
   }
 
   reset(): void {
