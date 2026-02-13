@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.local
+
+# Editor & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# ROM files (copyrighted, must not be distributed)
+*.rom
+*.bin

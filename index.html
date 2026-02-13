@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ngspecz - ZX Spectrum Emulator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      gap: 20px;
+    }
+
+    #sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      width: 200px;
+      flex-shrink: 0;
+      padding-top: 4px;
+    }
+    #sidebar h1 {
+      font-size: 1.3rem;
+      color: #c0c0ff;
+      margin-bottom: 2px;
+    }
+    #sidebar label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.8rem;
+      color: #999;
+    }
+    #sidebar select, #sidebar button {
+      padding: 5px 8px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    #sidebar button:hover { background: #3a3a5e; }
+    .rom-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rom-row .rom-status {
+      font-size: 0.75rem;
+      color: #7a7;
+      min-height: 1.1em;
+    }
+    .file-btn {
+      display: inline-block;
+      padding: 5px 8px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-align: center;
+    }
+    .file-btn:hover { background: #3a3a5e; }
+    input[type="file"] { display: none; }
+
+    #main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 2px solid #333;
+      background: #000;
+    }
+    #status {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: #888;
+      text-align: center;
+    }
+    #diag {
+      margin-top: 10px;
+      width: 100%;
+      max-width: 640px;
+    }
+    #diag-output {
+      width: 100%;
+      height: 200px;
+      background: #0a0a18;
+      color: #8f8;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.75rem;
+      padding: 6px;
+      resize: vertical;
+      white-space: pre;
+      tab-size: 8;
+    }
+    #diag button {
+      padding: 4px 10px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    #diag button:hover { background: #3a3a5e; }
+
+    #activity {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .led {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.7rem;
+      color: #666;
+    }
+    .led-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #333;
+      transition: background 0.05s;
+    }
+    .led.on .led-dot { background: #0f0; }
+    .led.on { color: #8f8; }
+    .led[data-kind="beep"].on .led-dot { background: #ff0; }
+    .led[data-kind="beep"].on { color: #cc8; }
+    .led[data-kind="ay"].on .led-dot { background: #f80; }
+    .led[data-kind="ay"].on { color: #ca6; }
+    .led[data-kind="tape"].on .led-dot { background: #f00; }
+    .led[data-kind="tape"].on { color: #c88; }
+
+    /* Display panel */
+    #display-panel {
+      border-top: 1px solid #333;
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .check-row {
+      flex-direction: row !important;
+      align-items: center;
+      gap: 6px !important;
+      cursor: pointer;
+    }
+    .check-row input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: #6c6cff;
+      cursor: pointer;
+    }
+
+    /* Joystick panel */
+    #joystick-panel {
+      border-top: 1px solid #333;
+      padding-top: 10px;
+    }
+    #joystick-panel > label {
+      font-size: 0.8rem;
+      color: #999;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #joy-type {
+      padding: 5px 8px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    #joy-dpad {
+      display: grid;
+      grid-template-columns: 36px 36px 36px;
+      grid-template-rows: 36px 36px 36px;
+      gap: 2px;
+      margin-top: 8px;
+      justify-content: center;
+    }
+    .joy-btn {
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .joy-btn:hover { background: #3a3a5e; }
+    .joy-btn:active, .joy-btn.pressed { background: #5a5a8e; border-color: #88f; }
+    .joy-spacer { visibility: hidden; }
+    #joy-fire {
+      grid-column: 1 / 4;
+      height: 32px;
+      margin-top: 2px;
+      background: #3e2a2a;
+      border-color: #755;
+    }
+    #joy-fire:hover { background: #5e3a3a; }
+    #joy-fire:active, #joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h1>ngspecz</h1>
+
+    <label>
+      Model
+      <select id="model">
+        <option value="48k">ZX Spectrum 48K</option>
+        <option value="128k">ZX Spectrum 128K</option>
+      </select>
+    </label>
+
+    <div class="rom-row">
+      <label>ROM</label>
+      <span class="file-btn" id="rom-btn">Select ROM...</span>
+      <input type="file" id="rom-input" accept=".rom,.bin" multiple>
+      <span class="rom-status" id="rom-status"></span>
+    </div>
+
+    <div class="rom-row">
+      <label>Snapshot</label>
+      <span class="file-btn" id="snap-btn">Load .sna / .z80 / .tap / .zip</span>
+      <input type="file" id="snap-input" accept=".sna,.z80,.tap,.zip">
+    </div>
+
+    <button id="reset-btn">Reset</button>
+
+    <div id="joystick-panel">
+      <label>
+        Joystick
+        <select id="joy-type">
+          <option value="kempston">Kempston (IN 31)</option>
+          <option value="cursor">Cursor (5678+0)</option>
+          <option value="sinclair2">Sinclair IF2 (12345)</option>
+          <option value="sinclair1">Sinclair 1 (67890)</option>
+        </select>
+      </label>
+      <div id="joy-dpad">
+        <div class="joy-spacer"></div>
+        <div class="joy-btn" id="joy-up" data-dir="up">&#9650;</div>
+        <div class="joy-spacer"></div>
+        <div class="joy-btn" id="joy-left" data-dir="left">&#9664;</div>
+        <div class="joy-spacer"></div>
+        <div class="joy-btn" id="joy-right" data-dir="right">&#9654;</div>
+        <div class="joy-spacer"></div>
+        <div class="joy-btn" id="joy-down" data-dir="down">&#9660;</div>
+        <div class="joy-spacer"></div>
+      </div>
+      <div class="joy-btn" id="joy-fire">FIRE</div>
+    </div>
+
+    <div id="display-panel">
+      <label>
+        Scale
+        <select id="scale">
+          <option value="1">1x (320x256)</option>
+          <option value="2" selected>2x (640x512)</option>
+          <option value="3">3x (960x768)</option>
+        </select>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="crt-toggle"> CRT filter
+      </label>
+    </div>
+
+    <div id="activity">
+      <div class="led" id="led-kbd" data-kind="kbd"><span class="led-dot"></span>KBD</div>
+      <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
+      <div class="led" id="led-tape" data-kind="tape"><span class="led-dot"></span>TAPE</div>
+      <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
+      <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
+    </div>
+  </div>
+
+  <div id="main">
+    <canvas id="screen"></canvas>
+    <div id="status">Load a ROM to start</div>
+    <div id="diag">
+      <button id="stuck-btn">Stuck Loop?</button>
+      <button id="diag-copy">Copy</button>
+      <textarea id="diag-output" readonly></textarea>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
