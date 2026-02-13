@@ -4,7 +4,8 @@
  */
 
 import { Spectrum, type SpectrumModel, is128kClass } from './spectrum.ts';
-import { loadSNA } from './formats/sna.ts';
+import { Z80 } from './cores/z80.ts';
+import { loadSNA, saveSNA } from './formats/sna.ts';
 import { loadZ80 } from './formats/z80format.ts';
 import { diagnoseStuckLoop } from './diagnostics.ts';
 import { unzip } from './formats/zip.ts';
@@ -120,10 +121,14 @@ let currentModel: SpectrumModel = '48k';
 const canvas = document.getElementById('screen') as HTMLCanvasElement;
 const modelSelect = document.getElementById('model') as HTMLSelectElement;
 const romInput = document.getElementById('rom-input') as HTMLInputElement;
-const romBtn = document.getElementById('rom-btn') as HTMLSpanElement;
+const romBtn = document.getElementById('rom-btn') as HTMLButtonElement;
 const romStatus = document.getElementById('rom-status') as HTMLSpanElement;
 const snapInput = document.getElementById('snap-input') as HTMLInputElement;
-const snapBtn = document.getElementById('snap-btn') as HTMLSpanElement;
+const snapLoadBtn = document.getElementById('snap-load-btn') as HTMLButtonElement;
+const snapSaveBtn = document.getElementById('snap-save-btn') as HTMLButtonElement;
+const tapeInput = document.getElementById('tape-input') as HTMLInputElement;
+const tapeLoadBtn = document.getElementById('tape-load-btn') as HTMLButtonElement;
+const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
 const resetBtn = document.getElementById('reset-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const stuckBtn = document.getElementById('stuck-btn') as HTMLButtonElement;
@@ -136,8 +141,14 @@ const crtToggle = document.getElementById('crt-toggle') as HTMLInputElement;
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
 const ledTape = document.getElementById('led-tape') as HTMLDivElement;
+const ledLoad = document.getElementById('led-load') as HTMLDivElement;
+const ledRst16 = document.getElementById('led-rst16') as HTMLDivElement;
 const ledBeep = document.getElementById('led-beep') as HTMLDivElement;
 const ledAy = document.getElementById('led-ay') as HTMLDivElement;
+
+const banksOutput = document.getElementById('banks-output') as HTMLPreElement;
+
+const regsOutput = document.getElementById('regs-output') as HTMLPreElement;
 
 const tapeBlocksContainer = document.getElementById('tape-blocks') as HTMLDivElement;
 const tapeRewindBtn = document.getElementById('tape-rewind') as HTMLButtonElement;
@@ -151,23 +162,22 @@ function setStatus(msg: string): void {
 
 function setRomStatus(msg: string): void {
   romStatus.textContent = msg;
+  romStatus.style.display = msg ? '' : 'none';
 }
 
 function updateActivityLEDs(): void {
   if (!spectrum) return;
   tickAutoType();
   const a = spectrum.activity;
-  // KBD: ULA port reads (keyboard polling, low frequency)
   ledKbd.classList.toggle('on', a.ulaReads > 0);
-  // KEMP: Kempston joystick port reads
   ledKemp.classList.toggle('on', a.kempstonReads > 0);
-  // TAPE: high-frequency ULA reads indicate tape loading (>100/frame)
   ledTape.classList.toggle('on', a.ulaReads > 100);
-  // BEEP: beeper bit toggled during this frame
+  ledLoad.classList.toggle('on', a.tapeLoads > 0);
+  ledRst16.classList.toggle('on', a.rst16Calls > 0);
   ledBeep.classList.toggle('on', a.beeperToggled);
-  // AY: AY register writes during this frame
   ledAy.classList.toggle('on', a.ayWrites > 0);
   updateTapeHighlight();
+  updateRegsDisplay();
 }
 
 // ── Tape viewer panel ───────────────────────────────────────────────────────
@@ -430,12 +440,125 @@ function createMachine(): void {
   }
 
   buildTapeBlockList(); // hides panel — new machine has no tape
+  unpause();
 }
 
 // ── Wire file-pick buttons to hidden inputs ────────────────────────────────
 
 romBtn.addEventListener('click', () => romInput.click());
-snapBtn.addEventListener('click', () => snapInput.click());
+snapLoadBtn.addEventListener('click', () => snapInput.click());
+tapeLoadBtn.addEventListener('click', () => tapeInput.click());
+
+// ── Save snapshot ───────────────────────────────────────────────────────────
+
+snapSaveBtn.addEventListener('click', () => {
+  if (!spectrum) { setStatus('No machine running'); return; }
+
+  const wasPaused = emulationPaused;
+  if (!wasPaused) spectrum.stop();
+
+  const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+  const model = is128kClass(currentModel) ? '128k' : '48k';
+  const filename = `ngspecz-${model}.sna`;
+
+  const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  if (!wasPaused) spectrum.start();
+  setStatus(`Saved ${filename}`);
+});
+
+// ── Play / Pause ────────────────────────────────────────────────────────────
+
+let emulationPaused = false;
+
+function updatePlayBtn(): void {
+  playBtn.textContent = emulationPaused ? '\u25B6' : '\u23F8';
+  playBtn.title = emulationPaused ? 'Resume emulation' : 'Pause emulation';
+}
+
+function unpause(): void {
+  emulationPaused = false;
+  updatePlayBtn();
+}
+
+// ── Register & bank display ─────────────────────────────────────────────────
+
+function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
+function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
+
+function flagHtml(label: string, on: boolean): string {
+  return on
+    ? `<span class="flag-on">${label}</span>`
+    : `<span class="flag-off">${label.toLowerCase()}</span>`;
+}
+
+function renderRegs(cpu: Z80): string {
+  const f = cpu.f;
+  const flags = [
+    flagHtml('S', (f & Z80.FLAG_S) !== 0),
+    flagHtml('Z', (f & Z80.FLAG_Z) !== 0),
+    flagHtml('H', (f & Z80.FLAG_H) !== 0),
+    flagHtml('P', (f & Z80.FLAG_PV) !== 0),
+    flagHtml('N', (f & Z80.FLAG_N) !== 0),
+    flagHtml('C', (f & Z80.FLAG_C) !== 0),
+  ].join(' ');
+
+  const n = '<span class="reg-name">';
+  const e = '</span>';
+  return [
+    `${n}AF${e}  ${hex16(cpu.af)}    ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}`,
+    `${n}BC${e}  ${hex16(cpu.bc)}    ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}`,
+    `${n}DE${e}  ${hex16(cpu.de)}    ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}`,
+    `${n}HL${e}  ${hex16(cpu.hl)}    ${n}HL'${e} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+    `${n}IX${e}  ${hex16(cpu.ix)}    ${n}IY${e}  ${hex16(cpu.iy)}`,
+    `${n}SP${e}  ${hex16(cpu.sp)}    ${n}PC${e}  ${hex16(cpu.pc)}`,
+    `${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}    ${n}IM${e}  ${cpu.im}`,
+    ``,
+    `${n}Flags${e} ${flags}`,
+    `${n}IFF${e}   ${cpu.iff1 ? 'EI' : 'DI'}${cpu.halted ? '  HALT' : ''}`,
+  ].join('\n');
+}
+
+function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
+  const n = '<span class="reg-name">';
+  const e = '</span>';
+  const scr = (mem.port7FFD & 0x08) ? 7 : 5;
+  return [
+    `${n}ROM${e}   ${mem.currentROM}  ${mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)'}`,
+    `${n}Bank${e}  ${mem.currentBank}  ${n}at${e} C000-FFFF`,
+    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}`,
+    `${n}7FFD${e}  ${hex8(mem.port7FFD)}`,
+  ].join('\n');
+}
+
+function updateRegsDisplay(): void {
+  if (!spectrum) return;
+  regsOutput.innerHTML = renderRegs(spectrum.cpu);
+  if (is128kClass(currentModel)) {
+    banksOutput.innerHTML = renderBanks(spectrum.memory);
+    banksOutput.style.display = '';
+  } else {
+    banksOutput.style.display = 'none';
+  }
+}
+
+playBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  if (emulationPaused) {
+    spectrum.start();
+  } else {
+    spectrum.stop();
+    updateRegsDisplay(); // snapshot registers at the moment of pause
+  }
+  emulationPaused = !emulationPaused;
+  updatePlayBtn();
+});
 
 // ── Model selector ─────────────────────────────────────────────────────────
 
@@ -447,7 +570,7 @@ modelSelect.addEventListener('change', async () => {
   const entry = await restoreROM(currentModel);
   if (entry) {
     romData = entry.data;
-    setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
+    setRomStatus('');
   } else {
     romData = null;
     setRomStatus('');
@@ -492,7 +615,7 @@ async function applyROM(data: Uint8Array, fileLabel: string): Promise<void> {
   saveModel(detectedModel);
 
   await persistROM(detectedModel, data, fileLabel);
-  setRomStatus(`${detectedModel.toUpperCase()} — ${fileLabel}`);
+  setRomStatus('');
 
   createMachine();
 }
@@ -501,26 +624,35 @@ romInput.addEventListener('change', async () => {
   const files = romInput.files;
   if (!files || files.length === 0) return;
 
-  let data: Uint8Array;
-  let label: string;
+  const sorted = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
+  const sizes = sorted.map(f => f.size);
 
-  if (files.length === 1) {
-    data = new Uint8Array(await files[0].arrayBuffer());
-    label = files[0].name;
+  // Validate ROM file count and sizes
+  if (sorted.length === 1 && sizes[0] === 16384) {
+    // Single 16KB ROM → 48K
+  } else if (sorted.length === 1 && sizes[0] === 32768) {
+    // Single 32KB ROM → 128K
+  } else if (sorted.length === 2 && sizes[0] === 16384 && sizes[1] === 16384) {
+    // Two 16KB ROMs → 128K
   } else {
-    const sorted = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
-    const buffers = await Promise.all(sorted.map(f => f.arrayBuffer()));
-    const totalLen = buffers.reduce((sum, b) => sum + b.byteLength, 0);
-    data = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const buf of buffers) {
-      data.set(new Uint8Array(buf), offset);
-      offset += buf.byteLength;
-    }
-    label = sorted.map(f => f.name).join(' + ');
+    const sizeList = sizes.map(s => `${s}b`).join(', ');
+    setStatus(`Invalid ROM: expected 1×16KB, 1×32KB, or 2×16KB — got ${sorted.length} file(s) (${sizeList})`);
+    romInput.value = '';
+    return;
   }
 
+  const buffers = await Promise.all(sorted.map(f => f.arrayBuffer()));
+  const totalLen = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const data = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const buf of buffers) {
+    data.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  const label = sorted.map(f => f.name).join(' + ');
+
   await applyROM(data, label);
+  romInput.value = '';
 });
 
 // ── Snapshot loading ──────────────────────────────────────────────────────
@@ -543,7 +675,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
           currentModel = entry128 ? '128k' : '+2';
           modelSelect.value = currentModel;
           romData = entry.data;
-          setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
+          setRomStatus('');
           createMachine();
         } else {
           setStatus('128K SNA requires a 128K ROM — load one first');
@@ -571,7 +703,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
           currentModel = entry128 ? '128k' : '+2';
           modelSelect.value = currentModel;
           romData = entry.data;
-          setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
+          setRomStatus('');
           createMachine();
           spectrum!.stop();
           spectrum!.reset();
@@ -589,24 +721,6 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
         spectrum.start();
       }
       setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
-    } else if (ext === 'tap' || ext === 'tzx') {
-      if (ext === 'tzx') {
-        spectrum.tape.blocks = parseTZX(data);
-        spectrum.tape.position = 0;
-      } else {
-        spectrum.loadTAP(data);
-      }
-      spectrum.tape.rewind();
-      spectrum.tape.paused = false;
-      tapePauseBtn.classList.remove('active');
-      tapePauseBtn.textContent = '\u23F8';
-      tapePauseBtn.title = 'Pause';
-      buildTapeBlockList();
-      spectrum.stop();
-      spectrum.reset();
-      spectrum.start();
-      startAutoType(is128kClass(currentModel) ? AUTO_LOAD_128K : AUTO_LOAD_48K);
-      setStatus(`Tape loaded — auto-loading ${filename}`);
     } else {
       setStatus(`Unknown format: .${ext}`);
       return false;
@@ -615,6 +729,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
     setStatus(`Error: ${(e as Error).message}`);
     return false;
   }
+  unpause();
   return true;
 }
 
@@ -645,7 +760,10 @@ async function handleZipFile(data: Uint8Array): Promise<void> {
     chosen = entries.find(e => e.name === picked)!;
   }
 
-  if (await applySnapshot(chosen.data, chosen.name)) {
+  const chosenExt = chosen.name.toLowerCase().split('.').pop();
+  if (chosenExt === 'tap' || chosenExt === 'tzx') {
+    applyTape(chosen.data, chosen.name);
+  } else if (await applySnapshot(chosen.data, chosen.name)) {
     saveSnapshot(chosen.data, chosen.name);
   }
 }
@@ -667,6 +785,52 @@ snapInput.addEventListener('change', async () => {
   snapInput.value = '';
 });
 
+// ── Tape loading (right sidebar) ────────────────────────────────────────────
+
+function applyTape(data: Uint8Array, filename: string): void {
+  if (!spectrum) { setStatus('Load a ROM first'); return; }
+
+  const ext = filename.toLowerCase().split('.').pop();
+  try {
+    if (ext === 'tzx') {
+      spectrum.tape.blocks = parseTZX(data);
+      spectrum.tape.position = 0;
+    } else {
+      spectrum.loadTAP(data);
+    }
+  } catch (e) {
+    setStatus(`Error: ${(e as Error).message}`);
+    return;
+  }
+
+  spectrum.tape.rewind();
+  spectrum.tape.paused = false;
+  tapePauseBtn.classList.remove('active');
+  tapePauseBtn.textContent = '\u23F8';
+  tapePauseBtn.title = 'Pause';
+  buildTapeBlockList();
+  spectrum.stop();
+  spectrum.reset();
+  spectrum.start();
+  spectrum.tape.startPlayback();
+  startAutoType(is128kClass(currentModel) ? AUTO_LOAD_128K : AUTO_LOAD_48K);
+  unpause();
+  setStatus(`Tape loaded — auto-loading ${filename}`);
+}
+
+tapeInput.addEventListener('change', async () => {
+  const file = tapeInput.files?.[0];
+  if (!file) return;
+  const data = new Uint8Array(await file.arrayBuffer());
+
+  if (file.name.toLowerCase().endsWith('.zip')) {
+    await handleZipFile(data);
+  } else {
+    applyTape(data, file.name);
+  }
+  tapeInput.value = '';
+});
+
 // ── Reset ──────────────────────────────────────────────────────────────────
 
 resetBtn.addEventListener('click', () => {
@@ -680,6 +844,7 @@ resetBtn.addEventListener('click', () => {
     spectrum.reset();
     if (romData) spectrum.start();
     buildTapeBlockList();
+    unpause();
   }
   diagOutput.value = '';
   try {
@@ -690,14 +855,9 @@ resetBtn.addEventListener('click', () => {
 
 // ── Joystick ────────────────────────────────────────────────────────────
 
-const joyType = document.getElementById('joy-type') as HTMLSelectElement;
-const joyBtns = {
-  up:    document.getElementById('joy-up')!,
-  down:  document.getElementById('joy-down')!,
-  left:  document.getElementById('joy-left')!,
-  right: document.getElementById('joy-right')!,
-  fire:  document.getElementById('joy-fire')!,
-};
+const joyP1 = document.getElementById('joy-p1') as HTMLSelectElement;
+const joyP2 = document.getElementById('joy-p2') as HTMLSelectElement;
+const joySelectors = [joyP1, joyP2];
 
 // Kempston bits: 0=right, 1=left, 2=down, 3=up, 4=fire
 const KEMPSTON_BITS: Record<string, number> = {
@@ -731,9 +891,8 @@ const SINCLAIR1_KEYS: Record<string, { row: number; bit: number }> = {
   fire:  { row: 4, bit: 0 }, // 0
 };
 
-function joyPress(dir: string, pressed: boolean): void {
-  if (!spectrum) return;
-  const mode = joyType.value;
+function joyPressForType(dir: string, pressed: boolean, mode: string): void {
+  if (!spectrum || mode === 'none') return;
 
   if (mode === 'kempston') {
     const bit = KEMPSTON_BITS[dir];
@@ -751,37 +910,45 @@ function joyPress(dir: string, pressed: boolean): void {
   }
 }
 
-// Mouse/touch handlers for joystick buttons
-for (const [dir, el] of Object.entries(joyBtns)) {
-  el.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    el.classList.add('pressed');
-    joyPress(dir, true);
+// Wire each d-pad to its player's joystick type
+document.querySelectorAll('.joy-dpad').forEach(dpad => {
+  const playerIdx = Number((dpad as HTMLElement).dataset.player) - 1;
+  const selector = joySelectors[playerIdx];
+
+  dpad.querySelectorAll('.joy-btn').forEach(el => {
+    const dir = (el as HTMLElement).dataset.dir;
+    if (!dir) return;
+
+    el.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      el.classList.add('pressed');
+      joyPressForType(dir, true, selector.value);
+    });
+    el.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      el.classList.remove('pressed');
+      joyPressForType(dir, false, selector.value);
+    });
+    el.addEventListener('mouseleave', () => {
+      el.classList.remove('pressed');
+      joyPressForType(dir, false, selector.value);
+    });
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      el.classList.add('pressed');
+      joyPressForType(dir, true, selector.value);
+    });
+    el.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      el.classList.remove('pressed');
+      joyPressForType(dir, false, selector.value);
+    });
+    el.addEventListener('touchcancel', () => {
+      el.classList.remove('pressed');
+      joyPressForType(dir, false, selector.value);
+    });
   });
-  el.addEventListener('mouseup', (e) => {
-    e.preventDefault();
-    el.classList.remove('pressed');
-    joyPress(dir, false);
-  });
-  el.addEventListener('mouseleave', () => {
-    el.classList.remove('pressed');
-    joyPress(dir, false);
-  });
-  el.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    el.classList.add('pressed');
-    joyPress(dir, true);
-  });
-  el.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    el.classList.remove('pressed');
-    joyPress(dir, false);
-  });
-  el.addEventListener('touchcancel', () => {
-    el.classList.remove('pressed');
-    joyPress(dir, false);
-  });
-}
+});
 
 // ── Stuck Loop diagnostics ─────────────────────────────────────────────────
 
@@ -847,7 +1014,7 @@ async function init(): Promise<void> {
   const entry = await restoreROM(currentModel);
   if (entry) {
     romData = entry.data;
-    setRomStatus(`${currentModel.toUpperCase()} — ${entry.label}`);
+    setRomStatus('');
     setStatus('Restored ROM from last session');
     createMachine();
 

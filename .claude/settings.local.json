@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(timeout 5 npx vite:*)"
+      "Bash(timeout 5 npx vite:*)",
+      "Bash(npx vite build)",
+      "WebFetch(domain:worldofspectrum.org)",
+      "WebFetch(domain:sinclair.wiki.zxnet.co.uk)",
+      "WebFetch(domain:fms.komkon.org)",
+      "WebFetch(domain:spectrumforeveryone.com)",
+      "WebFetch(domain:softspectrum48.weebly.com)"
     ]
   }
 }

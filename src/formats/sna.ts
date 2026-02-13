@@ -1,5 +1,5 @@
 /**
- * SNA snapshot loader (48K and 128K).
+ * SNA snapshot loader and saver (48K and 128K).
  *
  * 48K SNA: 49,179 bytes (27 bytes header + 49,152 bytes RAM)
  * 128K SNA: 131,103+ bytes (adds PC, port 0x7FFD, TR-DOS flag, extra banks)
@@ -107,4 +107,90 @@ export function loadSNA(
 
     return { is128K: false, port7FFD: 0, borderColor };
   }
+}
+
+/**
+ * Save the current machine state as a .sna file.
+ * 48K: 49,179 bytes. 128K: 131,103 bytes.
+ */
+export function saveSNA(
+  cpu: Z80,
+  memory: SpectrumMemory,
+  borderColor: number
+): Uint8Array {
+  // Flush flat memory back to RAM bank stores
+  memory.saveToRAMBanks();
+
+  if (memory.is128K) {
+    // 128K SNA: header(27) + banks 5,2,current(49152) + PC(2) + 7FFD(1) + TRDOS(1) + remaining banks(5*16384)
+    const data = new Uint8Array(131103);
+    writeHeader(data, cpu, borderColor);
+
+    // Main 48K region: banks 5, 2, currentBank
+    data.set(memory.ramBanks[5], 27);
+    data.set(memory.ramBanks[2], 27 + 16384);
+    data.set(memory.ramBanks[memory.currentBank], 27 + 32768);
+
+    // Extended header
+    data[49179] = cpu.pc & 0xFF;
+    data[49180] = (cpu.pc >> 8) & 0xFF;
+    data[49181] = memory.port7FFD;
+    data[49182] = 0; // TR-DOS flag
+
+    // Remaining banks in order 0-7, skipping 5, 2, and currentBank
+    let offset = 49183;
+    for (let bank = 0; bank < 8; bank++) {
+      if (bank === 5 || bank === 2 || bank === memory.currentBank) continue;
+      data.set(memory.ramBanks[bank], offset);
+      offset += 16384;
+    }
+
+    return data;
+  } else {
+    // 48K SNA: push PC onto stack, then dump header + 48K RAM
+    const data = new Uint8Array(49179);
+
+    // Push PC onto stack (SNA 48K stores PC on the stack)
+    const sp = (cpu.sp - 2) & 0xFFFF;
+    memory.flat[sp] = cpu.pc & 0xFF;
+    memory.flat[sp + 1] = (cpu.pc >> 8) & 0xFF;
+
+    writeHeader(data, cpu, borderColor);
+    // Write modified SP (with PC pushed)
+    data[23] = sp & 0xFF;
+    data[24] = (sp >> 8) & 0xFF;
+
+    // 48K RAM at 0x4000-0xFFFF
+    data.set(memory.flat.subarray(0x4000, 0x10000), 27);
+
+    // Restore original stack
+    memory.flat[sp] = 0;
+    memory.flat[sp + 1] = 0;
+
+    return data;
+  }
+}
+
+function writeHeader(data: Uint8Array, cpu: Z80, borderColor: number): void {
+  data[0] = cpu.i;
+  data[1] = cpu.l_;  data[2] = cpu.h_;
+  data[3] = cpu.e_;  data[4] = cpu.d_;
+  data[5] = cpu.c_;  data[6] = cpu.b_;
+  data[7] = cpu.f_;  data[8] = cpu.a_;
+
+  data[9] = cpu.l;   data[10] = cpu.h;
+  data[11] = cpu.e;  data[12] = cpu.d;
+  data[13] = cpu.c;  data[14] = cpu.b;
+
+  data[15] = cpu.iy & 0xFF;  data[16] = (cpu.iy >> 8) & 0xFF;
+  data[17] = cpu.ix & 0xFF;  data[18] = (cpu.ix >> 8) & 0xFF;
+
+  data[19] = cpu.iff2 ? 0x04 : 0x00;
+  data[20] = cpu.r;
+
+  data[21] = cpu.f;  data[22] = cpu.a;
+  data[23] = cpu.sp & 0xFF;  data[24] = (cpu.sp >> 8) & 0xFF;
+
+  data[25] = cpu.im;
+  data[26] = borderColor & 0x07;
 }

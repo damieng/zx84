@@ -52,6 +52,12 @@ export class ULA {
   /** Beeper state (bit 4 of port 0xFE) */
   beeperBit = 0;
 
+  /** Tape EAR bit (0 or 1), set by the tape player */
+  tapeEarBit = 0;
+
+  /** Whether tape playback is active (overrides beeper feedback on bit 6) */
+  tapeActive = false;
+
   /** Flash counter (toggles every 16 frames) */
   flashCounter = 0;
   flashState = false;
@@ -68,6 +74,8 @@ export class ULA {
   reset(): void {
     this.borderColor = 7; // White border on reset
     this.beeperBit = 0;
+    this.tapeEarBit = 0;
+    this.tapeActive = false;
     this.flashCounter = 0;
     this.flashState = false;
     this.pixels.fill(0);
@@ -86,10 +94,12 @@ export class ULA {
 
   /**
    * Read port 0xFE. Returns keyboard data in bits 0-4.
-   * Bit 6 is EAR input (always 1 for now).
+   * Bit 5 = 1, Bit 7 = 1 (unused, always set).
+   * Bit 6 = EAR input: tape signal when playing, beeper feedback otherwise.
    */
   readPort(highByte: number): number {
-    return this.keyboard.readHalfRows(highByte) | 0xA0;
+    const ear = this.tapeActive ? this.tapeEarBit : this.beeperBit;
+    return this.keyboard.readHalfRows(highByte) | 0xA0 | (ear << 6);
   }
 
   /**

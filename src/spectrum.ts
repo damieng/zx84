@@ -20,7 +20,29 @@ import { TapeDeck } from './formats/tap.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz
 const AY_CLOCK = 1773400;        // ~1.77 MHz
-const TSTATES_PER_FRAME = 69888; // 50.08 Hz
+
+/** Model-dependent ULA timing parameters. */
+interface MachineTiming {
+  tStatesPerFrame: number;
+  tStatesPerLine: number;
+  /** Frame-relative T-state at which contention begins (first pixel line). */
+  contentionStart: number;
+}
+
+const TIMING_48K: MachineTiming = {
+  tStatesPerFrame: 69888,   // 224 × 312
+  tStatesPerLine: 224,
+  contentionStart: 14335,
+};
+
+const TIMING_128K: MachineTiming = {
+  tStatesPerFrame: 70908,   // 228 × 311
+  tStatesPerLine: 228,
+  contentionStart: 14361,
+};
+
+/** ULA contention delay pattern — indexed by (T-state mod 8). */
+const CONTENTION_PATTERN = new Uint8Array([6, 5, 4, 3, 2, 1, 0, 0]);
 
 /** Samples produced per Spectrum frame at a given sample rate */
 function samplesPerFrame(sampleRate: number): number {
@@ -44,6 +66,10 @@ export interface IOActivity {
   beeperToggled: boolean;
   /** Number of AY register writes this frame */
   ayWrites: number;
+  /** Number of LD-BYTES (0x0556) calls this frame */
+  tapeLoads: number;
+  /** Number of RST 16 (0x0010) calls this frame */
+  rst16Calls: number;
 }
 
 export class Spectrum {
@@ -58,7 +84,7 @@ export class Spectrum {
   tape: TapeDeck;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0 };
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
@@ -82,6 +108,12 @@ export class Spectrum {
   /** Whether at least one frame has rendered (for display) */
   private needsDisplay = true;
 
+  /** Model-dependent timing */
+  private timing: MachineTiming;
+
+  /** T-state counter at start of current frame (for contention/floating bus). */
+  private frameStartTStates = 0;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
@@ -99,6 +131,7 @@ export class Spectrum {
     this.display = new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT);
     this.audio = new Audio();
     this.tape = new TapeDeck();
+    this.timing = is128kClass(model) ? TIMING_128K : TIMING_48K;
 
     this.tStatesPerSample = Z80_CLOCK / 44100;
 
@@ -164,13 +197,14 @@ export class Spectrum {
         return this.ay.readRegister(this.ay.selectedReg);
       }
 
-      // Kempston joystick (port 0x1F)
-      if ((port & 0xFF) === 0x1F) {
+      // Kempston joystick: bits 5-7 of low byte all zero
+      if ((port & 0x00E0) === 0) {
         this.activity.kempstonReads++;
         return this.kempstonState;
       }
 
-      return 0xFF;
+      // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
+      return this.floatingBusRead();
     };
   }
 
@@ -196,6 +230,7 @@ export class Spectrum {
     this.beeperDCPrev = 0;
     this.beeperDCOut = 0;
     this.prevBeeperBit = 0;
+    this.frameStartTStates = 0;
     this.needsDisplay = true;
     this.setStatus('Reset');
   }
@@ -232,11 +267,16 @@ export class Spectrum {
     const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
     const buffered = this.audio.bufferedSamples();
 
-    // Run frames until audio buffer reaches target, max 2 per rAF to avoid stutters
+    // Run frames until audio buffer reaches target, max 2 per rAF to avoid stutters.
+    // If audio context is suspended (no user gesture yet), ignore buffer and run 1 frame
+    // per rAF so the display stays alive.
     let framesRun = 0;
-    while (buffered + framesRun * samplesPerFrame(this.audio.sampleRate) < targetSamples && framesRun < 2) {
+    const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
+    while (framesRun < 2) {
+      if (audioPacing && buffered + framesRun * samplesPerFrame(this.audio.sampleRate) >= targetSamples) break;
       this.runFrame();
       framesRun++;
+      if (!audioPacing) break; // 1 frame per rAF when free-running
     }
 
     // Always render display (even if we skipped emulation) so the screen stays up to date
@@ -251,25 +291,92 @@ export class Spectrum {
     this.rafId = requestAnimationFrame(this.frameLoop);
   };
 
+  /** True if the given address is in ULA-contended memory. */
+  private isContended(addr: number): boolean {
+    // 0x4000-0x7FFF is always contended (bank 5, the screen RAM)
+    if (addr >= 0x4000 && addr < 0x8000) return true;
+    // 128K: odd-numbered banks (1,3,5,7) paged at 0xC000 are contended
+    if (is128kClass(this.model) && addr >= 0xC000) {
+      return (this.memory.currentBank & 1) === 1;
+    }
+    return false;
+  }
+
+  /** Returns the contention delay (extra T-states) for the current beam position. */
+  private contentionDelay(): number {
+    const t = this.timing;
+    const frameTStates = this.cpu.tStates - this.frameStartTStates;
+    const offset = frameTStates - t.contentionStart;
+    if (offset < 0) return 0;
+    const line = (offset / t.tStatesPerLine) | 0;
+    if (line >= 192) return 0;
+    const col = offset - line * t.tStatesPerLine;
+    if (col >= 128) return 0;
+    return CONTENTION_PATTERN[col & 7];
+  }
+
+  /**
+   * Floating bus read: returns whatever the ULA is currently fetching from VRAM.
+   * During active display, this is a pixel byte or attribute byte.
+   * Outside active display, returns 0xFF.
+   */
+  private floatingBusRead(): number {
+    const t = this.timing;
+    const frameTStates = this.cpu.tStates - this.frameStartTStates;
+    const offset = frameTStates - t.contentionStart;
+    if (offset < 0) return 0xFF;
+    const line = (offset / t.tStatesPerLine) | 0;
+    if (line >= 192) return 0xFF;
+    const col = offset - line * t.tStatesPerLine;
+    if (col >= 128) return 0xFF;
+
+    // Each character cell takes 4 T-states: pixel fetch, attr fetch
+    const charCol = (col >> 2) & 0x1F;
+    const phase = col & 3;
+    const mem = this.memory.flat;
+
+    if (phase < 2) {
+      // Pixel byte — use the Spectrum's peculiar bitmap addressing
+      const y = line;
+      const bitmapAddr = 0x4000 |
+        ((y & 0xC0) << 5) |
+        ((y & 0x07) << 8) |
+        ((y & 0x38) << 2);
+      return mem[bitmapAddr + charCol];
+    } else {
+      // Attribute byte
+      const attrAddr = 0x5800 + ((line >> 3) << 5) + charCol;
+      return mem[attrAddr];
+    }
+  }
+
   private runFrame(): void {
     // Reset activity counters for this frame
     this.activity.ulaReads = 0;
     this.activity.kempstonReads = 0;
     this.activity.beeperToggled = false;
     this.activity.ayWrites = 0;
+    this.activity.tapeLoads = 0;
+    this.activity.rst16Calls = 0;
 
     // Fire interrupt at frame start
     this.cpu.interrupt();
 
     // Run CPU for one frame's worth of T-states
-    const frameEnd = this.cpu.tStates + TSTATES_PER_FRAME;
+    this.frameStartTStates = this.cpu.tStates;
+    const frameEnd = this.cpu.tStates + this.timing.tStatesPerFrame;
 
     while (this.cpu.tStates < frameEnd) {
       const tBefore = this.cpu.tStates;
 
+      // ROM routine activity detection
+      if (this.cpu.pc === 0x0556) this.activity.tapeLoads++;
+      if (this.cpu.pc === 0x0010) this.activity.rst16Calls++;
+
       // ROM trap: intercept LD-BYTES for instant tape loading
       if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
         this.trapTapeLoad();
+        this.tape.skipBlock(); // advance player past the instant-loaded block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
       } else if (this.cpu.halted) {
         // Advance to next sample boundary or frame end
@@ -285,10 +392,23 @@ export class Spectrum {
           this.cpu.iff2 = true;
         }
       } else {
+        // Apply ULA contention delay if fetching from contended memory
+        if (this.isContended(this.cpu.pc)) {
+          this.cpu.tStates += this.contentionDelay();
+        }
         this.cpu.step();
       }
 
       const elapsed = this.cpu.tStates - tBefore;
+
+      // Advance tape playback and update ULA EAR bit
+      if (this.tape.playing && !this.tape.paused) {
+        this.tape.advance(elapsed);
+        this.ula.tapeActive = true;
+        this.ula.tapeEarBit = this.tape.earBit;
+      } else {
+        this.ula.tapeActive = false;
+      }
 
       // Accumulate beeper duty for audio sample
       this.beeperAccum += this.ula.beeperBit * elapsed;

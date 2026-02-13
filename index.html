@@ -25,10 +25,38 @@
       flex-shrink: 0;
       padding-top: 4px;
     }
-    #sidebar h1 {
+    #toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    #toolbar h1 {
       font-size: 1.3rem;
       color: #c0c0ff;
-      margin-bottom: 2px;
+      margin: 0;
+    }
+    #toolbar-btns {
+      display: flex;
+      gap: 2px;
+    }
+    #toolbar-btns button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: #2a2a3e;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #toolbar-btns button:hover { background: #3a3a5e; }
+    .section-label {
+      font-size: 0.8rem;
+      color: #999;
     }
     #sidebar label {
       display: flex;
@@ -48,41 +76,39 @@
       width: 100%;
     }
     #sidebar button:hover { background: #3a3a5e; }
-    .rom-row {
+    /* Model row: select + icon buttons inline */
+    #model-row {
       display: flex;
-      flex-direction: column;
+      align-items: center;
       gap: 4px;
     }
-    .rom-row .rom-status {
+    #model-row select { flex: 1; min-width: 0; }
+    #model-row button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .rom-status {
       font-size: 0.75rem;
-      color: #7a7;
-      min-height: 1.1em;
+      color: #c66;
+      display: none;
     }
-    .file-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 8px;
-      border: 1px solid #555;
-      border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
-      font-size: 0.85rem;
-      cursor: pointer;
-      text-align: center;
-    }
-    .file-btn:hover { background: #3a3a5e; }
-    .file-btn .icon { font-size: 1rem; }
     input[type="file"] { display: none; }
 
-    .icon-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      font-size: 0.85rem;
+    /* Snapshot panel */
+    #snapshot-panel {
+      border-top: 1px solid #333;
+      padding-top: 10px;
     }
-    .icon-btn .icon { font-size: 1.1rem; }
+    #snap-row {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    #snap-row button {
+      flex: 1;
+    }
 
     #main {
       display: flex;
@@ -95,20 +121,26 @@
       border: 2px solid #333;
       background: #000;
     }
+    #status-bar {
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      margin-top: 6px;
+      gap: 12px;
+    }
     #status {
-      margin-top: 8px;
       font-size: 0.8rem;
       color: #888;
-      text-align: center;
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-
     #activity {
       display: flex;
       gap: 8px;
-      margin-top: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-      align-self: stretch;
+      flex-shrink: 0;
     }
     .led {
       display: flex;
@@ -132,11 +164,20 @@
     .led[data-kind="ay"].on { color: #ca6; }
     .led[data-kind="tape"].on .led-dot { background: #f00; }
     .led[data-kind="tape"].on { color: #c88; }
+    .led[data-kind="load"].on .led-dot { background: #f0f; }
+    .led[data-kind="load"].on { color: #c8c; }
+    .led[data-kind="rst16"].on .led-dot { background: #0ff; }
+    .led[data-kind="rst16"].on { color: #8cc; }
 
-    /* Display panel — condensed inline row */
+    /* Display/Graphics panel */
     #display-panel {
       border-top: 1px solid #333;
       padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #display-controls {
       display: flex;
       flex-direction: row;
       align-items: center;
@@ -170,37 +211,44 @@
       border-top: 1px solid #333;
       padding-top: 10px;
     }
-    #joystick-panel > label {
-      font-size: 0.8rem;
+    #joy-columns {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .joy-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+    .joy-column label {
+      font-size: 0.75rem;
       color: #999;
       display: flex;
       flex-direction: column;
-      gap: 4px;
-    }
-    #joy-type {
-      padding: 5px 8px;
-      border: 1px solid #555;
-      border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
-      font-size: 0.85rem;
-      cursor: pointer;
+      gap: 2px;
       width: 100%;
     }
-    #joy-dpad {
+    .joy-column select {
+      width: 100%;
+      padding: 3px 4px;
+      font-size: 0.8rem;
+    }
+    .joy-dpad {
       display: grid;
-      grid-template-columns: 36px 36px 36px;
-      grid-template-rows: 36px 36px 36px;
-      gap: 2px;
-      margin-top: 8px;
-      justify-content: center;
+      grid-template-columns: 28px 28px 28px;
+      grid-template-rows: 28px 28px 28px;
+      gap: 1px;
     }
     .joy-btn {
       border: 1px solid #555;
       border-radius: 4px;
       background: #2a2a3e;
       color: #e0e0e0;
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -211,13 +259,13 @@
     .joy-btn:hover { background: #3a3a5e; }
     .joy-btn:active, .joy-btn.pressed { background: #5a5a8e; border-color: #88f; }
     .joy-spacer { visibility: hidden; }
-    #joy-fire {
+    .joy-fire {
       background: #3e2a2a;
       border-color: #755;
-      font-size: 0.65rem;
+      font-size: 0.55rem;
     }
-    #joy-fire:hover { background: #5e3a3a; }
-    #joy-fire:active, #joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
+    .joy-fire:hover { background: #5e3a3a; }
+    .joy-fire:active, .joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
 
     /* Right sidebar */
     #right-sidebar {
@@ -235,6 +283,48 @@
       font-size: 0.8rem;
       color: #999;
     }
+
+    /* Register panel */
+    #regs-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #regs-label {
+      font-size: 0.8rem;
+      color: #999;
+    }
+    #regs-output {
+      margin: 0;
+      padding: 6px;
+      background: #0a0a18;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem;
+      line-height: 1.5;
+      color: #8cf;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    #regs-output .reg-name { color: #999; }
+    #regs-output .flag-on { color: #8f8; }
+    #regs-output .flag-off { color: #444; }
+
+    /* Memory bank config */
+    #banks-output {
+      margin: 0;
+      padding: 6px;
+      background: #0a0a18;
+      border: 1px solid #333;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem;
+      line-height: 1.5;
+      color: #ca8;
+      white-space: pre;
+    }
+    #banks-output .reg-name { color: #999; }
 
     /* Tape panel — always visible */
     #tape-panel {
@@ -335,91 +425,135 @@
 </head>
 <body>
   <div id="sidebar">
-    <h1>ngspecz</h1>
+    <div id="toolbar">
+      <h1>ngspecz</h1>
+      <div id="toolbar-btns">
+        <button id="play-btn" title="Pause emulation">&#x23F8;</button>
+        <button id="reset-btn" title="Reset machine">&#x27F3;</button>
+      </div>
+    </div>
 
-    <label>
-      Model
+    <div id="model-row">
       <select id="model">
         <option value="48k">ZX Spectrum 48K</option>
         <option value="128k">ZX Spectrum 128K</option>
         <option value="+2">ZX Spectrum +2 (Grey)</option>
       </select>
-    </label>
-
-    <div class="rom-row">
-      <label>ROM</label>
-      <span class="file-btn" id="rom-btn"><span class="icon">&#128190;</span> Select ROM...</span>
+      <button id="rom-btn" title="Load ROM"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="8" height="12" rx="1"/><line x1="1" y1="5" x2="4" y2="5"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="1" y1="11" x2="4" y2="11"/><line x1="12" y1="5" x2="16" y2="5"/><line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="11" x2="16" y2="11"/></svg></button>
       <input type="file" id="rom-input" accept=".rom,.bin" multiple>
-      <span class="rom-status" id="rom-status"></span>
     </div>
+    <span class="rom-status" id="rom-status"></span>
 
-    <div class="rom-row">
-      <label>Load</label>
-      <span class="file-btn" id="snap-btn"><span class="icon">&#128194;</span> Load file...</span>
-      <input type="file" id="snap-input" accept=".sna,.z80,.tap,.tzx,.zip">
+    <div id="snapshot-panel">
+      <div class="section-label">Snapshot</div>
+      <div id="snap-row">
+        <button id="snap-load-btn" title="Load snapshot">&#x1F4C2; Load</button>
+        <button id="snap-save-btn" title="Save snapshot">&#x1F4BE; Save</button>
+        <input type="file" id="snap-input" accept=".sna,.z80,.zip">
+      </div>
     </div>
-
-    <button id="reset-btn" class="icon-btn" title="Reset the machine"><span class="icon">&#x27F3;</span> Reset</button>
 
     <div id="joystick-panel">
-      <label>
-        Joystick
-        <select id="joy-type">
-          <option value="kempston">Kempston (IN 31)</option>
-          <option value="cursor">Cursor (5678+0)</option>
-          <option value="sinclair2">Sinclair IF2 (12345)</option>
-          <option value="sinclair1">Sinclair 1 (67890)</option>
-        </select>
-      </label>
-      <div id="joy-dpad">
-        <div class="joy-spacer"></div>
-        <div class="joy-btn" id="joy-up" data-dir="up">&#9650;</div>
-        <div class="joy-spacer"></div>
-        <div class="joy-btn" id="joy-left" data-dir="left">&#9664;</div>
-        <div class="joy-btn" id="joy-fire">FIRE</div>
-        <div class="joy-btn" id="joy-right" data-dir="right">&#9654;</div>
-        <div class="joy-spacer"></div>
-        <div class="joy-btn" id="joy-down" data-dir="down">&#9660;</div>
-        <div class="joy-spacer"></div>
+      <div class="section-label">Joystick</div>
+      <div id="joy-columns">
+        <div class="joy-column">
+          <label>P1
+            <select id="joy-p1">
+              <option value="kempston" selected>Kempston</option>
+              <option value="cursor">Cursor</option>
+              <option value="sinclair2">IF2</option>
+              <option value="sinclair1">Sinclair 1</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <div class="joy-dpad" data-player="1">
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="up">&#9650;</div>
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="left">&#9664;</div>
+            <div class="joy-btn joy-fire" data-dir="fire">FIRE</div>
+            <div class="joy-btn" data-dir="right">&#9654;</div>
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="down">&#9660;</div>
+            <div class="joy-spacer"></div>
+          </div>
+        </div>
+        <div class="joy-column">
+          <label>P2
+            <select id="joy-p2">
+              <option value="kempston">Kempston</option>
+              <option value="cursor">Cursor</option>
+              <option value="sinclair2" selected>IF2</option>
+              <option value="sinclair1">Sinclair 1</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <div class="joy-dpad" data-player="2">
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="up">&#9650;</div>
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="left">&#9664;</div>
+            <div class="joy-btn joy-fire" data-dir="fire">FIRE</div>
+            <div class="joy-btn" data-dir="right">&#9654;</div>
+            <div class="joy-spacer"></div>
+            <div class="joy-btn" data-dir="down">&#9660;</div>
+            <div class="joy-spacer"></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div id="display-panel">
-      <label>
-        Scale
-        <select id="scale">
-          <option value="1">1x</option>
-          <option value="2" selected>2x</option>
-          <option value="3">3x</option>
-        </select>
-      </label>
-      <label class="check-row">
-        <input type="checkbox" id="crt-toggle"> CRT
-      </label>
+      <div class="section-label">Graphics</div>
+      <div id="display-controls">
+        <label>
+          Scale
+          <select id="scale">
+            <option value="1">1x</option>
+            <option value="2" selected>2x</option>
+            <option value="3">3x</option>
+          </select>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" id="crt-toggle"> CRT
+        </label>
+      </div>
     </div>
   </div>
 
   <div id="main">
     <canvas id="screen"></canvas>
-    <div id="status">Load a ROM to start</div>
-    <div id="activity">
-      <div class="led" id="led-kbd" data-kind="kbd"><span class="led-dot"></span>KBD</div>
-      <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
-      <div class="led" id="led-tape" data-kind="tape"><span class="led-dot"></span>TAPE</div>
-      <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
-      <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
+    <div id="status-bar">
+      <div id="status">Load a ROM to start</div>
+      <div id="activity">
+        <div class="led" id="led-kbd" data-kind="kbd"><span class="led-dot"></span>KBD</div>
+        <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
+        <div class="led" id="led-tape" data-kind="tape"><span class="led-dot"></span>TAPE</div>
+        <div class="led" id="led-load" data-kind="load"><span class="led-dot"></span>LOAD</div>
+        <div class="led" id="led-rst16" data-kind="rst16"><span class="led-dot"></span>RST16</div>
+        <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
+        <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
+      </div>
     </div>
   </div>
 
   <div id="right-sidebar">
+    <div id="regs-panel">
+      <div id="regs-label">Registers</div>
+      <pre id="regs-output"></pre>
+      <pre id="banks-output"></pre>
+    </div>
+
     <div id="tape-panel">
       <div id="tape-panel-label">Tape</div>
       <div id="tape-controls">
+        <button id="tape-load-btn" title="Load tape">&#x1F4C2;</button>
         <button id="tape-rewind" title="Rewind">&#x23EE;</button>
         <button id="tape-prev" title="Previous">&#x23EA;</button>
         <button id="tape-pause" title="Pause">&#x23F8;</button>
         <button id="tape-next" title="Next">&#x23E9;</button>
       </div>
+      <input type="file" id="tape-input" accept=".tap,.tzx,.zip">
       <div id="tape-blocks"></div>
     </div>
 
