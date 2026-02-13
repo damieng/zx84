@@ -8,7 +8,8 @@
       "WebFetch(domain:fms.komkon.org)",
       "WebFetch(domain:spectrumforeveryone.com)",
       "WebFetch(domain:softspectrum48.weebly.com)",
-      "WebFetch(domain:en.wikipedia.org)"
+      "WebFetch(domain:en.wikipedia.org)",
+      "Bash(printf:*)"
     ]
   }
 }

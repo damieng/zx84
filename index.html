@@ -127,6 +127,15 @@
     #snap-row button {
       flex: 1;
     }
+    .loaded-file {
+      font-size: 0.7rem;
+      color: #8a8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-height: 0;
+    }
+    .loaded-file:empty { display: none; }
 
     #main {
       display: flex;
@@ -186,6 +195,8 @@
     .led[data-kind="load"].on { color: #c8c; }
     .led[data-kind="rst16"].on .led-dot { background: #0ff; }
     .led[data-kind="rst16"].on { color: #8cc; }
+    .led[data-kind="dsk"].on .led-dot { background: #f44; }
+    .led[data-kind="dsk"].on { color: #c88; }
 
     /* Display/Graphics panel */
     #display-panel {
@@ -408,6 +419,17 @@
     }
     #banks-output .reg-name { color: #999; }
 
+    /* Disk panel */
+    #disk-panel { display: flex; flex-direction: column; gap: 4px; }
+    #disk-panel-label { font-size: 0.8rem; color: #999; }
+    #disk-output {
+      margin: 0; padding: 6px;
+      background: #0a0a18; border: 1px solid #333; border-radius: 4px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem; line-height: 1.5; color: #ca8; white-space: pre;
+    }
+    #disk-output .reg-name { color: #999; }
+
     /* Tape panel — always visible */
     #tape-panel {
       display: flex;
@@ -531,12 +553,13 @@
     <span class="clock-speed" id="clock-speed"></span>
 
     <div id="snapshot-panel">
-      <div class="section-label">Snapshot</div>
+      <div class="section-label">Load / Save</div>
       <div id="snap-row">
-        <button id="snap-load-btn" title="Load snapshot">&#x1F4C2; Load</button>
+        <button id="snap-load-btn" title="Load file">&#x1F4C2; Load</button>
         <button id="snap-save-btn" title="Save snapshot">&#x1F4BE; Save</button>
-        <input type="file" id="snap-input" accept=".sna,.z80,.zip">
+        <input type="file" id="snap-input" accept=".sna,.z80,.tap,.tzx,.dsk,.zip">
       </div>
+      <div id="loaded-file" class="loaded-file"></div>
     </div>
 
     <div id="joystick-panel">
@@ -678,6 +701,7 @@
         <div class="led" id="led-rst16" data-kind="rst16"><span class="led-dot"></span>RST16</div>
         <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
         <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
+        <div class="led" id="led-dsk" data-kind="dsk"><span class="led-dot"></span>DSK</div>
       </div>
     </div>
   </div>
@@ -689,16 +713,19 @@
       <pre id="banks-output"></pre>
     </div>
 
+    <div id="disk-panel" style="display: none">
+      <div id="disk-panel-label">Disk</div>
+      <pre id="disk-output"></pre>
+    </div>
+
     <div id="tape-panel">
       <div id="tape-panel-label">Tape</div>
       <div id="tape-controls">
-        <button id="tape-load-btn" title="Load tape">&#x1F4C2;</button>
         <button id="tape-rewind" title="Rewind">&#x23EE;</button>
         <button id="tape-prev" title="Previous">&#x23EA;</button>
         <button id="tape-pause" title="Pause">&#x23F8;</button>
         <button id="tape-next" title="Next">&#x23E9;</button>
       </div>
-      <input type="file" id="tape-input" accept=".tap,.tzx,.zip">
       <div id="tape-blocks"></div>
     </div>
 

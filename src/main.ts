@@ -4,12 +4,14 @@
  */
 
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from './spectrum.ts';
+import { FloppySound } from './floppy-sound.ts';
 import { Z80 } from './cores/z80.ts';
 import { loadSNA, saveSNA } from './formats/sna.ts';
 import { loadZ80 } from './formats/z80format.ts';
 import { diagnoseStuckLoop } from './diagnostics.ts';
 import { unzip } from './formats/zip.ts';
 import { parseTZX } from './formats/tzx.ts';
+import { parseDSK } from './formats/dsk.ts';
 import { showFilePicker } from './ui/zip-picker.ts';
 
 // ── IndexedDB ROM persistence ──────────────────────────────────────────────
@@ -92,31 +94,30 @@ function loadSavedModel(): SpectrumModel | null {
   return null;
 }
 
-// ── Snapshot persistence ────────────────────────────────────────────────────
+// ── Last-file persistence (IndexedDB — handles large DSK/TZX/etc.) ──────────
 
-function saveSnapshot(data: Uint8Array, name: string): void {
+async function persistLastFile(data: Uint8Array, filename: string): Promise<void> {
   try {
-    let binary = '';
-    for (let i = 0; i < data.length; i++) {
-      binary += String.fromCharCode(data[i]);
-    }
-    localStorage.setItem('snapshot', btoa(binary));
-    localStorage.setItem('snapshot-name', name);
-  } catch { /* quota exceeded */ }
+    await dbSave('last-file', data);
+    localStorage.setItem('ngspecz-last-file', filename);
+  } catch { /* quota or write error */ }
 }
 
-function loadSavedSnapshot(): { data: Uint8Array; name: string } | null {
+async function restoreLastFile(): Promise<{ data: Uint8Array; name: string } | null> {
   try {
-    const b64 = localStorage.getItem('snapshot');
-    const name = localStorage.getItem('snapshot-name');
-    if (!b64 || !name) return null;
-    const binary = atob(b64);
-    const data = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      data[i] = binary.charCodeAt(i);
-    }
+    const name = localStorage.getItem('ngspecz-last-file');
+    if (!name) return null;
+    const data = await dbLoad('last-file');
+    if (!data) return null;
     return { data, name };
   } catch { return null; }
+}
+
+function clearLastFile(): void {
+  try {
+    localStorage.removeItem('ngspecz-last-file');
+  } catch { /* */ }
+  // IndexedDB entry left in place — harmless, overwritten on next save
 }
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
@@ -133,8 +134,7 @@ const romStatus = document.getElementById('rom-status') as HTMLSpanElement;
 const snapInput = document.getElementById('snap-input') as HTMLInputElement;
 const snapLoadBtn = document.getElementById('snap-load-btn') as HTMLButtonElement;
 const snapSaveBtn = document.getElementById('snap-save-btn') as HTMLButtonElement;
-const tapeInput = document.getElementById('tape-input') as HTMLInputElement;
-const tapeLoadBtn = document.getElementById('tape-load-btn') as HTMLButtonElement;
+const loadedFileEl = document.getElementById('loaded-file') as HTMLDivElement;
 const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
 const resetBtn = document.getElementById('reset-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
@@ -174,10 +174,15 @@ const ledLoad = document.getElementById('led-load') as HTMLDivElement;
 const ledRst16 = document.getElementById('led-rst16') as HTMLDivElement;
 const ledBeep = document.getElementById('led-beep') as HTMLDivElement;
 const ledAy = document.getElementById('led-ay') as HTMLDivElement;
+const ledDsk = document.getElementById('led-dsk') as HTMLDivElement;
 
 const banksOutput = document.getElementById('banks-output') as HTMLPreElement;
+const diskPanel = document.getElementById('disk-panel') as HTMLDivElement;
+const diskOutput = document.getElementById('disk-output') as HTMLPreElement;
 
 const regsOutput = document.getElementById('regs-output') as HTMLPreElement;
+
+let floppySound: FloppySound | null = null;
 
 const tapeBlocksContainer = document.getElementById('tape-blocks') as HTMLDivElement;
 const tapeRewindBtn = document.getElementById('tape-rewind') as HTMLButtonElement;
@@ -227,6 +232,14 @@ function updateActivityLEDs(): void {
   ledRst16.classList.toggle('on', a.rst16Calls > 0);
   ledBeep.classList.toggle('on', a.beeperToggled);
   ledAy.classList.toggle('on', a.ayWrites > 0);
+  ledDsk.classList.toggle('on', a.fdcAccesses > 0);
+  if (floppySound && isPlus3(currentModel)) {
+    // Lazy-attach to AudioContext when it becomes available
+    if (!floppySound['ctx'] && spectrum['audio'].ctx) {
+      floppySound.attach(spectrum['audio'].ctx);
+    }
+    floppySound.update(spectrum.fdc.motorOn, spectrum.fdc.currentTrack);
+  }
   updateTapeHighlight();
   updateRegsDisplay();
 }
@@ -500,6 +513,15 @@ function createMachine(): void {
     spectrum.start();
   }
 
+  // Floppy sound — create for +3, destroy otherwise
+  if (isPlus3(currentModel)) {
+    if (!floppySound) floppySound = new FloppySound();
+    floppySound.reset();
+  } else {
+    floppySound?.destroy();
+    floppySound = null;
+  }
+
   buildTapeBlockList(); // hides panel — new machine has no tape
   renderFontPreview();
   unpause();
@@ -509,7 +531,6 @@ function createMachine(): void {
 
 romBtn.addEventListener('click', () => romInput.click());
 snapLoadBtn.addEventListener('click', () => snapInput.click());
-tapeLoadBtn.addEventListener('click', () => tapeInput.click());
 
 // ── Save snapshot ───────────────────────────────────────────────────────────
 
@@ -620,6 +641,24 @@ function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
   return lines.join('\n');
 }
 
+function renderDisk(): string {
+  if (!spectrum) return '';
+  const fdc = spectrum.fdc;
+  fdc.tickFrame();
+  const n = '<span class="reg-name">';
+  const e = '</span>';
+  const track = fdc.currentTrack.toString().padStart(2, '0');
+  const head = fdc.currentHead;
+  const sector = fdc.isExecuting ? fdc.currentSector.toString().padStart(2, '0') : '--';
+  const mode = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
+  const motor = fdc.motorOn ? 'On' : 'Off';
+  return [
+    `${n}Track${e}  ${track}  ${n}Head${e} ${head}`,
+    `${n}Sector${e} ${sector}  ${mode}`,
+    `${n}Motor${e}  ${motor}`,
+  ].join('\n');
+}
+
 function updateRegsDisplay(): void {
   if (!spectrum) return;
   regsOutput.innerHTML = renderRegs(spectrum.cpu);
@@ -628,6 +667,12 @@ function updateRegsDisplay(): void {
     banksOutput.style.display = '';
   } else {
     banksOutput.style.display = 'none';
+  }
+  if (isPlus3(currentModel)) {
+    diskOutput.innerHTML = renderDisk();
+    diskPanel.style.display = '';
+  } else {
+    diskPanel.style.display = 'none';
   }
 }
 
@@ -1017,6 +1062,10 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
   return true;
 }
 
+function showLoadedFile(filename: string): void {
+  loadedFileEl.textContent = filename;
+}
+
 async function handleZipFile(data: Uint8Array): Promise<void> {
   let entries;
   try {
@@ -1044,32 +1093,60 @@ async function handleZipFile(data: Uint8Array): Promise<void> {
     chosen = entries.find(e => e.name === picked)!;
   }
 
-  const chosenExt = chosen.name.toLowerCase().split('.').pop();
-  if (chosenExt === 'tap' || chosenExt === 'tzx') {
-    applyTape(chosen.data, chosen.name);
-  } else if (await applySnapshot(chosen.data, chosen.name)) {
-    saveSnapshot(chosen.data, chosen.name);
+  // Use internal filename, not the zip name
+  await loadFile(chosen.data, chosen.name);
+}
+
+/** Route a loaded file to the correct handler based on extension. */
+async function loadFile(data: Uint8Array, filename: string): Promise<void> {
+  const ext = filename.toLowerCase().split('.').pop();
+
+  if (ext === 'zip') {
+    await handleZipFile(data);
+    return;
   }
+
+  if (ext === 'tap' || ext === 'tzx') {
+    applyTape(data, filename);
+    showLoadedFile(filename);
+    persistLastFile(data, filename);
+    return;
+  }
+
+  if (ext === 'dsk') {
+    if (!spectrum) { setStatus('Load a ROM first'); return; }
+    try {
+      const image = parseDSK(data);
+      spectrum.loadDisk(image);
+      setStatus(`Disk loaded: ${filename}`);
+      showLoadedFile(filename);
+      persistLastFile(data, filename);
+    } catch (e) {
+      setStatus(`DSK error: ${(e as Error).message}`);
+    }
+    return;
+  }
+
+  if (ext === 'sna' || ext === 'z80') {
+    if (await applySnapshot(data, filename)) {
+      showLoadedFile(filename);
+      persistLastFile(data, filename);
+    }
+    return;
+  }
+
+  setStatus(`Unknown file type: .${ext}`);
 }
 
 snapInput.addEventListener('change', async () => {
   const file = snapInput.files?.[0];
   if (!file) return;
-
   const data = new Uint8Array(await file.arrayBuffer());
-
-  if (file.name.toLowerCase().endsWith('.zip')) {
-    await handleZipFile(data);
-  } else {
-    if (await applySnapshot(data, file.name)) {
-      saveSnapshot(data, file.name);
-    }
-  }
-
+  await loadFile(data, file.name);
   snapInput.value = '';
 });
 
-// ── Tape loading (right sidebar) ────────────────────────────────────────────
+// ── Tape loading ────────────────────────────────────────────────────────────
 
 function applyTape(data: Uint8Array, filename: string): void {
   if (!spectrum) { setStatus('Load a ROM first'); return; }
@@ -1102,23 +1179,11 @@ function applyTape(data: Uint8Array, filename: string): void {
   setStatus(`Tape loaded — auto-loading ${filename}`);
 }
 
-tapeInput.addEventListener('change', async () => {
-  const file = tapeInput.files?.[0];
-  if (!file) return;
-  const data = new Uint8Array(await file.arrayBuffer());
-
-  if (file.name.toLowerCase().endsWith('.zip')) {
-    await handleZipFile(data);
-  } else {
-    applyTape(data, file.name);
-  }
-  tapeInput.value = '';
-});
-
 // ── Reset ──────────────────────────────────────────────────────────────────
 
 resetBtn.addEventListener('click', () => {
   cancelAutoType();
+  floppySound?.reset();
   if (spectrum) {
     spectrum.tape.rewind();
     spectrum.tape.paused = false;
@@ -1132,10 +1197,7 @@ resetBtn.addEventListener('click', () => {
     unpause();
   }
   diagOutput.value = '';
-  try {
-    localStorage.removeItem('snapshot');
-    localStorage.removeItem('snapshot-name');
-  } catch { /* */ }
+  clearLastFile();
 });
 
 // ── Joystick ────────────────────────────────────────────────────────────
@@ -1370,10 +1432,10 @@ async function init(): Promise<void> {
     setStatus('Restored ROM from last session');
     createMachine();
 
-    // Restore saved snapshot
-    const snap = loadSavedSnapshot();
-    if (snap) {
-      await applySnapshot(snap.data, snap.name);
+    // Restore last loaded file (SNA/TAP/TZX/DSK/etc.)
+    const last = await restoreLastFile();
+    if (last) {
+      await loadFile(last.data, last.name);
     }
   } else {
     setStatus('Load a ROM to start');
@@ -1399,6 +1461,8 @@ if (import.meta.hot) {
   });
 
   import.meta.hot.dispose(() => {
+    floppySound?.destroy();
+    floppySound = null;
     if (spectrum) {
       spectrum.destroy();
       spectrum = null;

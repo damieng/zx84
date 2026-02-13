@@ -18,6 +18,7 @@ import { Display } from './display.ts';
 import { Audio } from './audio.ts';
 import { TapeDeck } from './formats/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
+import type { DskImage } from './formats/dsk.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz
 const AY_CLOCK = 1773400;        // ~1.77 MHz
@@ -80,6 +81,8 @@ export interface IOActivity {
   tapeLoads: number;
   /** Number of RST 16 (0x0010) calls this frame */
   rst16Calls: number;
+  /** Number of FDC data port accesses this frame */
+  fdcAccesses: number;
 }
 
 /**
@@ -125,7 +128,7 @@ export class Spectrum {
   fdc: UPD765A;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0 };
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
@@ -235,8 +238,9 @@ export class Spectrum {
         }
 
         // +3 FDC data write: port 0x3FFD (A13=1, A12=1, A1=0)
-        if (isPlus3(this.model) && (port & 0x3002) === 0x3000) {
+        if (isPlus3(this.model) && (port & 0xF002) === 0x3000) {
           this.fdc.writeData(val);
+          this.activity.fdcAccesses++;
         }
       }
 
@@ -270,8 +274,11 @@ export class Spectrum {
       // FDC ports (A13=1, A12=0/1, A1=0): 0x2FFD status, 0x3FFD data
       // +3: routed to uPD765A. +2A: chip absent, bus returns 0xFF.
       if (isPlus2AClass(this.model)) {
-        if ((port & 0x3002) === 0x2000) return isPlus3(this.model) ? this.fdc.readStatus() : 0xFF;
-        if ((port & 0x3002) === 0x3000) return isPlus3(this.model) ? this.fdc.readData() : 0xFF;
+        if ((port & 0xF002) === 0x2000) return isPlus3(this.model) ? this.fdc.readStatus() : 0xFF;
+        if ((port & 0xF002) === 0x3000) {
+          if (isPlus3(this.model)) { this.activity.fdcAccesses++; return this.fdc.readData(); }
+          return 0xFF;
+        }
       }
 
       // Kempston joystick: bits 5-7 of low byte all zero
@@ -454,6 +461,7 @@ export class Spectrum {
     this.activity.ayWrites = 0;
     this.activity.tapeLoads = 0;
     this.activity.rst16Calls = 0;
+    this.activity.fdcAccesses = 0;
 
     // Fire interrupt at frame start
     this.cpu.interrupt();
@@ -561,6 +569,10 @@ export class Spectrum {
 
   loadTAP(data: Uint8Array): void {
     this.tape.load(data);
+  }
+
+  loadDisk(image: DskImage): void {
+    this.fdc.insertDisk(image);
   }
 
   /**

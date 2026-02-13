@@ -9,7 +9,7 @@ export interface ZipEntry {
   data: Uint8Array;
 }
 
-const LOADABLE_EXTS = /\.(sna|z80|tap|tzx)$/i;
+const LOADABLE_EXTS = /\.(sna|z80|tap|tzx|dsk)$/i;
 
 /** Parse a ZIP archive and return entries with loadable extensions. */
 export async function unzip(data: Uint8Array): Promise<ZipEntry[]> {
