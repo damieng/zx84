@@ -94,6 +94,11 @@
       color: #c66;
       display: none;
     }
+    .clock-speed {
+      font-size: 0.75rem;
+      color: #8a8;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
     input[type="file"] { display: none; }
 
     /* Snapshot panel */
@@ -246,12 +251,7 @@
     /* Font row overrides */
     #font-row select { flex: 1; min-width: 0; }
     #font-row button { width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
-    #font-preview {
-      image-rendering: pixelated;
-      image-rendering: crisp-edges;
-      height: 16px;
-      display: none;
-    }
+    #font-preview { }
 
     /* Sound panel */
     #sound-panel {
@@ -490,6 +490,7 @@
       margin-bottom: 4px;
     }
     #diag button:hover { background: #3a3a5e; }
+    #diag button.active { background: #2a3e2a; border-color: #5a5; color: #8f8; }
   </style>
 </head>
 <body>
@@ -512,6 +513,7 @@
       <input type="file" id="rom-input" accept=".rom,.bin" multiple>
     </div>
     <span class="rom-status" id="rom-status"></span>
+    <span class="clock-speed" id="clock-speed"></span>
 
     <div id="snapshot-panel">
       <div class="section-label">Snapshot</div>
@@ -604,6 +606,16 @@
         </label>
       </div>
       <div class="slider-row">
+        <span class="slider-label">Brightness</span>
+        <input type="range" id="brightness-slider" min="-50" max="50" value="0">
+        <span class="slider-value" id="brightness-value">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Contrast</span>
+        <input type="range" id="contrast-slider" min="0" max="100" value="50">
+        <span class="slider-value" id="contrast-value">50</span>
+      </div>
+      <div class="slider-row">
         <span class="slider-label">Smoothing</span>
         <input type="range" id="smoothing-slider" min="0" max="100" value="0">
         <span class="slider-value" id="smoothing-value">0</span>
@@ -622,8 +634,10 @@
         <span class="slider-label">Dotmask</span>
         <select id="dotmask-select">
           <option value="0" selected>None</option>
-          <option value="1">Shadow Mask</option>
           <option value="2">Trinitron</option>
+          <option value="3">Amstrad CTM</option>
+          <option value="4">Cheap TV</option>
+          <option value="5">Microvitec CUB</option>
         </select>
       </div>
       <div class="slider-row" id="font-row">
@@ -631,7 +645,8 @@
         <select id="font-select"><option value="">(none)</option></select>
         <button id="font-add-btn" title="Add font (.ch8, 768 bytes)">+</button>
       </div>
-      <canvas id="font-preview" width="128" height="16"></canvas>
+      <canvas id="font-preview" width="128" height="16" style="display:none"></canvas>
+      <canvas id="rom-font-preview" width="128" height="16" style="display:none"></canvas>
       <input type="file" id="font-input" accept=".ch8,.bin">
     </div>
   </div>
@@ -673,7 +688,8 @@
     </div>
 
     <div id="diag">
-      <button id="stuck-btn">Stuck Loop?</button>
+      <button id="stuck-btn">Loop Snapshot</button>
+      <button id="transcribe-btn">Transcribe</button>
       <button id="diag-copy">Copy</button>
       <textarea id="diag-output" readonly></textarea>
     </div>

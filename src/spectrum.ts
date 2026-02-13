@@ -52,6 +52,9 @@ function samplesPerFrame(sampleRate: number): number {
 /** Target buffer fill: ~3 frames of audio (~60ms). Below this we run a frame. */
 const TARGET_BUFFER_FRAMES = 3;
 
+/** Wall-clock frame period: 50 Hz = 20ms */
+const FRAME_PERIOD = 1000 / 50;
+
 export type SpectrumModel = '48k' | '128k' | '+2';
 
 /** Returns true for any 128K-class model (128K, +2, future +2A/+3). */
@@ -72,6 +75,36 @@ export interface IOActivity {
   rst16Calls: number;
 }
 
+/**
+ * ZX Spectrum character set → Unicode mapping for codes 0x80-0xFF.
+ * 0x80-0x8F: 2×2 block graphics (Unicode Block Elements)
+ * 0x90-0xA4: UDGs A-U (rendered as circled letters)
+ * 0xA5-0xFF: BASIC keyword tokens
+ */
+const SPECTRUM_CHARS: string[] = [
+  // 0x80-0x8F: block graphics (bit pattern: b0=TL, b1=TR, b2=BL, b3=BR)
+  ' ',  '\u2598', '\u259D', '\u2580', '\u2596', '\u258C', '\u259E', '\u259B',
+  '\u2597', '\u259A', '\u2590', '\u259C', '\u2584', '\u2599', '\u259F', '\u2588',
+  // 0x90-0xA4: UDGs A-U
+  '\u24B6', '\u24B7', '\u24B8', '\u24B9', '\u24BA', '\u24BB', '\u24BC', '\u24BD',
+  '\u24BE', '\u24BF', '\u24C0', '\u24C1', '\u24C2', '\u24C3', '\u24C4', '\u24C5',
+  '\u24C6', '\u24C7', '\u24C8', '\u24C9', '\u24CA',
+  // 0xA5-0xFF: BASIC keyword tokens
+  'RND', 'INKEY$', 'PI', 'FN ', 'POINT ', 'SCREEN$ ', 'ATTR ', 'AT ', 'TAB ',
+  'VAL$ ', 'CODE ', 'VAL ', 'LEN ', 'SIN ', 'COS ', 'TAN ', 'ASN ', 'ACS ',
+  'ATN ', 'LN ', 'EXP ', 'INT ', 'SQR ', 'SGN ', 'ABS ', 'PEEK ', 'IN ',
+  'USR ', 'STR$ ', 'CHR$ ', 'NOT ', 'BIN ',
+  'OR ', 'AND ', '<=', '>=', '<>', 'LINE ', 'THEN ', 'TO ', 'STEP ',
+  'DEF FN ', 'CAT ', 'FORMAT ', 'MOVE ', 'ERASE ', 'OPEN #', 'CLOSE #',
+  'MERGE ', 'VERIFY ', 'BEEP ', 'CIRCLE ', 'INK ', 'PAPER ', 'FLASH ',
+  'BRIGHT ', 'INVERSE ', 'OVER ', 'OUT ',
+  'LPRINT ', 'LLIST ', 'STOP ', 'READ ', 'DATA ', 'RESTORE ', 'NEW ',
+  'BORDER ', 'CONTINUE ', 'DIM ', 'REM ', 'FOR ', 'GO TO ', 'GO SUB ',
+  'INPUT ', 'LOAD ', 'LIST ', 'LET ', 'PAUSE ', 'NEXT ', 'POKE ', 'PRINT ',
+  'PLOT ', 'RUN ', 'SAVE ', 'RANDOMIZE ', 'IF ', 'CLS ', 'DRAW ', 'CLEAR ',
+  'RETURN ', 'COPY ',
+];
+
 export class Spectrum {
   model: SpectrumModel;
   memory: SpectrumMemory;
@@ -88,6 +121,10 @@ export class Spectrum {
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
+
+  /** 32x24 character grid mirroring what RST 16 prints to the display */
+  screenGrid: string[] = new Array(768).fill(' ');
+  private screenSkipCount = 0;
 
   private running = false;
   private starting = false;
@@ -108,6 +145,10 @@ export class Spectrum {
 
   /** Whether at least one frame has rendered (for display) */
   private needsDisplay = true;
+
+  /** Wall-clock frame pacing (governs speed regardless of rAF rate) */
+  private lastFrameTime = 0;
+  private frameTimeAccum = 0;
 
   /** Model-dependent timing */
   private timing: MachineTiming;
@@ -256,6 +297,8 @@ export class Spectrum {
     this.beeperDCAlpha = 1 - (2 * Math.PI * 20 / this.audio.sampleRate);
 
     this.running = true;
+    this.lastFrameTime = performance.now();
+    this.frameTimeAccum = 0;
     this.rafId = requestAnimationFrame(this.frameLoop);
     this.setStatus('Running');
   }
@@ -277,19 +320,23 @@ export class Spectrum {
   private frameLoop = (): void => {
     if (!this.running) return;
 
-    const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
-    const buffered = this.audio.bufferedSamples();
+    // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
+    const now = performance.now();
+    this.frameTimeAccum = Math.min(
+      this.frameTimeAccum + (now - this.lastFrameTime),
+      FRAME_PERIOD * 3 // cap catch-up to 3 frames (e.g. after tab hidden)
+    );
+    this.lastFrameTime = now;
 
-    // Run frames until audio buffer reaches target, max 2 per rAF to avoid stutters.
-    // If audio context is suspended (no user gesture yet), ignore buffer and run 1 frame
-    // per rAF so the display stays alive.
-    let framesRun = 0;
     const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
-    while (framesRun < 2) {
-      if (audioPacing && buffered + framesRun * samplesPerFrame(this.audio.sampleRate) >= targetSamples) break;
+    const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
+
+    let framesRun = 0;
+    while (this.frameTimeAccum >= FRAME_PERIOD && framesRun < 2) {
+      if (audioPacing && this.audio.bufferedSamples() >= targetSamples) break;
       this.runFrame();
+      this.frameTimeAccum -= FRAME_PERIOD;
       framesRun++;
-      if (!audioPacing) break; // 1 frame per rAF when free-running
     }
 
     // Always render display (even if we skipped emulation) so the screen stays up to date
@@ -384,7 +431,21 @@ export class Spectrum {
 
       // ROM routine activity detection
       if (this.cpu.pc === 0x0556) this.activity.tapeLoads++;
-      if (this.cpu.pc === 0x0010) this.activity.rst16Calls++;
+      if (this.cpu.pc === 0x0010) {
+        this.activity.rst16Calls++;
+        this.captureScreenChar(this.cpu.a);
+      }
+      // CLS detection: CL-ALL entry in 48K ROM
+      if (this.cpu.pc === 0x0DAF) {
+        this.screenGrid.fill(' ');
+      }
+      // Scroll detection: CL-SCROLL in 48K ROM
+      if (this.cpu.pc === 0x0DFE) {
+        for (let i = 0; i < 23 * 32; i++) {
+          this.screenGrid[i] = this.screenGrid[i + 32];
+        }
+        this.screenGrid.fill(' ', 23 * 32, 24 * 32);
+      }
 
       // ROM trap: intercept LD-BYTES for instant tape loading
       if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
@@ -508,6 +569,72 @@ export class Spectrum {
     // Re-enable interrupts (LD-BYTES runs with DI)
     cpu.iff1 = true;
     cpu.iff2 = true;
+  }
+
+  /** Capture a character from RST 16 (A register value) into the 32x24 screen grid. */
+  private captureScreenChar(a: number): void {
+    // Skip parameter bytes for control codes
+    if (this.screenSkipCount > 0) {
+      this.screenSkipCount--;
+      return;
+    }
+
+    if (a === 0x0D) {
+      // Carriage return — position change handled by ROM, no grid update needed
+    } else if ((a >= 0x20 && a <= 0x7F) || a >= 0x80) {
+      // Printable character — read current print position from S_POSN system variable
+      const mem = this.cpu.memory;
+      const col = mem[0x5C88];   // S_POSN column (33 = leftmost, 2 = rightmost)
+      const line = mem[0x5C89]; // S_POSN line (24 = top, 1 = bottom)
+      const actualCol = 33 - col;
+      const actualRow = 24 - line;
+
+      if (actualCol >= 0 && actualCol <= 31 && actualRow >= 0 && actualRow <= 23) {
+        let ch: string;
+        if (a >= 0x80) {
+          ch = SPECTRUM_CHARS[a - 0x80];
+          // Tokens expand to multiple chars — only store first char in grid cell
+          if (ch.length > 1) ch = ch[0];
+        } else if (a === 0x5E) {
+          ch = '\u2191'; // ↑ instead of ^
+        } else if (a === 0x60) {
+          ch = '\u00A3'; // £ instead of `
+        } else if (a === 0x7F) {
+          ch = '\u00A9'; // © instead of DEL
+        } else {
+          ch = String.fromCharCode(a);
+        }
+        this.screenGrid[actualRow * 32 + actualCol] = ch;
+      }
+    } else if (a <= 0x1F) {
+      // Control codes — set skip count for parameter bytes
+      // AT (0x16) and TAB (0x17) take 2 parameter bytes
+      // INK (0x10), PAPER (0x11), FLASH (0x12), BRIGHT (0x13),
+      // INVERSE (0x14), OVER (0x15) take 1 parameter byte
+      if (a === 0x16 || a === 0x17) {
+        this.screenSkipCount = 2;
+      } else if (a >= 0x10 && a <= 0x15) {
+        this.screenSkipCount = 1;
+      }
+    }
+  }
+
+  getScreenText(): string {
+    const lines: string[] = [];
+    for (let row = 0; row < 24; row++) {
+      const offset = row * 32;
+      let line = '';
+      for (let col = 0; col < 32; col++) {
+        line += this.screenGrid[offset + col];
+      }
+      lines.push(line.trimEnd());
+    }
+    return lines.join('\n');
+  }
+
+  clearScreenGrid(): void {
+    this.screenGrid.fill(' ');
+    this.screenSkipCount = 0;
   }
 
   private setStatus(msg: string): void {

@@ -25,6 +25,8 @@ const FRAG_DISPLAY = `
   uniform float u_curvature;   // 0 = flat, up to 0.15
   uniform float u_scanlines;   // 0 = off, 1 = full gap
   uniform int   u_dotmask;     // 0=none, 1=shadow mask, 2=trinitron
+  uniform float u_brightness;  // -1 to 1, default 0
+  uniform float u_contrast;    // 0 to 2, default 1
 
   vec2 barrel(vec2 uv, float k) {
     vec2 c = uv - 0.5;
@@ -84,6 +86,8 @@ const FRAG_DISPLAY = `
 
     // -- Dot mask --
     float dotmaskFactor = 0.0;
+    // Lift black when mask active (CRT phosphors always glow faintly)
+    if (u_dotmask > 0) col = max(col, vec3(0.03));
     if (u_dotmask == 1) {
       // Shadow mask: staggered RGB triads
       float row = floor(gl_FragCoord.y);
@@ -104,6 +108,46 @@ const FRAG_DISPLAY = `
       mask.b += 0.18 * step(1.5, stripe);
       col *= mask;
       dotmaskFactor = 0.18;
+    } else if (u_dotmask == 3) {
+      // Amstrad CTM: coarse 4px-pitch slot mask with visible black gaps
+      float px = floor(gl_FragCoord.x);
+      float py = floor(gl_FragCoord.y);
+      float cellX = mod(px, 4.0);  // R, G, B, black
+      vec3 mask = vec3(0.55);
+      mask.r += 0.45 * step(cellX, 0.5);
+      mask.g += 0.45 * step(0.5, cellX) * step(cellX, 1.5);
+      mask.b += 0.45 * step(1.5, cellX) * step(cellX, 2.5);
+      // Horizontal gap every 3rd row
+      mask *= 1.0 - step(2.5, mod(py, 3.0)) * 0.4;
+      col *= mask;
+      dotmaskFactor = 0.45;
+    } else if (u_dotmask == 4) {
+      // Cheap TV: very coarse 6px-pitch, doubled phosphors, heavy grid
+      float px = floor(gl_FragCoord.x);
+      float py = floor(gl_FragCoord.y);
+      float cellX = mod(px, 6.0);  // RR, GG, BB (2px each)
+      vec3 mask = vec3(0.4);
+      mask.r += 0.6 * step(cellX, 1.5);
+      mask.g += 0.6 * step(1.5, cellX) * step(cellX, 3.5);
+      mask.b += 0.6 * step(3.5, cellX);
+      // Thick horizontal gap: every 4th row
+      mask *= 1.0 - step(3.5, mod(py, 4.0)) * 0.5;
+      col *= mask;
+      dotmaskFactor = 0.6;
+    } else if (u_dotmask == 5) {
+      // Microvitec CUB: medium dot-triad, staggered rows, visible but clean
+      float px = floor(gl_FragCoord.x);
+      float py = floor(gl_FragCoord.y);
+      float row3 = mod(py, 3.0);
+      // Stagger triads: shift by 2px on row group 1, 4px on row group 2
+      float offset = floor(row3) * 2.0;
+      float cellX = mod(px + offset, 5.0);  // R, G, B, gap, gap
+      vec3 mask = vec3(0.5);
+      mask.r += 0.5 * step(cellX, 0.5);
+      mask.g += 0.5 * step(0.5, cellX) * step(cellX, 1.5);
+      mask.b += 0.5 * step(1.5, cellX) * step(cellX, 2.5);
+      col *= mask;
+      dotmaskFactor = 0.5;
     }
 
     // -- Brightness compensation --
@@ -116,6 +160,9 @@ const FRAG_DISPLAY = `
       vec2 vig = uv - 0.5;
       col *= 1.0 - dot(vig, vig) * u_curvature * 3.0;
     }
+
+    // -- Brightness / Contrast --
+    col = (col - 0.5) * u_contrast + 0.5 + u_brightness;
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
@@ -138,6 +185,8 @@ export class Display {
   private curvature = 0;
   private scanlines = 0;
   private dotmask = 0;
+  private brightness = 0;
+  private contrast = 1;
 
   // Cached uniform locations
   private uResolution: WebGLUniformLocation | null = null;
@@ -146,6 +195,8 @@ export class Display {
   private uCurvature: WebGLUniformLocation | null = null;
   private uScanlines: WebGLUniformLocation | null = null;
   private uDotmask: WebGLUniformLocation | null = null;
+  private uBrightness: WebGLUniformLocation | null = null;
+  private uContrast: WebGLUniformLocation | null = null;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.canvas = canvas;
@@ -180,6 +231,8 @@ export class Display {
     this.uCurvature = gl.getUniformLocation(this.program, 'u_curvature');
     this.uScanlines = gl.getUniformLocation(this.program, 'u_scanlines');
     this.uDotmask = gl.getUniformLocation(this.program, 'u_dotmask');
+    this.uBrightness = gl.getUniformLocation(this.program, 'u_brightness');
+    this.uContrast = gl.getUniformLocation(this.program, 'u_contrast');
 
     // Create texture with nearest-neighbor filtering
     this.texture = gl.createTexture()!;
@@ -249,6 +302,8 @@ export class Display {
     gl.uniform1f(this.uCurvature, this.curvature);
     gl.uniform1f(this.uScanlines, this.scanlines);
     gl.uniform1i(this.uDotmask, this.dotmask);
+    gl.uniform1f(this.uBrightness, this.brightness);
+    gl.uniform1f(this.uContrast, this.contrast);
 
     this.glDirty = false;
   }
@@ -283,8 +338,18 @@ export class Display {
     this.glDirty = true;
   }
 
-  setDotmask(v: 0 | 1 | 2): void {
+  setDotmask(v: number): void {
     this.dotmask = v;
+    this.glDirty = true;
+  }
+
+  setBrightness(v: number): void {
+    this.brightness = Math.max(-1, Math.min(1, v));
+    this.glDirty = true;
+  }
+
+  setContrast(v: number): void {
+    this.contrast = Math.max(0, Math.min(2, v));
     this.glDirty = true;
   }
 

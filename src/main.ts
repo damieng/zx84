@@ -134,12 +134,17 @@ const statusEl = document.getElementById('status') as HTMLDivElement;
 import buildTime from 'virtual:buildtime';
 document.querySelector('#toolbar h1')!.textContent = buildTime;
 const stuckBtn = document.getElementById('stuck-btn') as HTMLButtonElement;
+const transcribeBtn = document.getElementById('transcribe-btn') as HTMLButtonElement;
 const diagCopy = document.getElementById('diag-copy') as HTMLButtonElement;
 const diagOutput = document.getElementById('diag-output') as HTMLTextAreaElement;
 
 const scaleSelect = document.getElementById('scale') as HTMLSelectElement;
 const volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
 const volumeValue = document.getElementById('volume-value') as HTMLSpanElement;
+const brightnessSlider = document.getElementById('brightness-slider') as HTMLInputElement;
+const brightnessValue = document.getElementById('brightness-value') as HTMLSpanElement;
+const contrastSlider = document.getElementById('contrast-slider') as HTMLInputElement;
+const contrastValue = document.getElementById('contrast-value') as HTMLSpanElement;
 const smoothingSlider = document.getElementById('smoothing-slider') as HTMLInputElement;
 const smoothingValue = document.getElementById('smoothing-value') as HTMLSpanElement;
 const curvatureSlider = document.getElementById('curvature-slider') as HTMLInputElement;
@@ -152,7 +157,8 @@ const fontSelect = document.getElementById('font-select') as HTMLSelectElement;
 const fontAddBtn = document.getElementById('font-add-btn') as HTMLButtonElement;
 const fontInput = document.getElementById('font-input') as HTMLInputElement;
 const fontPreview = document.getElementById('font-preview') as HTMLCanvasElement;
-const fontPreviewCtx = fontPreview.getContext('2d')!;
+const romFontPreview = document.getElementById('rom-font-preview') as HTMLCanvasElement;
+const clockSpeedEl = document.getElementById('clock-speed') as HTMLSpanElement;
 
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
@@ -181,9 +187,31 @@ function setRomStatus(msg: string): void {
   romStatus.style.display = msg ? '' : 'none';
 }
 
+let speedLastTime = 0;
+let speedLastTStates = 0;
+let speedFrameCount = 0;
+
+function updateClockSpeed(): void {
+  if (!spectrum) return;
+  speedFrameCount++;
+  if (speedFrameCount < 50) return;
+  speedFrameCount = 0;
+  const now = performance.now();
+  const elapsed = (now - speedLastTime) / 1000;
+  const tStates = spectrum.cpu.tStates - speedLastTStates;
+  speedLastTime = now;
+  speedLastTStates = spectrum.cpu.tStates;
+  if (elapsed > 0) {
+    const mhz = (tStates / elapsed) / 1_000_000;
+    clockSpeedEl.textContent = `${mhz.toFixed(2)} MHz`;
+  }
+}
+
 function updateActivityLEDs(): void {
   if (!spectrum) return;
   tickAutoType();
+  renderFontPreview();
+  updateClockSpeed();
   const a = spectrum.activity;
   ledKbd.classList.toggle('on', a.ulaReads > 0);
   ledKemp.classList.toggle('on', a.kempstonReads > 0);
@@ -436,10 +464,12 @@ function applyDisplaySettings(): void {
   if (!spectrum) return;
   spectrum.setBorderSize(Number(borderSizeSelect.value) as 0 | 1 | 2);
   spectrum.display.setScale(Number(scaleSelect.value));
+  spectrum.display.setBrightness(Number(brightnessSlider.value) / 50);
+  spectrum.display.setContrast(Number(contrastSlider.value) / 50);
   spectrum.display.setSmoothing(Number(smoothingSlider.value) / 100);
   spectrum.display.setCurvature(Number(curvatureSlider.value) / 100 * 0.15);
   spectrum.display.setScanlines(Number(scanlinesSlider.value) / 100);
-  spectrum.display.setDotmask(Number(dotmaskSelect.value) as 0 | 1 | 2);
+  spectrum.display.setDotmask(Number(dotmaskSelect.value) as number);
   spectrum['audio'].setVolume(Number(volumeSlider.value) / 100);
 }
 
@@ -452,6 +482,10 @@ function createMachine(): void {
   spectrum.onStatus = setStatus;
   spectrum.onFrame = updateActivityLEDs;
   applyDisplaySettings();
+  speedLastTime = performance.now();
+  speedLastTStates = 0;
+  speedFrameCount = 0;
+  clockSpeedEl.textContent = '';
 
   if (romData) {
     spectrum.loadROM(romData);
@@ -460,6 +494,7 @@ function createMachine(): void {
   }
 
   buildTapeBlockList(); // hides panel — new machine has no tape
+  renderFontPreview();
   unpause();
 }
 
@@ -529,19 +564,18 @@ function renderRegs(cpu: Z80): string {
     flagHtml('C', (f & Z80.FLAG_C) !== 0),
   ].join(' ');
 
+  const iff = cpu.iff1 ? 'EI' : 'DI';
+  const halt = cpu.halted ? ' HALT' : '';
+
   const n = '<span class="reg-name">';
   const e = '</span>';
   return [
-    `${n}AF${e}  ${hex16(cpu.af)}    ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}`,
-    `${n}BC${e}  ${hex16(cpu.bc)}    ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}`,
-    `${n}DE${e}  ${hex16(cpu.de)}    ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}`,
-    `${n}HL${e}  ${hex16(cpu.hl)}    ${n}HL'${e} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
-    `${n}IX${e}  ${hex16(cpu.ix)}    ${n}IY${e}  ${hex16(cpu.iy)}`,
-    `${n}SP${e}  ${hex16(cpu.sp)}    ${n}PC${e}  ${hex16(cpu.pc)}`,
-    `${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}    ${n}IM${e}  ${cpu.im}`,
-    ``,
-    `${n}Flags${e} ${flags}`,
-    `${n}IFF${e}   ${cpu.iff1 ? 'EI' : 'DI'}${cpu.halted ? '  HALT' : ''}`,
+    `${n}AF${e}  ${hex16(cpu.af)}  ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}  ${flags}`,
+    `${n}BC${e}  ${hex16(cpu.bc)}  ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}  ${iff} ${n}IM${e}${cpu.im}${halt}`,
+    `${n}DE${e}  ${hex16(cpu.de)}  ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}`,
+    `${n}HL${e}  ${hex16(cpu.hl)}  ${n}HL'${e} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+    `${n}IX${e}  ${hex16(cpu.ix)}  ${n}IY${e}  ${hex16(cpu.iy)}  ${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
+    `${n}SP${e}  ${hex16(cpu.sp)}  ${n}PC${e}  ${hex16(cpu.pc)}`,
   ].join('\n');
 }
 
@@ -552,8 +586,7 @@ function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
   return [
     `${n}ROM${e}   ${mem.currentROM}  ${mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)'}`,
     `${n}Bank${e}  ${mem.currentBank}  ${n}at${e} C000-FFFF`,
-    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}`,
-    `${n}7FFD${e}  ${hex8(mem.port7FFD)}`,
+    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}  ${n}7FFD${e} ${hex8(mem.port7FFD)}`,
   ].join('\n');
 }
 
@@ -639,8 +672,22 @@ scanlinesSlider.addEventListener('input', () => {
 
 dotmaskSelect.addEventListener('change', () => {
   const v = Number(dotmaskSelect.value);
-  if (spectrum) spectrum.display.setDotmask(v as 0 | 1 | 2);
+  if (spectrum) spectrum.display.setDotmask(v as number);
   try { localStorage.setItem('ngspecz-dotmask', String(v)); } catch { /* */ }
+});
+
+brightnessSlider.addEventListener('input', () => {
+  const v = Number(brightnessSlider.value);
+  brightnessValue.textContent = String(v);
+  if (spectrum) spectrum.display.setBrightness(v / 50);
+  try { localStorage.setItem('ngspecz-brightness', String(v)); } catch { /* */ }
+});
+
+contrastSlider.addEventListener('input', () => {
+  const v = Number(contrastSlider.value);
+  contrastValue.textContent = String(v);
+  if (spectrum) spectrum.display.setContrast(v / 50);
+  try { localStorage.setItem('ngspecz-contrast', String(v)); } catch { /* */ }
 });
 
 borderSizeSelect.addEventListener('change', () => {
@@ -676,52 +723,84 @@ function populateFontSelect(): void {
   fontSelect.value = saved;
 }
 
-function renderFontPreview(): void {
-  const name = fontSelect.value;
-  if (!name) {
-    fontPreview.style.display = 'none';
-    return;
-  }
-  const store = loadFontStore();
-  const b64 = store[name];
-  if (!b64) { fontPreview.style.display = 'none'; return; }
-
-  const binary = atob(b64);
-  const font = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) font[i] = binary.charCodeAt(i);
-
-  const text = 'Flexible';
+function renderTextToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array, text: string): void {
   const scale = 2;
-  fontPreview.width = text.length * 8 * scale;
-  fontPreview.height = 8 * scale;
-  fontPreviewCtx.fillStyle = '#000';
-  fontPreviewCtx.fillRect(0, 0, fontPreview.width, fontPreview.height);
-
-  const img = fontPreviewCtx.createImageData(text.length * 8, 8);
+  const w = text.length * 8 * scale;
+  const h = 8 * scale;
+  cvs.width = w;
+  cvs.height = h;
+  const ctx = cvs.getContext('2d')!;
+  const img = ctx.createImageData(w, h);
   const d = img.data;
+  const stride = w * 4;
+
   for (let ci = 0; ci < text.length; ci++) {
     const ch = text.charCodeAt(ci) - 32;
     if (ch < 0 || ch >= 96) continue;
-    const offset = ch * 8;
+    const off = ch * 8;
     for (let row = 0; row < 8; row++) {
-      const byte = font[offset + row];
+      const byte = fontData[off + row];
       for (let bit = 0; bit < 8; bit++) {
         if (byte & (0x80 >> bit)) {
-          const px = (row * text.length * 8 + ci * 8 + bit) * 4;
-          d[px] = 0xCD; d[px + 1] = 0xCD; d[px + 2] = 0xCD; d[px + 3] = 0xFF;
+          const x = (ci * 8 + bit) * scale;
+          const y = row * scale;
+          for (let sy = 0; sy < scale; sy++) {
+            for (let sx = 0; sx < scale; sx++) {
+              const px = (y + sy) * stride + (x + sx) * 4;
+              d[px] = 0xCD; d[px + 1] = 0xCD; d[px + 2] = 0xCD; d[px + 3] = 0xFF;
+            }
+          }
         }
       }
     }
   }
 
-  // Scale up with imageSmoothingEnabled = false
-  const tmp = document.createElement('canvas');
-  tmp.width = img.width;
-  tmp.height = img.height;
-  tmp.getContext('2d')!.putImageData(img, 0, 0);
-  fontPreviewCtx.imageSmoothingEnabled = false;
-  fontPreviewCtx.drawImage(tmp, 0, 0, fontPreview.width, fontPreview.height);
-  fontPreview.style.display = '';
+  ctx.putImageData(img, 0, 0);
+}
+
+let romFontCacheAddr = -1;
+let romFontCacheHash = -1;
+
+function fontDataHash(data: Uint8Array, offset: number, len: number): number {
+  let h = 0;
+  for (let i = 0; i < len; i++) h = (h * 31 + data[offset + i]) | 0;
+  return h;
+}
+
+function renderFontPreview(): void {
+  const name = fontSelect.value;
+
+  if (name) {
+    // Show replacement font preview
+    const store = loadFontStore();
+    const b64 = store[name];
+    if (!b64) { fontPreview.style.display = 'none'; romFontPreview.style.display = 'none'; return; }
+    const binary = atob(b64);
+    const font = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) font[i] = binary.charCodeAt(i);
+    renderTextToCanvas(fontPreview, font, 'Flexible');
+    fontPreview.style.display = 'block';
+    romFontPreview.style.display = 'none';
+    romFontCacheAddr = -1;
+    romFontCacheHash = -1;
+  } else {
+    // Show ROM font from CHARS sysvar (23606/0x5C36)
+    fontPreview.style.display = 'none';
+    if (!spectrum) { romFontPreview.style.display = 'none'; return; }
+    const mem = spectrum.memory.flat;
+    let charsAddr = mem[0x5C36] | (mem[0x5C37] << 8);
+    if (charsAddr === 0) charsAddr = 0x3C00; // ROM hasn't initialised CHARS yet
+    const fontStart = charsAddr + 256;
+    if (fontStart + 768 > 65536) { romFontPreview.style.display = 'none'; return; }
+
+    const hash = fontDataHash(mem, fontStart, 768);
+    if (fontStart === romFontCacheAddr && hash === romFontCacheHash) return;
+    romFontCacheAddr = fontStart;
+    romFontCacheHash = hash;
+
+    renderTextToCanvas(romFontPreview, mem.subarray(fontStart, fontStart + 768), 'Flexible');
+    romFontPreview.style.display = 'block';
+  }
 }
 
 fontAddBtn.addEventListener('click', () => fontInput.click());
@@ -1007,6 +1086,7 @@ resetBtn.addEventListener('click', () => {
     tapePauseBtn.textContent = '\u23F8';
     tapePauseBtn.title = 'Pause';
     spectrum.reset();
+    spectrum.clearScreenGrid();
     if (romData) spectrum.start();
     buildTapeBlockList();
     unpause();
@@ -1120,17 +1200,24 @@ captureCursor.addEventListener('change', () => {
   try { localStorage.setItem('ngspecz-capture-cursor', captureCursor.checked ? '1' : '0'); } catch { /* */ }
 });
 
-// ── Stuck Loop diagnostics ─────────────────────────────────────────────────
+// ── Diagnostics ─────────────────────────────────────────────────────────────
 
 stuckBtn.addEventListener('click', () => {
   if (!spectrum) {
     diagOutput.value = 'No machine running.';
     return;
   }
-  // Pause emulation, run diagnostic, resume
   spectrum.stop();
   diagOutput.value = diagnoseStuckLoop(spectrum.cpu);
   spectrum.start();
+});
+
+transcribeBtn.addEventListener('click', () => {
+  if (!spectrum) {
+    diagOutput.value = 'No machine running.';
+    return;
+  }
+  diagOutput.value = spectrum.getScreenText();
 });
 
 diagCopy.addEventListener('click', () => {
@@ -1209,6 +1296,14 @@ async function init(): Promise<void> {
   const savedScanlines = getSaved('scanlines', '0');
   scanlinesSlider.value = savedScanlines;
   scanlinesValue.textContent = savedScanlines;
+
+  const savedBrightness = getSaved('brightness', '0');
+  brightnessSlider.value = savedBrightness;
+  brightnessValue.textContent = savedBrightness;
+
+  const savedContrast = getSaved('contrast', '50');
+  contrastSlider.value = savedContrast;
+  contrastValue.textContent = savedContrast;
 
   const savedDotmask = getSaved('dotmask', '0');
   dotmaskSelect.value = savedDotmask;
