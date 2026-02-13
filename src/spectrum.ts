@@ -90,6 +90,7 @@ export class Spectrum {
   kempstonState = 0;
 
   private running = false;
+  private starting = false;
   private rafId = 0;
   private tStatesPerSample: number;
 
@@ -235,10 +236,16 @@ export class Spectrum {
     this.setStatus('Reset');
   }
 
-  start(): void {
-    if (this.running) return;
+  async start(): Promise<void> {
+    if (this.running || this.starting) return;
+    this.starting = true;
 
-    this.audio.init();
+    await this.audio.init();
+
+    // Check if stop() was called while we were awaiting
+    if (!this.starting) return;
+    this.starting = false;
+
     this.tStatesPerSample = Z80_CLOCK / this.audio.sampleRate;
     // DC-blocking filter: ~20Hz cutoff, same as AY core
     this.beeperDCAlpha = 1 - (2 * Math.PI * 20 / this.audio.sampleRate);
@@ -249,6 +256,7 @@ export class Spectrum {
   }
 
   stop(): void {
+    this.starting = false; // cancel pending async start
     this.running = false;
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);
