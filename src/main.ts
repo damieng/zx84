@@ -3,7 +3,7 @@
  * Entry point: DOM wiring, file I/O, ROM persistence, machine lifecycle.
  */
 
-import { Spectrum, type SpectrumModel, is128kClass } from './spectrum.ts';
+import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from './spectrum.ts';
 import { Z80 } from './cores/z80.ts';
 import { loadSNA, saveSNA } from './formats/sna.ts';
 import { loadZ80 } from './formats/z80format.ts';
@@ -58,19 +58,26 @@ interface ROMEntry {
 
 const romCache: Record<string, ROMEntry> = {};
 
+/** +2A and +3 share the same 64KB ROM, so alias them to one key. */
+function romKey(model: SpectrumModel): string {
+  return model === '+3' ? '+2a' : model;
+}
+
 async function persistROM(model: SpectrumModel, data: Uint8Array, label: string): Promise<void> {
-  romCache[model] = { data, label };
-  await dbSave(`rom-${model}`, data);
-  try { localStorage.setItem(`ngspecz-rom-label-${model}`, label); } catch { /* */ }
+  const key = romKey(model);
+  romCache[key] = { data, label };
+  await dbSave(`rom-${key}`, data);
+  try { localStorage.setItem(`ngspecz-rom-label-${key}`, label); } catch { /* */ }
 }
 
 async function restoreROM(model: SpectrumModel): Promise<ROMEntry | null> {
-  if (romCache[model]) return romCache[model];
-  const data = await dbLoad(`rom-${model}`);
+  const key = romKey(model);
+  if (romCache[key]) return romCache[key];
+  const data = await dbLoad(`rom-${key}`);
   if (!data) return null;
-  const label = localStorage.getItem(`ngspecz-rom-label-${model}`) || 'saved ROM';
-  romCache[model] = { data, label };
-  return romCache[model];
+  const label = localStorage.getItem(`ngspecz-rom-label-${key}`) || 'saved ROM';
+  romCache[key] = { data, label };
+  return romCache[key];
 }
 
 function saveModel(model: SpectrumModel): void {
@@ -80,7 +87,7 @@ function saveModel(model: SpectrumModel): void {
 function loadSavedModel(): SpectrumModel | null {
   try {
     const val = localStorage.getItem('ngspecz-model');
-    if (val === '48k' || val === '128k' || val === '+2') return val as SpectrumModel;
+    if (val === '48k' || val === '128k' || val === '+2' || val === '+2a' || val === '+3') return val as SpectrumModel;
   } catch { /* */ }
   return null;
 }
@@ -583,11 +590,34 @@ function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
   const n = '<span class="reg-name">';
   const e = '</span>';
   const scr = (mem.port7FFD & 0x08) ? 7 : 5;
-  return [
-    `${n}ROM${e}   ${mem.currentROM}  ${mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)'}`,
+  const plus2a = isPlus2AClass(currentModel);
+
+  let romLabel: string;
+  if (plus2a) {
+    romLabel = `(page ${mem.currentROM})`;
+  } else {
+    romLabel = mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)';
+  }
+
+  const lines = [
+    `${n}ROM${e}   ${mem.currentROM}  ${romLabel}`,
     `${n}Bank${e}  ${mem.currentBank}  ${n}at${e} C000-FFFF`,
     `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}  ${n}7FFD${e} ${hex8(mem.port7FFD)}`,
-  ].join('\n');
+  ];
+
+  if (plus2a) {
+    let extra = `${n}1FFD${e} ${hex8(mem.port1FFD)}`;
+    if (mem.specialPaging) {
+      const mode = (mem.port1FFD >> 1) & 3;
+      extra += `  ${n}Special${e} mode ${mode}`;
+    }
+    if (isPlus3(currentModel) && spectrum) {
+      extra += `  ${n}Motor${e} ${spectrum.fdc.motorOn ? 'On' : 'Off'}`;
+    }
+    lines.push(extra);
+  }
+
+  return lines.join('\n');
 }
 
 function updateRegsDisplay(): void {
@@ -845,7 +875,9 @@ async function applyROM(data: Uint8Array, fileLabel: string): Promise<void> {
 
   // Detect model from ROM size
   let detectedModel: SpectrumModel;
-  if (data.length >= 32768) {
+  if (data.length >= 65536) {
+    detectedModel = isPlus2AClass(currentModel) ? currentModel : '+2a';
+  } else if (data.length >= 32768) {
     detectedModel = is128kClass(currentModel) ? currentModel : '128k';
   } else if (data.length >= 16384) {
     detectedModel = '48k';
@@ -876,11 +908,15 @@ romInput.addEventListener('change', async () => {
     // Single 16KB ROM → 48K
   } else if (sorted.length === 1 && sizes[0] === 32768) {
     // Single 32KB ROM → 128K
+  } else if (sorted.length === 1 && sizes[0] === 65536) {
+    // Single 64KB ROM → +2A
   } else if (sorted.length === 2 && sizes[0] === 16384 && sizes[1] === 16384) {
     // Two 16KB ROMs → 128K
+  } else if (sorted.length === 4 && sizes.every(s => s === 16384)) {
+    // Four 16KB ROMs → +2A
   } else {
     const sizeList = sizes.map(s => `${s}b`).join(', ');
-    setStatus(`Invalid ROM: expected 1×16KB, 1×32KB, or 2×16KB — got ${sorted.length} file(s) (${sizeList})`);
+    setStatus(`Invalid ROM: expected 1×16KB, 1×32KB, 1×64KB, 2×16KB, or 4×16KB — got ${sorted.length} file(s) (${sizeList})`);
     romInput.value = '';
     return;
   }
@@ -914,9 +950,11 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       if (data.length > 49179 && !is128kClass(currentModel)) {
         const entry128 = await restoreROM('128k');
         const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entry = entry128 || entryPlus2;
+        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
+        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
+        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
         if (entry) {
-          currentModel = entry128 ? '128k' : '+2';
+          currentModel = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
           modelSelect.value = currentModel;
           romData = entry.data;
           setRomStatus('');
@@ -942,9 +980,11 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       if (result.is128K && !is128kClass(currentModel)) {
         const entry128 = await restoreROM('128k');
         const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entry = entry128 || entryPlus2;
+        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
+        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
+        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
         if (entry) {
-          currentModel = entry128 ? '128k' : '+2';
+          currentModel = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
           modelSelect.value = currentModel;
           romData = entry.data;
           setRomStatus('');
@@ -1208,7 +1248,7 @@ stuckBtn.addEventListener('click', () => {
     return;
   }
   spectrum.stop();
-  diagOutput.value = diagnoseStuckLoop(spectrum.cpu);
+  diagOutput.value = diagnoseStuckLoop(spectrum.cpu, spectrum.memory);
   spectrum.start();
 });
 
@@ -1345,6 +1385,19 @@ init();
 // ── Vite HMR cleanup ─────────────────────────────────────────────────────
 
 if (import.meta.hot) {
+  import.meta.hot.on('hmr-freeze', () => {
+    const h1 = document.querySelector('#toolbar h1');
+    if (h1 && !h1.querySelector('.hmr-spinner')) {
+      const spinner = document.createElement('span');
+      spinner.className = 'hmr-spinner';
+      h1.appendChild(spinner);
+    }
+  });
+
+  import.meta.hot.on('hmr-thaw', () => {
+    document.querySelector('.hmr-spinner')?.remove();
+  });
+
   import.meta.hot.dispose(() => {
     if (spectrum) {
       spectrum.destroy();

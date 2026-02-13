@@ -12,6 +12,9 @@ dist/
 Thumbs.db
 desktop.ini
 
+# HMR freeze marker (Claude Code changeset in progress)
+.hmr-freeze
+
 # Logs
 *.log
 npm-debug.log*

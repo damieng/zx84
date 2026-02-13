@@ -17,6 +17,7 @@ import { SpectrumKeyboard } from './keyboard.ts';
 import { Display } from './display.ts';
 import { Audio } from './audio.ts';
 import { TapeDeck } from './formats/tap.ts';
+import { UPD765A } from './cores/upd765a.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz
 const AY_CLOCK = 1773400;        // ~1.77 MHz
@@ -55,10 +56,16 @@ const TARGET_BUFFER_FRAMES = 3;
 /** Wall-clock frame period: 50 Hz = 20ms */
 const FRAME_PERIOD = 1000 / 50;
 
-export type SpectrumModel = '48k' | '128k' | '+2';
+export type SpectrumModel = '48k' | '128k' | '+2' | '+2a' | '+3';
 
-/** Returns true for any 128K-class model (128K, +2, future +2A/+3). */
+/** Returns true for any 128K-class model (128K, +2, +2A, +3). */
 export function is128kClass(m: SpectrumModel): boolean { return m !== '48k'; }
+
+/** Returns true for +2A/+3 class (Amstrad gate array with 0x1FFD port, 4 ROM pages). */
+export function isPlus2AClass(m: SpectrumModel): boolean { return m === '+2a' || m === '+3'; }
+
+/** Returns true for +3 (has uPD765A FDC). */
+export function isPlus3(m: SpectrumModel): boolean { return m === '+3'; }
 
 export interface IOActivity {
   /** Number of ULA port reads this frame (keyboard / tape) */
@@ -115,6 +122,7 @@ export class Spectrum {
   display: Display;
   audio: Audio;
   tape: TapeDeck;
+  fdc: UPD765A;
 
   /** Per-frame I/O activity counters */
   activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0 };
@@ -165,7 +173,7 @@ export class Spectrum {
   constructor(model: SpectrumModel, canvas: HTMLCanvasElement) {
     this.model = model;
 
-    this.memory = new SpectrumMemory(is128kClass(model));
+    this.memory = new SpectrumMemory(model);
     this.cpu = new Z80(this.memory.flat);
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
@@ -173,6 +181,7 @@ export class Spectrum {
     this.display = new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT);
     this.audio = new Audio();
     this.tape = new TapeDeck();
+    this.fdc = new UPD765A();
     this.timing = is128kClass(model) ? TIMING_128K : TIMING_48K;
 
     this.tStatesPerSample = Z80_CLOCK / 44100;
@@ -186,11 +195,11 @@ export class Spectrum {
    * On real hardware, ROM is read-only — writes are ignored, not buffered.
    */
   private installROMProtection(): void {
-    const mem = this.cpu.memory;
+    const memory = this.memory;
     this.cpu.write8 = (addr: number, val: number): void => {
       addr &= 0xFFFF;
-      if (addr < 0x4000) return; // ROM — silently discard
-      mem[addr] = val & 0xFF;
+      if (addr < 0x4000 && !memory.specialPaging) return; // ROM — silently discard
+      this.cpu.memory[addr] = val & 0xFF;
     };
   }
 
@@ -206,10 +215,29 @@ export class Spectrum {
         this.ula.writePort(val);
       }
 
-      // 128K bank switching: port 0x7FFD (A15=0, A1=0)
-      if ((port & 0x8002) === 0 && is128kClass(this.model)) {
-        this.memory.bankSwitch(val);
-        this.cpu.memory = this.memory.flat;
+      // 128K bank switching: port 0x7FFD
+      if (is128kClass(this.model)) {
+        // +2A: strict decode (port & 0xC002) === 0x4000 to avoid 0x1FFD collision
+        // 128K/+2: loose decode (port & 0x8002) === 0
+        const match7FFD = isPlus2AClass(this.model)
+          ? (port & 0xC002) === 0x4000
+          : (port & 0x8002) === 0;
+        if (match7FFD) {
+          this.memory.bankSwitch(val);
+          this.cpu.memory = this.memory.flat;
+        }
+
+        // +2A: port 0x1FFD (port & 0xF002) === 0x1000
+        if (isPlus2AClass(this.model) && (port & 0xF002) === 0x1000) {
+          this.memory.bankSwitch1FFD(val);
+          if (isPlus3(this.model)) this.fdc.motorOn = (val & 0x08) !== 0;
+          this.cpu.memory = this.memory.flat;
+        }
+
+        // +3 FDC data write: port 0x3FFD (A13=1, A12=1, A1=0)
+        if (isPlus3(this.model) && (port & 0x3002) === 0x3000) {
+          this.fdc.writeData(val);
+        }
       }
 
       // AY ports — 128K only (48K has no AY chip)
@@ -237,6 +265,13 @@ export class Spectrum {
       // AY register read: port 0xFFFD — 128K only
       if (is128kClass(this.model) && (port & 0xC002) === 0xC000) {
         return this.ay.readRegister(this.ay.selectedReg);
+      }
+
+      // FDC ports (A13=1, A12=0/1, A1=0): 0x2FFD status, 0x3FFD data
+      // +3: routed to uPD765A. +2A: chip absent, bus returns 0xFF.
+      if (isPlus2AClass(this.model)) {
+        if ((port & 0x3002) === 0x2000) return isPlus3(this.model) ? this.fdc.readStatus() : 0xFF;
+        if ((port & 0x3002) === 0x3000) return isPlus3(this.model) ? this.fdc.readData() : 0xFF;
       }
 
       // Kempston joystick: bits 5-7 of low byte all zero
@@ -269,6 +304,7 @@ export class Spectrum {
     this.ula.reset();
     this.keyboard.reset();
     this.audio.reset();
+    this.fdc.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
     this.kempstonState = 0;

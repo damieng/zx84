@@ -3,8 +3,20 @@
  *
  * Flat 64KB array is shared with the Z80 core.
  * 128K model: 8x16KB RAM banks + 2x16KB ROM pages.
+ * +2A model: 8x16KB RAM banks + 4x16KB ROM pages + port 0x1FFD special paging.
  * Bank switching via port 0x7FFD swaps data in/out of the flat array.
  */
+
+import type { SpectrumModel } from './spectrum.ts';
+import { isPlus2AClass } from './spectrum.ts';
+
+/** Special paging all-RAM bank configurations (indexed by mode 0-3). */
+const SPECIAL_MODES: ReadonlyArray<readonly [number, number, number, number]> = [
+  [0, 1, 2, 3],
+  [4, 5, 6, 7],
+  [4, 5, 6, 3],
+  [4, 7, 6, 3],
+];
 
 export class SpectrumMemory {
   /** Flat 64KB address space shared with Z80 */
@@ -13,11 +25,14 @@ export class SpectrumMemory {
   /** 8 x 16KB RAM banks (128K total) */
   ramBanks: Uint8Array[];
 
-  /** ROM pages: [0] = 128K editor ROM, [1] = 48K BASIC ROM */
+  /** ROM pages: 2 for 48K/128K/+2, 4 for +2A */
   romPages: Uint8Array[];
 
   /** Current port 0x7FFD value */
   port7FFD = 0;
+
+  /** Current port 0x1FFD value (+2A only) */
+  port1FFD = 0;
 
   /** Whether paging is locked (bit 5 of 0x7FFD) */
   pagingLocked = false;
@@ -28,11 +43,14 @@ export class SpectrumMemory {
   /** Which ROM page is active */
   currentROM = 0;
 
-  /** True = 128K mode, false = 48K mode */
+  /** True = 128K-class mode, false = 48K mode */
   is128K: boolean;
 
-  constructor(is128K: boolean) {
-    this.is128K = is128K;
+  /** True when +2A special all-RAM paging is active */
+  specialPaging = false;
+
+  constructor(model: SpectrumModel) {
+    this.is128K = model !== '48k';
     this.flat = new Uint8Array(65536);
 
     // Create 8 RAM banks
@@ -41,25 +59,36 @@ export class SpectrumMemory {
       this.ramBanks.push(new Uint8Array(16384));
     }
 
-    // Create 2 ROM pages
-    this.romPages = [new Uint8Array(16384), new Uint8Array(16384)];
+    // Create ROM pages: 4 for +2A, 2 otherwise
+    const romCount = isPlus2AClass(model) ? 4 : 2;
+    this.romPages = [];
+    for (let i = 0; i < romCount; i++) {
+      this.romPages.push(new Uint8Array(16384));
+    }
   }
 
   reset(): void {
     this.flat.fill(0);
     for (const bank of this.ramBanks) bank.fill(0);
     this.port7FFD = 0;
+    this.port1FFD = 0;
     this.pagingLocked = false;
     this.currentBank = 0;
     this.currentROM = 0;
+    this.specialPaging = false;
     this.applyBanking();
   }
 
   /**
-   * Load ROM data. 16KB = 48K ROM only. 32KB = both pages.
+   * Load ROM data. 16KB = 48K ROM only. 32KB = 2 pages. 64KB = 4 pages (+2A).
    */
   loadROM(data: Uint8Array): void {
-    if (data.length >= 32768 && this.is128K) {
+    if (data.length >= 65536 && this.romPages.length === 4) {
+      // 64KB ROM: 4 × 16KB pages for +2A
+      for (let i = 0; i < 4; i++) {
+        this.romPages[i].set(data.subarray(i * 16384, (i + 1) * 16384));
+      }
+    } else if (data.length >= 32768 && this.is128K) {
       // 32KB ROM: first 16KB = 128K editor (page 0), second 16KB = 48K BASIC (page 1)
       this.romPages[0].set(data.subarray(0, 16384));
       this.romPages[1].set(data.subarray(16384, 32768));
@@ -85,10 +114,36 @@ export class SpectrumMemory {
 
     this.port7FFD = val;
     this.currentBank = val & 0x07;
-    this.currentROM = (val >> 4) & 1;
+
+    // +2A with 4 ROM pages: combine bits from 0x7FFD and 0x1FFD
+    if (this.romPages.length === 4) {
+      this.currentROM = (((this.port1FFD >> 2) & 1) << 1) | ((val >> 4) & 1);
+    } else {
+      this.currentROM = (val >> 4) & 1;
+    }
 
     if (val & 0x20) {
       this.pagingLocked = true;
+    }
+
+    this.applyBanking();
+  }
+
+  /**
+   * Write to port 0x1FFD (+2A special paging port).
+   * Bit 0: special paging enable (1 = all-RAM mode)
+   * Bits 1-2: special paging mode (0-3)
+   * Bit 2: also contributes to ROM page select (high bit)
+   */
+  writePort1FFD(val: number): void {
+    if (!this.is128K || this.pagingLocked) return;
+
+    this.port1FFD = val;
+    this.specialPaging = (val & 1) !== 0;
+
+    // Recompute ROM page from combined ports
+    if (this.romPages.length === 4) {
+      this.currentROM = (((val >> 2) & 1) << 1) | ((this.port7FFD >> 4) & 1);
     }
 
     this.applyBanking();
@@ -99,9 +154,16 @@ export class SpectrumMemory {
    * Called after any bank switch.
    */
   applyBanking(): void {
-    // Save current contents of banked regions back to their banks
-    // (in case CPU wrote to them since last switch)
-    // We always keep bank 5 at 0x4000 and bank 2 at 0x8000
+    if (this.specialPaging) {
+      // +2A special all-RAM modes — no ROM mapped
+      const mode = (this.port1FFD >> 1) & 3;
+      const banks = SPECIAL_MODES[mode];
+      this.flat.set(this.ramBanks[banks[0]], 0x0000);
+      this.flat.set(this.ramBanks[banks[1]], 0x4000);
+      this.flat.set(this.ramBanks[banks[2]], 0x8000);
+      this.flat.set(this.ramBanks[banks[3]], 0xC000);
+      return;
+    }
 
     // Overlay ROM at 0x0000-0x3FFF
     const romPage = this.is128K ? this.romPages[this.currentROM] : this.romPages[1];
@@ -121,6 +183,17 @@ export class SpectrumMemory {
    * Save RAM regions back to their bank stores before a bank switch.
    */
   saveToRAMBanks(): void {
+    if (this.specialPaging) {
+      // In special mode, all 4 slots map to RAM banks
+      const mode = (this.port1FFD >> 1) & 3;
+      const banks = SPECIAL_MODES[mode];
+      this.ramBanks[banks[0]].set(this.flat.subarray(0x0000, 0x4000));
+      this.ramBanks[banks[1]].set(this.flat.subarray(0x4000, 0x8000));
+      this.ramBanks[banks[2]].set(this.flat.subarray(0x8000, 0xC000));
+      this.ramBanks[banks[3]].set(this.flat.subarray(0xC000, 0x10000));
+      return;
+    }
+
     // Bank 5 is always at 0x4000
     this.ramBanks[5].set(this.flat.subarray(0x4000, 0x8000));
     // Bank 2 is always at 0x8000
@@ -141,6 +214,16 @@ export class SpectrumMemory {
 
     // Apply new paging
     this.writePort7FFD(val);
+  }
+
+  /**
+   * Perform a guarded 0x1FFD bank switch (+2A special paging port).
+   */
+  bankSwitch1FFD(val: number): void {
+    if (!this.is128K || this.pagingLocked) return;
+
+    this.saveToRAMBanks();
+    this.writePort1FFD(val);
   }
 
   /**

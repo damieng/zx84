@@ -6,6 +6,7 @@
  */
 
 import { Z80 } from './cores/z80.ts';
+import type { SpectrumMemory } from './memory.ts';
 
 // ── Minimal Z80 disassembler (enough for loop analysis) ────────────────────
 
@@ -188,7 +189,7 @@ function detectLoop(pcTrace: number[]): LoopInfo | null {
 
 // ── Main diagnostic entry point ────────────────────────────────────────────
 
-export function diagnoseStuckLoop(cpu: Z80): string {
+export function diagnoseStuckLoop(cpu: Z80, memory?: SpectrumMemory): string {
   const lines: string[] = [];
 
   // Snapshot current state
@@ -211,6 +212,7 @@ export function diagnoseStuckLoop(cpu: Z80): string {
         lines.push('   The CPU will never wake up from HALT without interrupts.');
       }
       dumpRegisters(cpu, lines);
+      if (memory?.is128K) dumpBanks(memory, lines);
       // Restore
       cpu.pc = savedPC;
       cpu.tStates = savedT;
@@ -228,6 +230,7 @@ export function diagnoseStuckLoop(cpu: Z80): string {
     const uniquePCs = new Set(pcTrace);
     lines.push(`Visited ${uniquePCs.size} unique addresses`);
     dumpRegisters(cpu, lines);
+    if (memory?.is128K) dumpBanks(memory, lines);
     cpu.pc = savedPC;
     cpu.tStates = savedT;
     return lines.join('\n');
@@ -249,6 +252,9 @@ export function diagnoseStuckLoop(cpu: Z80): string {
   // Show registers
   lines.push('');
   dumpRegisters(cpu, lines);
+
+  // Show bank configuration for 128K-class models
+  if (memory?.is128K) dumpBanks(memory, lines);
 
   // Analyse exit conditions
   if (conditionals.length > 0) {
@@ -322,6 +328,17 @@ function dumpRegisters(cpu: Z80, lines: string[]): void {
 
   // Stack peek
   lines.push(`  Stack: ${hex16(cpu.sp)} -> ${hex8(cpu.memory[cpu.sp])} ${hex8(cpu.memory[(cpu.sp + 1) & 0xFFFF])} ${hex8(cpu.memory[(cpu.sp + 2) & 0xFFFF])} ${hex8(cpu.memory[(cpu.sp + 3) & 0xFFFF])}`);
+}
+
+function dumpBanks(mem: SpectrumMemory, lines: string[]): void {
+  lines.push('');
+  lines.push('--- Bank configuration ---');
+  const scr = (mem.port7FFD & 0x08) ? 7 : 5;
+  lines.push(`  ROM = ${mem.currentROM}  Bank = ${mem.currentBank}  Screen = ${scr}  Lock = ${mem.pagingLocked ? 'Yes' : 'No'}`);
+  lines.push(`  7FFD = ${hex8(mem.port7FFD)}`);
+  if (mem.port1FFD !== undefined) {
+    lines.push(`  1FFD = ${hex8(mem.port1FFD)}  Special = ${mem.specialPaging ? `Yes (mode ${(mem.port1FFD >> 1) & 3})` : 'No'}`);
+  }
 }
 
 function analyseCondition(c: DisResult, cpu: Z80): string {
