@@ -136,7 +136,15 @@ const diagCopy = document.getElementById('diag-copy') as HTMLButtonElement;
 const diagOutput = document.getElementById('diag-output') as HTMLTextAreaElement;
 
 const scaleSelect = document.getElementById('scale') as HTMLSelectElement;
-const crtToggle = document.getElementById('crt-toggle') as HTMLInputElement;
+const volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
+const volumeValue = document.getElementById('volume-value') as HTMLSpanElement;
+const smoothingSlider = document.getElementById('smoothing-slider') as HTMLInputElement;
+const smoothingValue = document.getElementById('smoothing-value') as HTMLSpanElement;
+const curvatureSlider = document.getElementById('curvature-slider') as HTMLInputElement;
+const curvatureValue = document.getElementById('curvature-value') as HTMLSpanElement;
+const scanlinesSlider = document.getElementById('scanlines-slider') as HTMLInputElement;
+const scanlinesValue = document.getElementById('scanlines-value') as HTMLSpanElement;
+const dotmaskSelect = document.getElementById('dotmask-select') as HTMLSelectElement;
 
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
@@ -407,20 +415,23 @@ function tickAutoType(): void {
 function getSavedScale(): number {
   try {
     const v = localStorage.getItem('ngspecz-scale');
-    if (v === '1' || v === '2' || v === '3') return Number(v);
+    if (v === '1' || v === '2' || v === '3' || v === '4') return Number(v);
   } catch { /* */ }
   return 2;
 }
 
-function getSavedCRT(): boolean {
-  try { return localStorage.getItem('ngspecz-crt') === '1'; } catch { return false; }
+function getSaved(key: string, fallback: string): string {
+  try { return localStorage.getItem(`ngspecz-${key}`) ?? fallback; } catch { return fallback; }
 }
 
 function applyDisplaySettings(): void {
   if (!spectrum) return;
-  const scale = Number(scaleSelect.value);
-  spectrum.display.setScale(scale);
-  spectrum.display.setCRT(crtToggle.checked);
+  spectrum.display.setScale(Number(scaleSelect.value));
+  spectrum.display.setSmoothing(Number(smoothingSlider.value) / 100);
+  spectrum.display.setCurvature(Number(curvatureSlider.value) / 100 * 0.15);
+  spectrum.display.setScanlines(Number(scanlinesSlider.value) / 100);
+  spectrum.display.setDotmask(Number(dotmaskSelect.value) as 0 | 1 | 2);
+  spectrum['audio'].setVolume(Number(volumeSlider.value) / 100);
 }
 
 function createMachine(): void {
@@ -581,7 +592,7 @@ modelSelect.addEventListener('change', async () => {
   modelSelect.blur(); // release focus so keys go to the emulator, not the dropdown
 });
 
-// ── Scale / CRT controls ────────────────────────────────────────────────────
+// ── Display / Sound controls ─────────────────────────────────────────────────
 
 scaleSelect.addEventListener('change', () => {
   const scale = Number(scaleSelect.value);
@@ -589,9 +600,38 @@ scaleSelect.addEventListener('change', () => {
   try { localStorage.setItem('ngspecz-scale', String(scale)); } catch { /* */ }
 });
 
-crtToggle.addEventListener('change', () => {
-  if (spectrum) spectrum.display.setCRT(crtToggle.checked);
-  try { localStorage.setItem('ngspecz-crt', crtToggle.checked ? '1' : '0'); } catch { /* */ }
+volumeSlider.addEventListener('input', () => {
+  const v = Number(volumeSlider.value);
+  volumeValue.textContent = String(v);
+  if (spectrum) spectrum['audio'].setVolume(v / 100);
+  try { localStorage.setItem('ngspecz-volume', String(v)); } catch { /* */ }
+});
+
+smoothingSlider.addEventListener('input', () => {
+  const v = Number(smoothingSlider.value);
+  smoothingValue.textContent = String(v);
+  if (spectrum) spectrum.display.setSmoothing(v / 100);
+  try { localStorage.setItem('ngspecz-smoothing', String(v)); } catch { /* */ }
+});
+
+curvatureSlider.addEventListener('input', () => {
+  const v = Number(curvatureSlider.value);
+  curvatureValue.textContent = String(v);
+  if (spectrum) spectrum.display.setCurvature(v / 100 * 0.15);
+  try { localStorage.setItem('ngspecz-curvature', String(v)); } catch { /* */ }
+});
+
+scanlinesSlider.addEventListener('input', () => {
+  const v = Number(scanlinesSlider.value);
+  scanlinesValue.textContent = String(v);
+  if (spectrum) spectrum.display.setScanlines(v / 100);
+  try { localStorage.setItem('ngspecz-scanlines', String(v)); } catch { /* */ }
+});
+
+dotmaskSelect.addEventListener('change', () => {
+  const v = Number(dotmaskSelect.value);
+  if (spectrum) spectrum.display.setDotmask(v as 0 | 1 | 2);
+  try { localStorage.setItem('ngspecz-dotmask', String(v)); } catch { /* */ }
 });
 
 // ── ROM file input ─────────────────────────────────────────────────────────
@@ -857,6 +897,7 @@ resetBtn.addEventListener('click', () => {
 
 const joyP1 = document.getElementById('joy-p1') as HTMLSelectElement;
 const joyP2 = document.getElementById('joy-p2') as HTMLSelectElement;
+const captureCursor = document.getElementById('capture-cursor') as HTMLInputElement;
 const joySelectors = [joyP1, joyP2];
 
 // Kempston bits: 0=right, 1=left, 2=down, 3=up, 4=fire
@@ -950,6 +991,10 @@ document.querySelectorAll('.joy-dpad').forEach(dpad => {
   });
 });
 
+captureCursor.addEventListener('change', () => {
+  try { localStorage.setItem('ngspecz-capture-cursor', captureCursor.checked ? '1' : '0'); } catch { /* */ }
+});
+
 // ── Stuck Loop diagnostics ─────────────────────────────────────────────────
 
 stuckBtn.addEventListener('click', () => {
@@ -971,9 +1016,22 @@ diagCopy.addEventListener('click', () => {
 
 // ── Keyboard ───────────────────────────────────────────────────────────────
 
+const HOST_KEY_TO_JOY: Record<string, string> = {
+  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+  AltRight: 'fire',
+};
+
 function onKeyDown(e: KeyboardEvent): void {
   if (!spectrum) return;
   cancelAutoType();
+
+  const joyDir = HOST_KEY_TO_JOY[e.code];
+  if (joyDir && captureCursor.checked && joyP1.value !== 'none') {
+    joyPressForType(joyDir, true, joyP1.value);
+    e.preventDefault();
+    return;
+  }
+
   if (spectrum.keyboard.handleKeyEvent(e.code, true)) {
     e.preventDefault();
   }
@@ -981,6 +1039,14 @@ function onKeyDown(e: KeyboardEvent): void {
 
 function onKeyUp(e: KeyboardEvent): void {
   if (!spectrum) return;
+
+  const joyDir = HOST_KEY_TO_JOY[e.code];
+  if (joyDir && captureCursor.checked && joyP1.value !== 'none') {
+    joyPressForType(joyDir, false, joyP1.value);
+    e.preventDefault();
+    return;
+  }
+
   if (spectrum.keyboard.handleKeyEvent(e.code, false)) {
     e.preventDefault();
   }
@@ -999,11 +1065,31 @@ document.addEventListener('click', onFirstClick, { once: true });
 // ── Restore saved state on startup ─────────────────────────────────────────
 
 async function init(): Promise<void> {
-  // Restore display settings into UI before any machine creation
+  // Restore display/sound settings into UI before any machine creation
   const savedScale = getSavedScale();
   scaleSelect.value = String(savedScale);
-  const savedCRT = getSavedCRT();
-  crtToggle.checked = savedCRT;
+
+  const savedVolume = getSaved('volume', '70');
+  volumeSlider.value = savedVolume;
+  volumeValue.textContent = savedVolume;
+
+  const savedSmoothing = getSaved('smoothing', '0');
+  smoothingSlider.value = savedSmoothing;
+  smoothingValue.textContent = savedSmoothing;
+
+  const savedCurvature = getSaved('curvature', '0');
+  curvatureSlider.value = savedCurvature;
+  curvatureValue.textContent = savedCurvature;
+
+  const savedScanlines = getSaved('scanlines', '0');
+  scanlinesSlider.value = savedScanlines;
+  scanlinesValue.textContent = savedScanlines;
+
+  const savedDotmask = getSaved('dotmask', '0');
+  dotmaskSelect.value = savedDotmask;
+
+  const savedCaptureCursor = getSaved('capture-cursor', '1');
+  captureCursor.checked = savedCaptureCursor === '1';
 
   const savedModel = loadSavedModel();
   if (savedModel) {

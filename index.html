@@ -193,17 +193,63 @@
       padding: 3px 6px;
       font-size: 0.8rem;
     }
-    .check-row {
-      flex-direction: row !important;
+    /* Slider rows */
+    .slider-row {
+      display: flex;
       align-items: center;
-      gap: 6px !important;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: #ccc;
+    }
+    .slider-row .slider-label {
+      width: 72px;
+      flex-shrink: 0;
+      color: #999;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .slider-row .slider-value {
+      width: 24px;
+      text-align: right;
+      font-size: 0.75rem;
+      color: #888;
+      flex-shrink: 0;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #444;
+      border-radius: 2px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #8888ff;
       cursor: pointer;
     }
-    .check-row input[type="checkbox"] {
-      width: 14px;
-      height: 14px;
-      accent-color: #6c6cff;
+    input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #8888ff;
+      border: none;
       cursor: pointer;
+    }
+
+    /* Sound panel */
+    #sound-panel {
+      border-top: 1px solid #333;
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
     /* Joystick panel */
@@ -266,6 +312,19 @@
     }
     .joy-fire:hover { background: #5e3a3a; }
     .joy-fire:active, .joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
+    #capture-cursor-row {
+      flex-direction: row !important;
+      align-items: center;
+      gap: 6px !important;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    #capture-cursor-row input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: #6c6cff;
+      cursor: pointer;
+    }
 
     /* Right sidebar */
     #right-sidebar {
@@ -501,6 +560,16 @@
           </div>
         </div>
       </div>
+      <label id="capture-cursor-row"><input type="checkbox" id="capture-cursor" checked> Capture cursor keys</label>
+    </div>
+
+    <div id="sound-panel">
+      <div class="section-label">Sound</div>
+      <div class="slider-row">
+        <span class="slider-label">Volume</span>
+        <input type="range" id="volume-slider" min="0" max="100" value="70">
+        <span class="slider-value" id="volume-value">70</span>
+      </div>
     </div>
 
     <div id="display-panel">
@@ -512,11 +581,32 @@
             <option value="1">1x</option>
             <option value="2" selected>2x</option>
             <option value="3">3x</option>
+            <option value="4">4x</option>
           </select>
         </label>
-        <label class="check-row">
-          <input type="checkbox" id="crt-toggle"> CRT
-        </label>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Smoothing</span>
+        <input type="range" id="smoothing-slider" min="0" max="100" value="0">
+        <span class="slider-value" id="smoothing-value">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Curvature</span>
+        <input type="range" id="curvature-slider" min="0" max="100" value="0">
+        <span class="slider-value" id="curvature-value">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Scanlines</span>
+        <input type="range" id="scanlines-slider" min="0" max="100" value="0">
+        <span class="slider-value" id="scanlines-value">0</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Dotmask</span>
+        <select id="dotmask-select">
+          <option value="0" selected>None</option>
+          <option value="1">Shadow Mask</option>
+          <option value="2">Trinitron</option>
+        </select>
       </div>
     </div>
   </div>

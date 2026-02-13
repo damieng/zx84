@@ -166,6 +166,13 @@ export class Audio {
     return (this.writePos - this.readPos + RING_SIZE) & RING_MASK;
   }
 
+  setVolume(v: number): void {
+    const clamped = Math.max(0, Math.min(1, v));
+    if (this.gainNode) {
+      this.gainNode.gain.value = clamped;
+    }
+  }
+
   reset(): void {
     if (this.useWorklet && this.sharedPos) {
       Atomics.store(this.sharedPos, 0, 0);

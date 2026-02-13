@@ -1,7 +1,8 @@
 /**
  * WebGL display renderer.
  * Renders a pixel buffer as a textured fullscreen quad with nearest-neighbor filtering.
- * Supports integer scaling (1x/2x/3x) and an optional CRT shader effect.
+ * Supports integer scaling (1x/2x/3x/4x) and parameterized CRT-style effects:
+ *   smoothing, curvature, scanlines, dotmask.
  */
 
 const VERT_SRC = `
@@ -14,59 +15,101 @@ const VERT_SRC = `
   }
 `;
 
-const FRAG_SIMPLE = `
-  precision mediump float;
-  varying vec2 v_uv;
-  uniform sampler2D u_tex;
-  void main() {
-    gl_FragColor = texture2D(u_tex, v_uv);
-  }
-`;
-
-const FRAG_CRT = `
+const FRAG_DISPLAY = `
   precision mediump float;
   varying vec2 v_uv;
   uniform sampler2D u_tex;
   uniform vec2 u_resolution;
   uniform vec2 u_texSize;
+  uniform float u_smoothing;   // 0 = nearest, 1 = full bilinear
+  uniform float u_curvature;   // 0 = flat, up to 0.15
+  uniform float u_scanlines;   // 0 = off, 1 = full gap
+  uniform int   u_dotmask;     // 0=none, 1=shadow mask, 2=trinitron
 
-  vec2 barrel(vec2 uv) {
+  vec2 barrel(vec2 uv, float k) {
     vec2 c = uv - 0.5;
     float r2 = dot(c, c);
-    return uv + c * r2 * 0.04;
+    return uv + c * r2 * k;
+  }
+
+  vec4 sampleTex(vec2 uv) {
+    if (u_smoothing <= 0.0) {
+      return texture2D(u_tex, uv);
+    }
+    // Manual 4-tap bilinear (texture stays NEAREST)
+    vec2 texel = uv * u_texSize - 0.5;
+    vec2 f = fract(texel);
+    vec2 base = (floor(texel) + 0.5) / u_texSize;
+    vec2 step = 1.0 / u_texSize;
+    vec4 tl = texture2D(u_tex, base);
+    vec4 tr = texture2D(u_tex, base + vec2(step.x, 0.0));
+    vec4 bl = texture2D(u_tex, base + vec2(0.0, step.y));
+    vec4 br = texture2D(u_tex, base + step);
+    vec4 bilinear = mix(mix(tl, tr, f.x), mix(bl, br, f.x), f.y);
+    vec4 nearest = texture2D(u_tex, uv);
+    return mix(nearest, bilinear, u_smoothing);
   }
 
   void main() {
-    vec2 uv = barrel(v_uv);
+    vec2 uv = v_uv;
+
+    // Barrel distortion
+    if (u_curvature > 0.0) {
+      uv = barrel(uv, u_curvature);
+    }
 
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
 
-    vec3 col = texture2D(u_tex, uv).rgb;
+    vec3 col = sampleTex(uv).rgb;
 
-    // -- Scanlines: hard gap on last pixel row of each source-row group --
     float scale = floor(u_resolution.y / u_texSize.y + 0.5);
-    float scanIntensity = clamp((scale - 1.0) * 0.3, 0.0, 0.5);
-    float pixelInRow = mod(floor(gl_FragCoord.y), scale);
-    float isGap = step(scale - 0.5, pixelInRow + 0.5);
-    col *= 1.0 - isGap * scanIntensity;
 
-    // -- Aperture grille: vertical RGB phosphor stripes --
-    float stripe = mod(floor(gl_FragCoord.x), 3.0);
-    vec3 mask = vec3(0.82);
-    mask.r += 0.18 * step(stripe, 0.5);
-    mask.g += 0.18 * step(0.5, stripe) * step(stripe, 1.5);
-    mask.b += 0.18 * step(1.5, stripe);
-    col *= mask;
+    // -- Scanlines: gap on last pixel-row of each scaled group --
+    float scanFactor = 0.0;
+    if (u_scanlines > 0.0 && scale > 1.0) {
+      float pixelInRow = mod(floor(gl_FragCoord.y), scale);
+      float isGap = step(scale - 0.5, pixelInRow + 0.5);
+      scanFactor = isGap * u_scanlines;
+      col *= 1.0 - scanFactor;
+    }
 
-    // -- Brightness boost (compensate for mask + scanline darkening) --
-    col *= 1.3;
+    // -- Dot mask --
+    float dotmaskFactor = 0.0;
+    if (u_dotmask == 1) {
+      // Shadow mask: staggered RGB triads
+      float row = floor(gl_FragCoord.y);
+      float col_x = floor(gl_FragCoord.x) + mod(row, 2.0) * 1.5;
+      float stripe = mod(col_x, 3.0);
+      vec3 mask = vec3(0.82);
+      mask.r += 0.18 * step(stripe, 0.5);
+      mask.g += 0.18 * step(0.5, stripe) * step(stripe, 1.5);
+      mask.b += 0.18 * step(1.5, stripe);
+      col *= mask;
+      dotmaskFactor = 0.18;
+    } else if (u_dotmask == 2) {
+      // Trinitron: vertical RGB phosphor stripes
+      float stripe = mod(floor(gl_FragCoord.x), 3.0);
+      vec3 mask = vec3(0.82);
+      mask.r += 0.18 * step(stripe, 0.5);
+      mask.g += 0.18 * step(0.5, stripe) * step(stripe, 1.5);
+      mask.b += 0.18 * step(1.5, stripe);
+      col *= mask;
+      dotmaskFactor = 0.18;
+    }
 
-    // -- Vignette --
-    vec2 vig = uv - 0.5;
-    col *= 1.0 - dot(vig, vig) * 0.35;
+    // -- Brightness compensation --
+    if (dotmaskFactor > 0.0 || scanFactor > 0.0) {
+      col *= 1.0 + (dotmaskFactor + scanFactor) * 1.5;
+    }
+
+    // -- Vignette (scales with curvature) --
+    if (u_curvature > 0.0) {
+      vec2 vig = uv - 0.5;
+      col *= 1.0 - dot(vig, vig) * u_curvature * 8.75;
+    }
 
     gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
   }
@@ -79,12 +122,24 @@ export class Display {
   width: number;
   height: number;
 
-  private simpleProgram: WebGLProgram;
-  private crtProgram: WebGLProgram;
-  private activeProgram: WebGLProgram;
+  private program: WebGLProgram;
   private scale = 2;
   private buffer: WebGLBuffer;
   private glDirty = true;
+
+  // Effect parameters
+  private smoothing = 0;
+  private curvature = 0;
+  private scanlines = 0;
+  private dotmask = 0;
+
+  // Cached uniform locations
+  private uResolution: WebGLUniformLocation | null = null;
+  private uTexSize: WebGLUniformLocation | null = null;
+  private uSmoothing: WebGLUniformLocation | null = null;
+  private uCurvature: WebGLUniformLocation | null = null;
+  private uScanlines: WebGLUniformLocation | null = null;
+  private uDotmask: WebGLUniformLocation | null = null;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.canvas = canvas;
@@ -95,7 +150,7 @@ export class Display {
     if (!gl) throw new Error('WebGL not supported');
     this.gl = gl;
 
-    // Build fullscreen quad buffer (shared by both programs)
+    // Build fullscreen quad buffer
     const verts = new Float32Array([
       // pos       uv
       -1, -1,     0, 1,
@@ -107,13 +162,18 @@ export class Display {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
 
-    // Compile both shader programs
-    this.simpleProgram = this.buildProgram(VERT_SRC, FRAG_SIMPLE);
-    this.crtProgram = this.buildProgram(VERT_SRC, FRAG_CRT);
-    this.activeProgram = this.simpleProgram;
+    // Compile shader program
+    this.program = this.buildProgram(VERT_SRC, FRAG_DISPLAY);
+    gl.useProgram(this.program);
+    this.bindAttributes(this.program);
 
-    gl.useProgram(this.activeProgram);
-    this.bindAttributes(this.activeProgram);
+    // Cache uniform locations
+    this.uResolution = gl.getUniformLocation(this.program, 'u_resolution');
+    this.uTexSize = gl.getUniformLocation(this.program, 'u_texSize');
+    this.uSmoothing = gl.getUniformLocation(this.program, 'u_smoothing');
+    this.uCurvature = gl.getUniformLocation(this.program, 'u_curvature');
+    this.uScanlines = gl.getUniformLocation(this.program, 'u_scanlines');
+    this.uDotmask = gl.getUniformLocation(this.program, 'u_dotmask');
 
     // Create texture with nearest-neighbor filtering
     this.texture = gl.createTexture()!;
@@ -172,14 +232,17 @@ export class Display {
   private restoreState(): void {
     const gl = this.gl;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.activeProgram);
-    this.bindAttributes(this.activeProgram);
+    gl.useProgram(this.program);
+    this.bindAttributes(this.program);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
 
-    const uRes = gl.getUniformLocation(this.activeProgram, 'u_resolution');
-    if (uRes) gl.uniform2f(uRes, this.canvas.width, this.canvas.height);
-    const uTex = gl.getUniformLocation(this.activeProgram, 'u_texSize');
-    if (uTex) gl.uniform2f(uTex, this.width, this.height);
+    // Set all uniforms from cached values
+    gl.uniform2f(this.uResolution, this.canvas.width, this.canvas.height);
+    gl.uniform2f(this.uTexSize, this.width, this.height);
+    gl.uniform1f(this.uSmoothing, this.smoothing);
+    gl.uniform1f(this.uCurvature, this.curvature);
+    gl.uniform1f(this.uScanlines, this.scanlines);
+    gl.uniform1i(this.uDotmask, this.dotmask);
 
     this.glDirty = false;
   }
@@ -202,8 +265,23 @@ export class Display {
     this.applyScale();
   }
 
-  setCRT(enabled: boolean): void {
-    this.activeProgram = enabled ? this.crtProgram : this.simpleProgram;
+  setSmoothing(v: number): void {
+    this.smoothing = Math.max(0, Math.min(1, v));
+    this.glDirty = true;
+  }
+
+  setCurvature(v: number): void {
+    this.curvature = Math.max(0, Math.min(0.15, v));
+    this.glDirty = true;
+  }
+
+  setScanlines(v: number): void {
+    this.scanlines = Math.max(0, Math.min(1, v));
+    this.glDirty = true;
+  }
+
+  setDotmask(v: 0 | 1 | 2): void {
+    this.dotmask = v;
     this.glDirty = true;
   }
 
