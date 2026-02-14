@@ -9,6 +9,7 @@ import { Z80 } from '../cores/z80.ts';
 import { loadSNA, saveSNA } from '../formats/sna.ts';
 import { loadZ80 } from '../formats/z80format.ts';
 import { loadSZX } from '../formats/szx.ts';
+import { loadSP } from '../formats/sp.ts';
 import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
@@ -617,6 +618,44 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
 
       spectrum!.start();
       setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .szx: ${filename}`);
+    } else if (ext === 'sp') {
+      spectrum.stop();
+      spectrum.reset();
+      const result = loadSP(data, spectrum.cpu, spectrum.memory);
+
+      if (result.is128K && !is128kClass(currentModel.value)) {
+        const entry128 = await restoreROM('128k');
+        const entryPlus2 = entry128 ? null : await restoreROM('+2');
+        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
+        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
+        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
+        if (entry) {
+          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
+          romData = entry.data;
+          setRomStatus('');
+          createMachine();
+          spectrum!.stop();
+          spectrum!.reset();
+          loadSP(data, spectrum!.cpu, spectrum!.memory);
+        } else {
+          setStatus('128K .sp snapshot requires a 128K ROM — load one first');
+          return false;
+        }
+      }
+
+      // Apply paging state for 128K
+      if (result.is128K) {
+        spectrum!.memory.port7FFD = result.port7FFD;
+        spectrum!.memory.currentBank = result.port7FFD & 0x07;
+        spectrum!.memory.currentROM = (result.port7FFD >> 4) & 1;
+        spectrum!.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
+        spectrum!.memory.applyBanking();
+      }
+
+      spectrum!.ula.borderColor = result.borderColor;
+      spectrum!.cpu.memory = spectrum!.memory.flat;
+      spectrum!.start();
+      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .sp: ${filename}`);
     } else {
       setStatus(`Unknown format: .${ext}`);
       return false;
@@ -700,7 +739,7 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
     return;
   }
 
-  if (ext === 'sna' || ext === 'z80' || ext === 'szx') {
+  if (ext === 'sna' || ext === 'z80' || ext === 'szx' || ext === 'sp') {
     if (await applySnapshot(data, filename)) {
       persistLastFile(data, filename);
     }

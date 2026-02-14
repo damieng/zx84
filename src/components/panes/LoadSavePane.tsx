@@ -70,7 +70,7 @@ export function LoadSavePane() {
         <input
           type="file"
           ref={snapInputRef}
-          accept=".sna,.z80,.szx,.tap,.tzx,.dsk,.zip"
+          accept=".sna,.z80,.szx,.sp,.tap,.tzx,.dsk,.zip"
           style="display:none"
           onChange={async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];

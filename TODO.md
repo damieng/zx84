@@ -9,7 +9,7 @@
 - [ ] URL query parameter loading (e.g. `?tap=url`)
 
 ### File Formats
-- [ ] `.szx` snapshot format
+- [x] `.szx` snapshot format
 - [ ] `.tzx` advanced blocks (turbo loaders, direct recording, pure tone)
 
 ### Display Enhancements

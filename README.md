@@ -5,7 +5,7 @@
 Experience the legendary ZX Spectrum with pixel-perfect emulation, authentic CRT filtering, and a powerful integrated debugger. Built from scratch in TypeScript with zero runtime dependencies.
 
 ![ZX Spectrum Models](https://img.shields.io/badge/Models-48K%20%7C%20128K%20%7C%20%2B2%20%7C%20%2B2A%20%7C%20%2B3-blue)
-![File Formats](https://img.shields.io/badge/Formats-SNA%20%7C%20Z80%20%7C%20TAP%20%7C%20TZX%20%7C%20DSK%20%7C%20ZIP-green)
+![File Formats](https://img.shields.io/badge/Formats-SNA%20%7C%20Z80%20%7C%20SZX%20%7C%20TAP%20%7C%20TZX%20%7C%20DSK%20%7C%20ZIP-green)
 
 ---
 
@@ -25,7 +25,7 @@ Experience the legendary ZX Spectrum with pixel-perfect emulation, authentic CRT
 
 ### 📂 Universal File Support
 Load your software instantly with drag-and-drop:
-- **Snapshots**: `.sna` (48K/128K), `.z80` (v1/v2/v3)
+- **Snapshots**: `.sna` (48K/128K), `.z80` (v1/v2/v3), `.szx` (ZX-State)
 - **Tapes**: `.tap`, `.tzx` with instant ROM-trap loading
 - **Disks**: `.dsk` for +3 models (standard & extended formats)
 - **Archives**: `.zip` files with automatic extraction
@@ -101,7 +101,7 @@ Open `http://localhost:5173` in your browser.
 
 1. **Choose a Model** — Select 48K, 128K, +2, +2A, or +3 from the hardware pane
 2. **Load a ROM** — Click "Load ROM" and select the appropriate ROM file for your model
-3. **Load Software** — Drag and drop a `.sna`, `.tap`, `.tzx`, `.dsk`, or `.zip` file onto the window
+3. **Load Software** — Drag and drop a `.sna`, `.z80`, `.szx`, `.tap`, `.tzx`, `.dsk`, or `.zip` file onto the window
 
 That's it! For tape files, the emulator will start playback automatically.
 
@@ -169,6 +169,7 @@ src/
 ├── formats/
 │   ├── sna.ts            .sna snapshots
 │   ├── z80format.ts      .z80 snapshots (v1-v3)
+│   ├── szx.ts            .szx snapshots (ZX-State)
 │   ├── tap.ts            .tap tapes
 │   ├── tzx.ts            .tzx tapes
 │   ├── dsk.ts            .dsk disks
