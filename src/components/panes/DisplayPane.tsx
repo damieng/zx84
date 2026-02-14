@@ -1,9 +1,71 @@
 import { Pane } from '../Pane.tsx';
 import {
   scale, brightness, contrast, smoothing, curvature, scanlines,
-  dotmask, borderSize, persistSetting,
+  maskType, dotPitch, curvatureMode, monitor, borderSize, persistSetting,
 } from '../../store/settings.ts';
 import { spectrum } from '../../store/emulator.ts';
+
+interface MonitorPreset {
+  maskType: number;
+  dotPitch: number;
+  curvature: number;
+  curvatureMode: number;
+  scanlines: number;
+  smoothing: number;
+}
+
+const MONITOR_PRESETS: Record<string, MonitorPreset> = {
+  'raw': {
+    maskType: 0, dotPitch: 3, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+  },
+  'lcd': {
+    maskType: 4, dotPitch: 3, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+  },
+  'microvitec-cub': {
+    maskType: 1, dotPitch: 5, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 20,
+  },
+  'philips-cm8833': {
+    maskType: 3, dotPitch: 5, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 40,
+  },
+  'commodore-1080': {
+    maskType: 1, dotPitch: 4, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 20,
+  },
+  'amstrad-cm14': {
+    maskType: 1, dotPitch: 6, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60,
+  },
+  'sony-trinitron': {
+    maskType: 2, dotPitch: 4, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20,
+  },
+  'atari-sc1224': {
+    maskType: 1, dotPitch: 4, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40,
+  },
+};
+
+function applyPreset(preset: MonitorPreset) {
+  maskType.value = preset.maskType;
+  if (spectrum) spectrum.display.setMaskType(preset.maskType);
+  persistSetting('mask-type', preset.maskType);
+
+  dotPitch.value = preset.dotPitch;
+  if (spectrum) spectrum.display.setDotPitch(preset.dotPitch);
+  persistSetting('dot-pitch', preset.dotPitch);
+
+  curvature.value = preset.curvature;
+  if (spectrum) spectrum.display.setCurvature(preset.curvature / 100 * 0.15);
+  persistSetting('curvature', preset.curvature);
+
+  curvatureMode.value = preset.curvatureMode;
+  if (spectrum) spectrum.display.setCurvatureMode(preset.curvatureMode);
+  persistSetting('curvature-mode', preset.curvatureMode);
+
+  scanlines.value = preset.scanlines;
+  if (spectrum) spectrum.display.setScanlines(preset.scanlines / 100);
+  persistSetting('scanlines', preset.scanlines);
+
+  smoothing.value = preset.smoothing;
+  if (spectrum) spectrum.display.setSmoothing(preset.smoothing / 100);
+  persistSetting('smoothing', preset.smoothing);
+}
 
 export function DisplayPane() {
   return (
@@ -42,27 +104,61 @@ export function DisplayPane() {
         apply={(v) => spectrum?.display.setBrightness(v / 50)} settingKey="brightness" />
       <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast}
         apply={(v) => spectrum?.display.setContrast(v / 50)} settingKey="contrast" />
+      <div class="slider-row">
+        <span class="slider-label">Monitor</span>
+        <select id="monitor-select" value={monitor.value} onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value;
+          monitor.value = v;
+          persistSetting('monitor', v);
+          const preset = MONITOR_PRESETS[v];
+          if (preset) applyPreset(preset);
+        }}>
+          <option value="none">None</option>
+          <option value="raw">Raw</option>
+          <option value="lcd">LCD</option>
+          <option value="microvitec-cub">Microvitec CUB</option>
+          <option value="philips-cm8833">Philips CM8833</option>
+          <option value="commodore-1080">Commodore 1080</option>
+          <option value="amstrad-cm14">Amstrad CM14</option>
+          <option value="sony-trinitron">Sony Trinitron</option>
+          <option value="atari-sc1224">Atari SC1224</option>
+        </select>
+      </div>
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing}
         apply={(v) => spectrum?.display.setSmoothing(v / 100)} settingKey="smoothing" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature}
         apply={(v) => spectrum?.display.setCurvature(v / 100 * 0.15)} settingKey="curvature" />
+      <div class="slider-row">
+        <span class="slider-label">Curv. mode</span>
+        <select id="curvature-mode-select" value={curvatureMode.value} onChange={(e) => {
+          const v = Number((e.target as HTMLSelectElement).value);
+          curvatureMode.value = v;
+          if (spectrum) spectrum.display.setCurvatureMode(v);
+          persistSetting('curvature-mode', v);
+        }}>
+          <option value="0">Spherical</option>
+          <option value="1">Cylindrical</option>
+        </select>
+      </div>
       <SliderRow label="Scanlines" id="scanlines" min={0} max={100} sig={scanlines}
         apply={(v) => spectrum?.display.setScanlines(v / 100)} settingKey="scanlines" />
       <div class="slider-row">
-        <span class="slider-label">Dotmask</span>
-        <select id="dotmask-select" value={dotmask.value} onChange={(e) => {
+        <span class="slider-label">Mask type</span>
+        <select id="mask-type-select" value={maskType.value} onChange={(e) => {
           const v = Number((e.target as HTMLSelectElement).value);
-          dotmask.value = v;
-          if (spectrum) spectrum.display.setDotmask(v);
-          persistSetting('dotmask', v);
+          maskType.value = v;
+          if (spectrum) spectrum.display.setMaskType(v);
+          persistSetting('mask-type', v);
         }}>
           <option value="0">None</option>
-          <option value="2">Trinitron</option>
-          <option value="3">Amstrad CTM</option>
-          <option value="4">Cheap TV</option>
-          <option value="5">Microvitec CUB</option>
+          <option value="1">Shadow Mask</option>
+          <option value="2">Aperture Grille</option>
+          <option value="3">Slot Mask</option>
+          <option value="4">LCD Grid</option>
         </select>
       </div>
+      <SliderRow label="Dot pitch" id="dot-pitch" min={3} max={8} sig={dotPitch}
+        apply={(v) => spectrum?.display.setDotPitch(v)} settingKey="dot-pitch" />
     </Pane>
   );
 }

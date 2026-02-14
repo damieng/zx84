@@ -17,7 +17,10 @@ export const contrast = signal(getSavedNumber('contrast', '50'));
 export const smoothing = signal(getSavedNumber('smoothing', '0'));
 export const curvature = signal(getSavedNumber('curvature', '0'));
 export const scanlines = signal(getSavedNumber('scanlines', '0'));
-export const dotmask = signal(getSavedNumber('dotmask', '0'));
+export const maskType = signal(getSavedNumber('mask-type', '0'));
+export const dotPitch = signal(getSavedNumber('dot-pitch', '3'));
+export const curvatureMode = signal(getSavedNumber('curvature-mode', '0'));
+export const monitor = signal(getSaved('monitor', 'none'));
 export const borderSize = signal(getSavedNumber('border-size', '2'));
 
 // ── Sound settings ──────────────────────────────────────────────────────

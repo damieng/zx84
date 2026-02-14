@@ -56,12 +56,19 @@ const FRAG_CRT = `
   uniform vec2 u_texSize;        // original emulator resolution (for scanline scale)
   uniform float u_curvature;     // 0 = flat, up to 0.15
   uniform float u_scanlines;     // 0 = off, 1 = full gap
-  uniform int   u_dotmask;       // 0=none, 1-5 = phosphor patterns
+  uniform int   u_maskType;      // 0=none, 1=shadow mask, 2=aperture grille, 3=slot mask
+  uniform float u_dotPitch;      // mask cell size in pixels (3-8)
+  uniform int   u_curvatureMode; // 0=spherical, 1=cylindrical
   uniform float u_brightness;    // -1 to 1, default 0
   uniform float u_contrast;      // 0 to 2, default 1
 
   vec2 barrel(vec2 uv, float k) {
     vec2 c = uv - 0.5;
+    if (u_curvatureMode == 1) {
+      // Cylindrical: curve X only (Trinitron-style)
+      float r2 = c.x * c.x;
+      return uv + vec2(c.x * r2 * k, 0.0);
+    }
     float r2 = dot(c, c);
     return uv + c * r2 * k;
   }
@@ -99,75 +106,58 @@ const FRAG_CRT = `
       }
     }
 
-    // -- Dot mask --
-    float dotmaskFactor = 0.0;
-    // Lift black when mask active (CRT phosphors always glow faintly)
-    if (u_dotmask > 0) col = max(col, vec3(0.03));
-    if (u_dotmask == 1) {
-      // Shadow mask: staggered RGB triads
-      float row = floor(gl_FragCoord.y);
-      float col_x = floor(gl_FragCoord.x) + mod(row, 2.0);
-      float stripe = mod(col_x, 3.0);
-      vec3 mask = vec3(0.82);
-      mask.r += 0.18 * step(stripe, 0.5);
-      mask.g += 0.18 * step(0.5, stripe) * step(stripe, 1.5);
-      mask.b += 0.18 * step(1.5, stripe);
-      col *= mask;
-      dotmaskFactor = 0.18;
-    } else if (u_dotmask == 2) {
-      // Trinitron: vertical RGB phosphor stripes
-      float stripe = mod(floor(gl_FragCoord.x), 3.0);
-      vec3 mask = vec3(0.82);
-      mask.r += 0.18 * step(stripe, 0.5);
-      mask.g += 0.18 * step(0.5, stripe) * step(stripe, 1.5);
-      mask.b += 0.18 * step(1.5, stripe);
-      col *= mask;
-      dotmaskFactor = 0.18;
-    } else if (u_dotmask == 3) {
-      // Amstrad CTM: coarse 4px-pitch slot mask with visible black gaps
-      float px = floor(gl_FragCoord.x);
-      float py = floor(gl_FragCoord.y);
-      float cellX = mod(px, 4.0);  // R, G, B, black
-      vec3 mask = vec3(0.55);
-      mask.r += 0.45 * step(cellX, 0.5);
-      mask.g += 0.45 * step(0.5, cellX) * step(cellX, 1.5);
-      mask.b += 0.45 * step(1.5, cellX) * step(cellX, 2.5);
-      // Horizontal gap every 3rd row
-      mask *= 1.0 - step(2.5, mod(py, 3.0)) * 0.4;
-      col *= mask;
-      dotmaskFactor = 0.45;
-    } else if (u_dotmask == 4) {
-      // Cheap TV: very coarse 6px-pitch, doubled phosphors, heavy grid
-      float px = floor(gl_FragCoord.x);
-      float py = floor(gl_FragCoord.y);
-      float cellX = mod(px, 6.0);  // RR, GG, BB (2px each)
-      vec3 mask = vec3(0.4);
-      mask.r += 0.6 * step(cellX, 1.5);
-      mask.g += 0.6 * step(1.5, cellX) * step(cellX, 3.5);
-      mask.b += 0.6 * step(3.5, cellX);
-      // Thick horizontal gap: every 4th row
-      mask *= 1.0 - step(3.5, mod(py, 4.0)) * 0.5;
-      col *= mask;
-      dotmaskFactor = 0.6;
-    } else if (u_dotmask == 5) {
-      // Microvitec CUB: medium dot-triad, staggered rows, visible but clean
-      float px = floor(gl_FragCoord.x);
-      float py = floor(gl_FragCoord.y);
-      float row3 = mod(py, 3.0);
-      // Stagger triads: shift by 2px on row group 1, 4px on row group 2
-      float offset = floor(row3) * 2.0;
-      float cellX = mod(px + offset, 5.0);  // R, G, B, gap, gap
-      vec3 mask = vec3(0.5);
-      mask.r += 0.5 * step(cellX, 0.5);
-      mask.g += 0.5 * step(0.5, cellX) * step(cellX, 1.5);
-      mask.b += 0.5 * step(1.5, cellX) * step(cellX, 2.5);
-      col *= mask;
-      dotmaskFactor = 0.5;
+    // -- Parameterized dot mask --
+    float maskFactor = 0.0;
+    if (u_maskType > 0) {
+      col = max(col, vec3(0.03));  // CRT phosphors always glow faintly
+      float pitch = u_dotPitch;
+      float base = mix(0.82, 0.4, (pitch - 3.0) / 5.0);
+      float highlight = 1.0 - base;
+      float fpx = floor(gl_FragCoord.x);
+      float fpy = floor(gl_FragCoord.y);
+
+      if (u_maskType == 1) {
+        // Shadow mask: staggered RGB triads at variable pitch
+        float stagger = mod(floor(fpy / pitch), 2.0) * (pitch * 0.5);
+        float cellX = mod(fpx + stagger, pitch * 3.0) / pitch;
+        vec3 mask = vec3(base);
+        mask.r += highlight * step(cellX, 1.0);
+        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
+        mask.b += highlight * step(2.0, cellX);
+        col *= mask;
+      } else if (u_maskType == 2) {
+        // Aperture grille: vertical RGB stripes (Trinitron-style), no horizontal gaps
+        float cellX = mod(fpx, pitch * 3.0) / pitch;
+        vec3 mask = vec3(base);
+        mask.r += highlight * step(cellX, 1.0);
+        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
+        mask.b += highlight * step(2.0, cellX);
+        col *= mask;
+      } else if (u_maskType == 3) {
+        // Slot mask: like shadow mask but with regular horizontal slot gaps
+        float stagger = mod(floor(fpy / pitch), 2.0) * (pitch * 0.5);
+        float cellX = mod(fpx + stagger, pitch * 3.0) / pitch;
+        vec3 mask = vec3(base);
+        mask.r += highlight * step(cellX, 1.0);
+        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
+        mask.b += highlight * step(2.0, cellX);
+        // Horizontal slot gap every (pitch) rows
+        mask *= 1.0 - step(pitch - 1.0, mod(fpy, pitch)) * 0.4;
+        col *= mask;
+      } else if (u_maskType == 4) {
+        // LCD grid: darken 1px gap at cell boundaries in both axes
+        float scale = floor(u_resolution.y / u_texSize.y + 0.5);
+        float gapX = step(scale - 1.0, mod(fpx, scale));
+        float gapY = step(scale - 1.0, mod(fpy, scale));
+        float grid = max(gapX, gapY);
+        col *= 1.0 - grid * 0.55;
+      }
+      maskFactor = u_maskType == 4 ? 0.25 : highlight;
     }
 
     // -- Brightness compensation --
-    if (dotmaskFactor > 0.0 || scanFactor > 0.0) {
-      col *= 1.0 + (dotmaskFactor + scanFactor) * 1.5;
+    if (maskFactor > 0.0 || scanFactor > 0.0) {
+      col *= 1.0 + (maskFactor + scanFactor) * 1.5;
     }
 
     // -- Vignette (scales with curvature) --
@@ -207,7 +197,9 @@ export class Display {
   private smoothing = 0;
   private curvature = 0;
   private scanlines = 0;
-  private dotmask = 0;
+  private maskType = 0;
+  private dotPitch = 3;
+  private curvatureMode = 0;
   private brightness = 0;
   private contrast = 1;
 
@@ -220,7 +212,9 @@ export class Display {
   private u2TexSize: WebGLUniformLocation | null = null;
   private u2Curvature: WebGLUniformLocation | null = null;
   private u2Scanlines: WebGLUniformLocation | null = null;
-  private u2Dotmask: WebGLUniformLocation | null = null;
+  private u2MaskType: WebGLUniformLocation | null = null;
+  private u2DotPitch: WebGLUniformLocation | null = null;
+  private u2CurvatureMode: WebGLUniformLocation | null = null;
   private u2Brightness: WebGLUniformLocation | null = null;
   private u2Contrast: WebGLUniformLocation | null = null;
 
@@ -268,7 +262,9 @@ export class Display {
     this.u2TexSize = gl.getUniformLocation(this.progCRT, 'u_texSize');
     this.u2Curvature = gl.getUniformLocation(this.progCRT, 'u_curvature');
     this.u2Scanlines = gl.getUniformLocation(this.progCRT, 'u_scanlines');
-    this.u2Dotmask = gl.getUniformLocation(this.progCRT, 'u_dotmask');
+    this.u2MaskType = gl.getUniformLocation(this.progCRT, 'u_maskType');
+    this.u2DotPitch = gl.getUniformLocation(this.progCRT, 'u_dotPitch');
+    this.u2CurvatureMode = gl.getUniformLocation(this.progCRT, 'u_curvatureMode');
     this.u2Brightness = gl.getUniformLocation(this.progCRT, 'u_brightness');
     this.u2Contrast = gl.getUniformLocation(this.progCRT, 'u_contrast');
 
@@ -375,8 +371,18 @@ export class Display {
     this.glDirty = true;
   }
 
-  setDotmask(v: number): void {
-    this.dotmask = v;
+  setMaskType(v: number): void {
+    this.maskType = v;
+    this.glDirty = true;
+  }
+
+  setDotPitch(v: number): void {
+    this.dotPitch = Math.max(3, Math.min(8, v));
+    this.glDirty = true;
+  }
+
+  setCurvatureMode(v: number): void {
+    this.curvatureMode = v;
     this.glDirty = true;
   }
 
@@ -439,7 +445,9 @@ export class Display {
       gl.uniform2f(this.u2TexSize, this.width, this.height);
       gl.uniform1f(this.u2Curvature, this.curvature);
       gl.uniform1f(this.u2Scanlines, this.scanlines);
-      gl.uniform1i(this.u2Dotmask, this.dotmask);
+      gl.uniform1i(this.u2MaskType, this.maskType);
+      gl.uniform1f(this.u2DotPitch, this.dotPitch);
+      gl.uniform1i(this.u2CurvatureMode, this.curvatureMode);
       gl.uniform1f(this.u2Brightness, this.brightness);
       gl.uniform1f(this.u2Contrast, this.contrast);
     }
