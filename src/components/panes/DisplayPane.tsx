@@ -12,32 +12,41 @@ interface MonitorPreset {
   curvatureMode: number;
   scanlines: number;
   smoothing: number;
+  brightness?: number;
+  contrast?: number;
 }
 
 const MONITOR_PRESETS: Record<string, MonitorPreset> = {
   'raw': {
-    maskType: 0, dotPitch: 3, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+    maskType: 0, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+    brightness: 0, contrast: 50,
   },
   'lcd': {
-    maskType: 4, dotPitch: 3, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+    maskType: 4, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0,
+    brightness: 0, contrast: 50,
   },
   'microvitec-cub': {
-    maskType: 1, dotPitch: 5, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 20,
+    maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 20,
   },
   'philips-cm8833': {
-    maskType: 3, dotPitch: 5, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 40,
+    maskType: 3, dotPitch: 20, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 40,
   },
   'commodore-1080': {
-    maskType: 1, dotPitch: 4, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 20,
+    maskType: 1, dotPitch: 10, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 20,
   },
   'amstrad-cm14': {
-    maskType: 1, dotPitch: 6, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60,
+    maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60,
   },
   'sony-trinitron': {
-    maskType: 2, dotPitch: 4, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20,
+    maskType: 2, dotPitch: 10, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20,
+    brightness: -5, contrast: 55,
   },
   'atari-sc1224': {
-    maskType: 1, dotPitch: 4, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40,
+    maskType: 1, dotPitch: 10, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40,
+  },
+  'cheap-tv': {
+    maskType: 1, dotPitch: 30, curvature: 80, curvatureMode: 0, scanlines: 65, smoothing: 70,
+    brightness: -5, contrast: 55,
   },
 };
 
@@ -47,7 +56,7 @@ function applyPreset(preset: MonitorPreset) {
   persistSetting('mask-type', preset.maskType);
 
   dotPitch.value = preset.dotPitch;
-  if (spectrum) spectrum.display.setDotPitch(preset.dotPitch);
+  if (spectrum) spectrum.display.setDotPitch(preset.dotPitch / 10);
   persistSetting('dot-pitch', preset.dotPitch);
 
   curvature.value = preset.curvature;
@@ -65,6 +74,18 @@ function applyPreset(preset: MonitorPreset) {
   smoothing.value = preset.smoothing;
   if (spectrum) spectrum.display.setSmoothing(preset.smoothing / 100);
   persistSetting('smoothing', preset.smoothing);
+
+  if (preset.brightness != null) {
+    brightness.value = preset.brightness;
+    if (spectrum) spectrum.display.setBrightness(preset.brightness / 50);
+    persistSetting('brightness', preset.brightness);
+  }
+
+  if (preset.contrast != null) {
+    contrast.value = preset.contrast;
+    if (spectrum) spectrum.display.setContrast(preset.contrast / 50);
+    persistSetting('contrast', preset.contrast);
+  }
 }
 
 export function DisplayPane() {
@@ -100,10 +121,6 @@ export function DisplayPane() {
           </select>
         </label>
       </div>
-      <SliderRow label="Brightness" id="brightness" min={-50} max={50} sig={brightness}
-        apply={(v) => spectrum?.display.setBrightness(v / 50)} settingKey="brightness" />
-      <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast}
-        apply={(v) => spectrum?.display.setContrast(v / 50)} settingKey="contrast" />
       <div class="slider-row">
         <span class="slider-label">Monitor</span>
         <select id="monitor-select" value={monitor.value} onChange={(e) => {
@@ -113,7 +130,6 @@ export function DisplayPane() {
           const preset = MONITOR_PRESETS[v];
           if (preset) applyPreset(preset);
         }}>
-          <option value="none">None</option>
           <option value="raw">Raw</option>
           <option value="lcd">LCD</option>
           <option value="microvitec-cub">Microvitec CUB</option>
@@ -122,8 +138,13 @@ export function DisplayPane() {
           <option value="amstrad-cm14">Amstrad CM14</option>
           <option value="sony-trinitron">Sony Trinitron</option>
           <option value="atari-sc1224">Atari SC1224</option>
+          <option value="cheap-tv">Cheap TV</option>
         </select>
       </div>
+      <SliderRow label="Brightness" id="brightness" min={-50} max={50} sig={brightness}
+        apply={(v) => spectrum?.display.setBrightness(v / 50)} settingKey="brightness" />
+      <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast}
+        apply={(v) => spectrum?.display.setContrast(v / 50)} settingKey="contrast" />
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing}
         apply={(v) => spectrum?.display.setSmoothing(v / 100)} settingKey="smoothing" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature}
@@ -157,8 +178,8 @@ export function DisplayPane() {
           <option value="4">LCD Grid</option>
         </select>
       </div>
-      <SliderRow label="Dot pitch" id="dot-pitch" min={3} max={8} sig={dotPitch}
-        apply={(v) => spectrum?.display.setDotPitch(v)} settingKey="dot-pitch" />
+      <SliderRow label="Dot pitch" id="dot-pitch" min={10} max={40} sig={dotPitch}
+        apply={(v) => spectrum?.display.setDotPitch(v / 10)} settingKey="dot-pitch" />
     </Pane>
   );
 }

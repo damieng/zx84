@@ -111,44 +111,41 @@ const FRAG_CRT = `
     if (u_maskType > 0) {
       col = max(col, vec3(0.03));  // CRT phosphors always glow faintly
       float pitch = u_dotPitch;
-      float base = mix(0.82, 0.4, (pitch - 3.0) / 5.0);
+      // pitch 1 = fine (1px per channel, 3px triad), pitch 4 = coarse screen-door
+      float base = mix(0.75, 0.45, (pitch - 1.0) / 3.0);
       float highlight = 1.0 - base;
       float fpx = floor(gl_FragCoord.x);
       float fpy = floor(gl_FragCoord.y);
+      float triad = pitch * 3.0;
 
       if (u_maskType == 1) {
-        // Shadow mask: staggered RGB triads at variable pitch
-        float stagger = mod(floor(fpy / pitch), 2.0) * (pitch * 0.5);
-        float cellX = mod(fpx + stagger, pitch * 3.0) / pitch;
+        // Shadow mask (dot trio): staggered RGB triads, per-row stagger
+        float stagger = mod(fpy, 2.0) * (triad * 0.5);
+        float ch = floor(mod(fpx + stagger, triad) / pitch);
         vec3 mask = vec3(base);
-        mask.r += highlight * step(cellX, 1.0);
-        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
-        mask.b += highlight * step(2.0, cellX);
+        mask += highlight * vec3(1.0 - min(ch, 1.0), 1.0 - abs(ch - 1.0), max(ch - 1.0, 0.0));
         col *= mask;
       } else if (u_maskType == 2) {
         // Aperture grille: vertical RGB stripes (Trinitron-style), no horizontal gaps
-        float cellX = mod(fpx, pitch * 3.0) / pitch;
+        float ch = floor(mod(fpx, triad) / pitch);
         vec3 mask = vec3(base);
-        mask.r += highlight * step(cellX, 1.0);
-        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
-        mask.b += highlight * step(2.0, cellX);
+        mask += highlight * vec3(1.0 - min(ch, 1.0), 1.0 - abs(ch - 1.0), max(ch - 1.0, 0.0));
         col *= mask;
       } else if (u_maskType == 3) {
-        // Slot mask: like shadow mask but with regular horizontal slot gaps
-        float stagger = mod(floor(fpy / pitch), 2.0) * (pitch * 0.5);
-        float cellX = mod(fpx + stagger, pitch * 3.0) / pitch;
+        // Slot mask: vertical RGB slots with horizontal gap every few rows
+        float stagger = mod(fpy, 2.0) * (triad * 0.5);
+        float ch = floor(mod(fpx + stagger, triad) / pitch);
         vec3 mask = vec3(base);
-        mask.r += highlight * step(cellX, 1.0);
-        mask.g += highlight * step(1.0, cellX) * step(cellX, 2.0);
-        mask.b += highlight * step(2.0, cellX);
-        // Horizontal slot gap every (pitch) rows
-        mask *= 1.0 - step(pitch - 1.0, mod(fpy, pitch)) * 0.4;
+        mask += highlight * vec3(1.0 - min(ch, 1.0), 1.0 - abs(ch - 1.0), max(ch - 1.0, 0.0));
+        // Horizontal slot gap every 3 rows
+        float slotGap = step(2.0, mod(fpy, 3.0));
+        mask *= 1.0 - slotGap * 0.3;
         col *= mask;
       } else if (u_maskType == 4) {
         // LCD grid: darken 1px gap at cell boundaries in both axes
-        float scale = floor(u_resolution.y / u_texSize.y + 0.5);
-        float gapX = step(scale - 1.0, mod(fpx, scale));
-        float gapY = step(scale - 1.0, mod(fpy, scale));
+        float sc = floor(u_resolution.y / u_texSize.y + 0.5);
+        float gapX = step(sc - 1.0, mod(fpx, sc));
+        float gapY = step(sc - 1.0, mod(fpy, sc));
         float grid = max(gapX, gapY);
         col *= 1.0 - grid * 0.55;
       }
@@ -198,7 +195,7 @@ export class Display {
   private curvature = 0;
   private scanlines = 0;
   private maskType = 0;
-  private dotPitch = 3;
+  private dotPitch = 1;
   private curvatureMode = 0;
   private brightness = 0;
   private contrast = 1;
@@ -377,7 +374,7 @@ export class Display {
   }
 
   setDotPitch(v: number): void {
-    this.dotPitch = Math.max(3, Math.min(8, v));
+    this.dotPitch = Math.max(1, Math.min(4, v));
     this.glDirty = true;
   }
 

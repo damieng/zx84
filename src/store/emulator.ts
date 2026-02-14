@@ -188,7 +188,7 @@ export function applyDisplaySettings(): void {
   spectrum.display.setCurvature(settings.curvature.value / 100 * 0.15);
   spectrum.display.setScanlines(settings.scanlines.value / 100);
   spectrum.display.setMaskType(settings.maskType.value);
-  spectrum.display.setDotPitch(settings.dotPitch.value);
+  spectrum.display.setDotPitch(settings.dotPitch.value / 10);
   spectrum.display.setCurvatureMode(settings.curvatureMode.value);
   spectrum['audio'].setVolume(settings.volume.value / 100);
 }
