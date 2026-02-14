@@ -18,6 +18,7 @@ import { Display } from './display.ts';
 import { Audio } from './audio.ts';
 import { TapeDeck } from './formats/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
+import { Plus3DosTrap } from './plus3dos-trap.ts';
 import type { DskImage } from './formats/dsk.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz
@@ -127,6 +128,10 @@ export class Spectrum {
   tape: TapeDeck;
   fdc: UPD765A;
 
+  /** Disk access mode: 'fdc' = full FDC emulation, 'bios' = +3DOS BIOS traps */
+  diskMode: 'fdc' | 'bios' = 'fdc';
+  biosTrap: Plus3DosTrap | null = null;
+
   /** Per-frame I/O activity counters */
   activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0 };
 
@@ -167,6 +172,9 @@ export class Spectrum {
   /** T-state counter at start of current frame (for contention/floating bus). */
   private frameStartTStates = 0;
 
+  /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
+  turbo = false;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
@@ -188,6 +196,10 @@ export class Spectrum {
     this.timing = is128kClass(model) ? TIMING_128K : TIMING_48K;
 
     this.tStatesPerSample = Z80_CLOCK / 44100;
+
+    if (isPlus3(model)) {
+      this.biosTrap = new Plus3DosTrap(this.cpu, this.memory, this.fdc);
+    }
 
     this.installROMProtection();
     this.wirePortIO();
@@ -273,11 +285,18 @@ export class Spectrum {
 
       // FDC ports (A13=1, A12=0/1, A1=0): 0x2FFD status, 0x3FFD data
       // +3: routed to uPD765A. +2A: chip absent, bus returns 0xFF.
+      // FDC operates normally in both FDC and BIOS modes — un-trapped ROM
+      // code (DD_LOGIN, DD_INIT, etc.) needs valid FDC responses. The BIOS
+      // traps intercept DD_ routines before they reach the FDC hardware.
       if (isPlus2AClass(this.model)) {
-        if ((port & 0xF002) === 0x2000) return isPlus3(this.model) ? this.fdc.readStatus() : 0xFF;
+        if ((port & 0xF002) === 0x2000) {
+          if (!isPlus3(this.model)) return 0xFF;
+          return this.fdc.readStatus();
+        }
         if ((port & 0xF002) === 0x3000) {
-          if (isPlus3(this.model)) { this.activity.fdcAccesses++; return this.fdc.readData(); }
-          return 0xFF;
+          if (!isPlus3(this.model)) return 0xFF;
+          this.activity.fdcAccesses++;
+          return this.fdc.readData();
         }
       }
 
@@ -312,8 +331,10 @@ export class Spectrum {
     this.keyboard.reset();
     this.audio.reset();
     this.fdc.reset();
+    this.biosTrap?.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
+    this.clearScreenGrid();
     this.kempstonState = 0;
     this.beeperAccum = 0;
     this.beeperTStatesAccum = 0;
@@ -365,21 +386,32 @@ export class Spectrum {
 
     // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
     const now = performance.now();
-    this.frameTimeAccum = Math.min(
-      this.frameTimeAccum + (now - this.lastFrameTime),
-      FRAME_PERIOD * 3 // cap catch-up to 3 frames (e.g. after tab hidden)
-    );
-    this.lastFrameTime = now;
+    if (this.turbo) {
+      // Turbo: run as many frames as possible (target ~50MHz ≈ 14x)
+      this.frameTimeAccum = FRAME_PERIOD * 14;
+      let framesRun = 0;
+      while (framesRun < 14) {
+        this.runFrame();
+        framesRun++;
+      }
+      this.lastFrameTime = now;
+    } else {
+      this.frameTimeAccum = Math.min(
+        this.frameTimeAccum + (now - this.lastFrameTime),
+        FRAME_PERIOD * 3 // cap catch-up to 3 frames (e.g. after tab hidden)
+      );
+      this.lastFrameTime = now;
 
-    const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
-    const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
+      const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
+      const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
 
-    let framesRun = 0;
-    while (this.frameTimeAccum >= FRAME_PERIOD && framesRun < 2) {
-      if (audioPacing && this.audio.bufferedSamples() >= targetSamples) break;
-      this.runFrame();
-      this.frameTimeAccum -= FRAME_PERIOD;
-      framesRun++;
+      let framesRun = 0;
+      while (this.frameTimeAccum >= FRAME_PERIOD && framesRun < 2) {
+        if (audioPacing && this.audio.bufferedSamples() >= targetSamples) break;
+        this.runFrame();
+        this.frameTimeAccum -= FRAME_PERIOD;
+        framesRun++;
+      }
     }
 
     // Always render display (even if we skipped emulation) so the screen stays up to date
@@ -479,16 +511,34 @@ export class Spectrum {
         this.activity.rst16Calls++;
         this.captureScreenChar(this.cpu.a);
       }
-      // CLS detection: CL-ALL entry in 48K ROM
-      if (this.cpu.pc === 0x0DAF) {
+      // Screen grid maintenance — keep shadow copy in sync with ROM routines.
+      // DF_SZ (0x5C6B) = number of lower-screen lines (usually 2).
+      const pc = this.cpu.pc;
+      if (pc === 0x0DAF) {
+        // CL_ALL — clear entire display
         this.screenGrid.fill(' ');
-      }
-      // Scroll detection: CL-SCROLL in 48K ROM
-      if (this.cpu.pc === 0x0DFE) {
-        for (let i = 0; i < 23 * 32; i++) {
+      } else if (pc === 0x0D6E) {
+        // CLS_LOWER — clear bottom DF_SZ lines only
+        const dfSz = this.cpu.memory[0x5C6B] || 2;
+        this.screenGrid.fill(' ', (24 - dfSz) * 32, 24 * 32);
+      } else if (pc === 0x0DFE) {
+        // CL_SC_ALL — scroll upper screen up one line
+        const dfSz = this.cpu.memory[0x5C6B] || 2;
+        const upperRows = 24 - dfSz;
+        for (let i = 0; i < (upperRows - 1) * 32; i++) {
           this.screenGrid[i] = this.screenGrid[i + 32];
         }
-        this.screenGrid.fill(' ', 23 * 32, 24 * 32);
+        this.screenGrid.fill(' ', (upperRows - 1) * 32, upperRows * 32);
+      } else if (pc === 0x0E00) {
+        // CL_SCROLL — general scroll. Skip B=0x17 (handled by 0x0DFE above).
+        const b = (this.cpu.bc >> 8) & 0xFF;
+        if (b !== 0x17 && b > 0 && b <= 24) {
+          const startRow = 24 - b;
+          for (let i = startRow * 32; i < 23 * 32; i++) {
+            this.screenGrid[i] = this.screenGrid[i + 32];
+          }
+          this.screenGrid.fill(' ', 23 * 32, 24 * 32);
+        }
       }
 
       // ROM trap: intercept LD-BYTES for instant tape loading
@@ -496,6 +546,11 @@ export class Spectrum {
         this.trapTapeLoad();
         this.tape.skipBlock(); // advance player past the instant-loaded block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
+      } else if (this.diskMode === 'bios' && this.biosTrap &&
+                 this.memory.currentROM === 2 && !this.memory.specialPaging &&
+                 this.cpu.pc < 0x4000 &&
+                 this.biosTrap.check(this.cpu.pc)) {
+        this.activity.fdcAccesses++;
       } else if (this.cpu.halted) {
         // Advance to next sample boundary or frame end
         const toFrameEnd = frameEnd - this.cpu.tStates;
@@ -630,12 +685,29 @@ export class Spectrum {
     if (a === 0x0D) {
       // Carriage return — position change handled by ROM, no grid update needed
     } else if ((a >= 0x20 && a <= 0x7F) || a >= 0x80) {
-      // Printable character — read current print position from S_POSN system variable
+      // Printable character — read print position from the active screen channel.
+      // Upper screen (channel 'S') uses S_POSN at 0x5C88-89.
+      // Lower screen (channel 'K') uses DFCCL at 0x5C86-87 — the display file
+      // address directly encodes row/col via the Spectrum's interleaved layout.
       const mem = this.cpu.memory;
-      const col = mem[0x5C88];   // S_POSN column (33 = leftmost, 2 = rightmost)
-      const line = mem[0x5C89]; // S_POSN line (24 = top, 1 = bottom)
-      const actualCol = 33 - col;
-      const actualRow = 24 - line;
+      const curchl = mem[0x5C51] | (mem[0x5C52] << 8);
+      const isLower = curchl >= 0x5C00 && curchl < 0xFFFC && mem[curchl + 4] === 0x4B; // 'K'
+
+      let actualCol: number, actualRow: number;
+      if (isLower) {
+        // Decode position from DFCCL display file address
+        const dfccl = mem[0x5C86] | (mem[0x5C87] << 8);
+        const rel = dfccl - 0x4000;
+        const third = (rel >> 11) & 3;       // screen third (0-2)
+        const rowInThird = (rel >> 5) & 7;   // character row within third
+        actualRow = third * 8 + rowInThird;
+        actualCol = rel & 0x1F;
+      } else {
+        const col = mem[0x5C88];   // S_POSN column (33 = leftmost, 2 = rightmost)
+        const line = mem[0x5C89]; // S_POSN line (24 = top, 1 = bottom)
+        actualCol = 33 - col;
+        actualRow = 24 - line;
+      }
 
       if (actualCol >= 0 && actualCol <= 31 && actualRow >= 0 && actualRow <= 23) {
         let ch: string;

@@ -176,7 +176,7 @@ export class Display {
   height: number;
 
   private program: WebGLProgram;
-  private scale = 2;
+  scale = 2;
   private buffer: WebGLBuffer;
   private glDirty = true;
 

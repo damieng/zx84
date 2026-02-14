@@ -31,6 +31,10 @@ export interface DskImage {
   numSides: number;
   /** tracks[cylinder][side] */
   tracks: (DskTrack | null)[][];
+  /** Detected disk format name (e.g. "+3DOS", "CPC System") */
+  diskFormat: string;
+  /** Detected copy protection scheme, or empty string */
+  protection: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -159,10 +163,294 @@ export function parseDSK(data: Uint8Array): DskImage {
     }
   }
 
-  return {
+  const image: DskImage = {
     format: isExtended ? 'extended' : 'standard',
     numTracks,
     numSides,
     tracks,
+    diskFormat: '',
+    protection: '',
   };
+
+  image.diskFormat = detectDiskFormat(image);
+  image.protection = detectProtection(image);
+  return image;
+}
+
+// ── Format detection ────────────────────────────────────────────────────────
+
+function detectDiskFormat(image: DskImage): string {
+  const t0 = image.tracks[0]?.[0];
+  if (!t0 || t0.sectors.length === 0) return 'Empty';
+
+  const count = t0.sectors.length;
+  const n = t0.sectors[0].n;
+  const minR = Math.min(...t0.sectors.map(s => s.r));
+  const ds = image.numSides === 2 ? ' DS' : '';
+
+  if (count === 9 && n === 2) {
+    if (minR === 0x01) return '+3DOS' + ds;
+    if (minR === 0xC1) return 'CPC System' + ds;
+    if (minR === 0x41) return 'CPC Data' + ds;
+  }
+
+  const bytes = n <= 8 ? 128 << n : 0;
+  return `${count}×${bytes}b` + ds;
+}
+
+// ── Protection detection (ported from dskmanager-rust) ──────────────────────
+
+/** Get track from side 0 by cylinder index. */
+function trk(image: DskImage, cyl: number): DskTrack | null {
+  return image.tracks[cyl]?.[0] ?? null;
+}
+
+/** Search for an ASCII pattern in a Uint8Array. */
+function findPattern(data: Uint8Array, pattern: string): number {
+  const pLen = pattern.length;
+  if (pLen === 0 || data.length < pLen) return -1;
+  outer: for (let i = 0; i <= data.length - pLen; i++) {
+    for (let j = 0; j < pLen; j++) {
+      if (data[i + j] !== pattern.charCodeAt(j)) continue outer;
+    }
+    return i;
+  }
+  return -1;
+}
+
+/** Search for a pattern across all sectors on side 0. */
+function findSignatureInDisk(image: DskImage, pattern: string): string | null {
+  for (let t = 0; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (!track) continue;
+    for (let s = 0; s < track.sectors.length; s++) {
+      const off = findPattern(track.sectors[s].data, pattern);
+      if (off >= 0) return `T${t}/S${s} +${off}`;
+    }
+  }
+  return null;
+}
+
+function isUniform(image: DskImage): boolean {
+  const t0 = trk(image, 0);
+  if (!t0) return true;
+  const count = t0.sectors.length;
+  const size = t0.sectors[0]?.data.length ?? 0;
+  for (let t = 1; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (!track) continue;
+    if (track.sectors.length !== count) return false;
+    if (track.sectors[0]?.data.length !== size) return false;
+  }
+  return true;
+}
+
+function hasFdcErrors(image: DskImage): boolean {
+  for (let t = 0; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (!track) continue;
+    for (const s of track.sectors) {
+      if (s.st1 !== 0 || s.st2 !== 0) return true;
+    }
+  }
+  return false;
+}
+
+type Detector = (image: DskImage) => string | null;
+
+const detectSpeedlock: Detector = (image) => {
+  const sigs: [string, string][] = [
+    ['Speedlock 1985', 'SPEEDLOCK PROTECTION SYSTEM (C) 1985 '],
+    ['Speedlock 1986', 'SPEEDLOCK PROTECTION SYSTEM (C) 1986 '],
+    ['Speedlock disc 1987', 'SPEEDLOCK DISC PROTECTION SYSTEMS COPYRIGHT 1987 '],
+    ['Speedlock 1987 v2.1', 'SPEEDLOCK PROTECTION SYSTEM (C) 1987 D.LOOKER & D.AUBREY JONES : VERSION D/2.1'],
+    ['Speedlock 1987', 'SPEEDLOCK PROTECTION SYSTEM (C) 1987 '],
+    ['Speedlock +3 1987', 'SPEEDLOCK +3 DISC PROTECTION SYSTEM COPYRIGHT 1987 SPEEDLOCK ASSOCIATES'],
+    ['Speedlock +3 1988', 'SPEEDLOCK +3 DISC PROTECTION SYSTEM COPYRIGHT 1988 SPEEDLOCK ASSOCIATES'],
+    ['Speedlock 1988', 'SPEEDLOCK DISC PROTECTION SYSTEMS (C) 1988 SPEEDLOCK ASSOCIATES'],
+    ['Speedlock 1989', 'SPEEDLOCK DISC PROTECTION SYSTEMS (C) 1989 SPEEDLOCK ASSOCIATES'],
+    ['Speedlock 1990', 'SPEEDLOCK DISC PROTECTION SYSTEMS (C) 1990 SPEEDLOCK ASSOCIATES'],
+  ];
+  for (const [name, pat] of sigs) {
+    const loc = findSignatureInDisk(image, pat);
+    if (loc) return `${name} (${loc})`;
+  }
+  // Unsigned Speedlock +3: T0=9 sectors, T1=5×1024b
+  const t0 = trk(image, 0), t1 = trk(image, 1);
+  if (t0?.sectors.length === 9 && t1?.sectors.length === 5 && t1.sectors[0]?.data.length === 1024) {
+    const s6 = t0.sectors[6], s8 = t0.sectors[8];
+    if (s6?.st2 === 0x40 && s8?.st2 === 0) return 'Speedlock +3 1987';
+    if (s6?.st2 === 0x40 && s8?.st2 === 0x40) return 'Speedlock +3 1988';
+  }
+  // Unsigned Speedlock 1989/1990
+  if (t0 && t0.sectors.length > 7 && image.numTracks > 40 && t1?.sectors.length === 1) {
+    const s = t1.sectors[0];
+    if (s.r === 0xC1 && s.st1 === 0x20) return 'Speedlock 1989/1990';
+  }
+  return null;
+};
+
+const detectAlkatraz: Detector = (image) => {
+  const t0 = trk(image, 0);
+  if (!t0?.sectors[0]) return null;
+  if (findPattern(t0.sectors[0].data, ' THE ALKATRAZ PROTECTION SYSTEM') >= 0) return 'Alkatraz +3';
+  for (let t = 0; t < image.numTracks - 1; t++) {
+    const track = trk(image, t);
+    if (track?.sectors.length === 18 && track.sectors[0].data.length === 256) return 'Alkatraz CPC';
+  }
+  return null;
+};
+
+const detectHexagon: Detector = (image) => {
+  const t0 = trk(image, 0);
+  if (!t0 || t0.sectors.length !== 10) return null;
+  for (let t = 0; t < Math.min(4, image.numTracks); t++) {
+    const track = trk(image, t);
+    if (!track) continue;
+    for (const s of track.sectors) {
+      if (findPattern(s.data, 'HEXAGON DISK PROTECTION') >= 0) return 'Hexagon';
+      if (findPattern(s.data, 'HEXAGON Disk Protection') >= 0) return 'Hexagon';
+    }
+  }
+  return null;
+};
+
+const detectPaulOwens: Detector = (image) => {
+  const t0 = trk(image, 0), t1 = trk(image, 1);
+  if (!t0 || t0.sectors.length !== 9 || !t1 || t1.sectors.length !== 0) return null;
+  if (t0.sectors[2] && findPattern(t0.sectors[2].data, 'PAUL OWENS') >= 0) return 'Paul Owens';
+  const t2 = trk(image, 2);
+  if (t2?.sectors.length === 6 && t2.sectors[0]?.data.length === 256) return 'Paul Owens';
+  return null;
+};
+
+const detectThreeInch: Detector = (image) => {
+  const sig = 'Loader Copyright Three Inch Software 1988';
+  const loc = findSignatureInDisk(image, sig);
+  if (loc) return `Three Inch Loader (${loc})`;
+  return null;
+};
+
+const detectFrontier: Detector = (image) => {
+  const t1 = trk(image, 1);
+  if (!t1 || t1.sectors.length === 0) return null;
+  if (t1.sectors[0] && findPattern(t1.sectors[0].data, 'W DISK PROTECTION SYSTEM. (C) 1990 BY NEW FRONTIER SOFT.') >= 0) return 'Frontier';
+  return null;
+};
+
+const detectPms: Detector = (image) => {
+  const t0s0 = trk(image, 0)?.sectors[0];
+  if (!t0s0) return null;
+  const sigs: [string, string][] = [
+    ['P.M.S. 1986', '[C] P.M.S. 1986'],
+    ['P.M.S. Loader 1986', 'P.M.S. LOADER [C]1986'],
+    ['P.M.S. 1987', 'P.M.S.LOADER [C]1987'],
+  ];
+  for (const [name, pat] of sigs) {
+    if (findPattern(t0s0.data, pat) >= 0) return name;
+  }
+  return null;
+};
+
+const detectWrm: Detector = (image) => {
+  const t8 = trk(image, 8);
+  if (!t8 || t8.sectors.length <= 9) return null;
+  const s9 = t8.sectors[9];
+  if (!s9 || s9.data.length <= 128) return null;
+  if (findPattern(s9.data, 'W.R.M Disc') === 0 && findPattern(s9.data, 'Protection') >= 0) return 'W.R.M Disc Protection';
+  return null;
+};
+
+const detectHerbulot: Detector = (image) => {
+  const t0 = trk(image, 0);
+  if (!t0) return null;
+  for (const s of t0.sectors) {
+    if (findPattern(s.data, 'PROTECTION') >= 0 && findPattern(s.data, 'Remi HERBULOT') >= 0) return 'ERE/Remi HERBULOT';
+  }
+  return null;
+};
+
+const detectKbi: Detector = (image) => {
+  for (let t = 0; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (track?.sectors.length === 19) return 'KBI-19';
+  }
+  if (image.numTracks >= 40) {
+    const t38 = trk(image, 38), t39 = trk(image, 39);
+    if (t38?.sectors.length === 9 && t39?.sectors.length === 10) {
+      const s9 = t39.sectors[9];
+      if (s9?.st1 === 0x20 && s9.st2 === 0x20) return 'KBI-10';
+    }
+  }
+  return null;
+};
+
+const detectPlayers: Detector = (image) => {
+  for (let t = 0; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (track?.sectors.length !== 16) continue;
+    if (track.sectors.every((s, i) => s.r === i && s.n === i)) return 'Players';
+  }
+  return null;
+};
+
+const detectInfogrames: Detector = (image) => {
+  if (image.numTracks <= 39) return null;
+  const t39 = trk(image, 39);
+  if (t39?.sectors.length !== 9) return null;
+  for (const s of t39.sectors) {
+    if (s.n === 2 && s.data.length === 540) return 'Infogrames/Logiciel';
+  }
+  return null;
+};
+
+const detectRainbowArts: Detector = (image) => {
+  if (image.numTracks <= 40) return null;
+  const t40 = trk(image, 40);
+  if (t40?.sectors.length !== 9) return null;
+  for (const s of t40.sectors) {
+    if (s.r === 0xC6 && s.st1 === 0x20 && s.st2 === 0x20) return 'Rainbow Arts';
+  }
+  return null;
+};
+
+const detectDiscsys: Detector = (image) => {
+  for (let t = 0; t < image.numTracks; t++) {
+    const track = trk(image, t);
+    if (track?.sectors.length !== 16) continue;
+    if (track.sectors.every((s, i) => s.c === i && s.h === i && s.r === i && s.n === i)) return 'DiscSYS';
+  }
+  return null;
+};
+
+const detectArmourloc: Detector = (image) => {
+  const t0 = trk(image, 0);
+  if (t0?.sectors.length !== 9) return null;
+  if (t0.sectors[0] && findPattern(t0.sectors[0].data, '0K free') === 2) return 'ARMOURLOC';
+  return null;
+};
+
+const DETECTORS: Detector[] = [
+  detectAlkatraz, detectFrontier, detectHexagon, detectPaulOwens,
+  detectSpeedlock, detectThreeInch, detectWrm, detectPms,
+  detectPlayers, detectInfogrames, detectRainbowArts, detectHerbulot,
+  detectKbi, detectDiscsys, detectArmourloc,
+];
+
+function detectProtection(image: DskImage): string {
+  if (image.numTracks < 2) return '';
+  const t0 = trk(image, 0);
+  if (!t0 || t0.sectors.length < 1 || t0.sectors[0].data.length < 128) return '';
+
+  const uniform = isUniform(image);
+  const errors = hasFdcErrors(image);
+  if (uniform && !errors) return '';
+
+  for (const detect of DETECTORS) {
+    const result = detect(image);
+    if (result) return result;
+  }
+
+  if (!uniform && errors) return 'Unknown';
+  return '';
 }

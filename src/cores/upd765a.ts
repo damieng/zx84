@@ -124,6 +124,20 @@ export class UPD765A {
 
   // ── Public API ─────────────────────────────────────────────────────
 
+  /** Expose disk image for BIOS trap handler. */
+  get diskImage(): DskImage | null { return this.disk; }
+
+  /** Set the Present Cylinder Number for a drive (used by BIOS trap seek). */
+  setTrack(unit: number, cyl: number): void { this.pcn[unit & 3] = cyl; }
+
+  /** Latch sector access info for UI display (used by BIOS trap read/write). */
+  latchAccess(r: number, head: number, writing: boolean): void {
+    this.latchR = r;
+    this.latchHead = head;
+    this.latchWriting = writing;
+    this.latchFrames = 25;
+  }
+
   insertDisk(image: DskImage): void {
     this.disk = image;
     this.idIndex = [0, 0, 0, 0];

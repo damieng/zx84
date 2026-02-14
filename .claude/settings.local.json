@@ -9,7 +9,17 @@
       "WebFetch(domain:spectrumforeveryone.com)",
       "WebFetch(domain:softspectrum48.weebly.com)",
       "WebFetch(domain:en.wikipedia.org)",
-      "Bash(printf:*)"
+      "Bash(printf:*)",
+      "Bash(python3:*)",
+      "WebFetch(domain:simonowen.com)",
+      "WebFetch(domain:www.cpcwiki.eu)",
+      "WebFetch(domain:craigsretrocomputingpage.eu5.org)",
+      "WebFetch(domain:muckypaws.com)",
+      "WebFetch(domain:cpctech.cpc-live.com)",
+      "WebFetch(domain:skoolkid.github.io)",
+      "WebFetch(domain:www.matthew-wilson.net)",
+      "WebFetch(domain:www.tablix.org)",
+      "WebFetch(domain:spectrum.8bit.pl)"
     ]
   }
 }

@@ -1,5 +1,5 @@
 /**
- * ngspecz - ZX Spectrum Emulator
+ * ZX84 - ZX Spectrum Emulator
  * Entry point: DOM wiring, file I/O, ROM persistence, machine lifecycle.
  */
 
@@ -16,7 +16,7 @@ import { showFilePicker } from './ui/zip-picker.ts';
 
 // ── IndexedDB ROM persistence ──────────────────────────────────────────────
 
-const DB_NAME = 'ngspecz';
+const DB_NAME = 'zx84';
 const DB_VERSION = 1;
 const STORE_NAME = 'roms';
 
@@ -69,7 +69,7 @@ async function persistROM(model: SpectrumModel, data: Uint8Array, label: string)
   const key = romKey(model);
   romCache[key] = { data, label };
   await dbSave(`rom-${key}`, data);
-  try { localStorage.setItem(`ngspecz-rom-label-${key}`, label); } catch { /* */ }
+  try { localStorage.setItem(`zx84-rom-label-${key}`, label); } catch { /* */ }
 }
 
 async function restoreROM(model: SpectrumModel): Promise<ROMEntry | null> {
@@ -77,18 +77,18 @@ async function restoreROM(model: SpectrumModel): Promise<ROMEntry | null> {
   if (romCache[key]) return romCache[key];
   const data = await dbLoad(`rom-${key}`);
   if (!data) return null;
-  const label = localStorage.getItem(`ngspecz-rom-label-${key}`) || 'saved ROM';
+  const label = localStorage.getItem(`zx84-rom-label-${key}`) || 'saved ROM';
   romCache[key] = { data, label };
   return romCache[key];
 }
 
 function saveModel(model: SpectrumModel): void {
-  try { localStorage.setItem('ngspecz-model', model); } catch { /* */ }
+  try { localStorage.setItem('zx84-model', model); } catch { /* */ }
 }
 
 function loadSavedModel(): SpectrumModel | null {
   try {
-    const val = localStorage.getItem('ngspecz-model');
+    const val = localStorage.getItem('zx84-model');
     if (val === '48k' || val === '128k' || val === '+2' || val === '+2a' || val === '+3') return val as SpectrumModel;
   } catch { /* */ }
   return null;
@@ -99,13 +99,13 @@ function loadSavedModel(): SpectrumModel | null {
 async function persistLastFile(data: Uint8Array, filename: string): Promise<void> {
   try {
     await dbSave('last-file', data);
-    localStorage.setItem('ngspecz-last-file', filename);
+    localStorage.setItem('zx84-last-file', filename);
   } catch { /* quota or write error */ }
 }
 
 async function restoreLastFile(): Promise<{ data: Uint8Array; name: string } | null> {
   try {
-    const name = localStorage.getItem('ngspecz-last-file');
+    const name = localStorage.getItem('zx84-last-file');
     if (!name) return null;
     const data = await dbLoad('last-file');
     if (!data) return null;
@@ -115,7 +115,7 @@ async function restoreLastFile(): Promise<{ data: Uint8Array; name: string } | n
 
 function clearLastFile(): void {
   try {
-    localStorage.removeItem('ngspecz-last-file');
+    localStorage.removeItem('zx84-last-file');
   } catch { /* */ }
   // IndexedDB entry left in place — harmless, overwritten on next save
 }
@@ -134,16 +134,13 @@ const romStatus = document.getElementById('rom-status') as HTMLSpanElement;
 const snapInput = document.getElementById('snap-input') as HTMLInputElement;
 const snapLoadBtn = document.getElementById('snap-load-btn') as HTMLButtonElement;
 const snapSaveBtn = document.getElementById('snap-save-btn') as HTMLButtonElement;
-const loadedFileEl = document.getElementById('loaded-file') as HTMLDivElement;
-const playBtn = document.getElementById('play-btn') as HTMLButtonElement;
-const resetBtn = document.getElementById('reset-btn') as HTMLButtonElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
-import buildTime from 'virtual:buildtime';
-document.querySelector('#toolbar h1')!.textContent = buildTime;
-const stuckBtn = document.getElementById('stuck-btn') as HTMLButtonElement;
-const transcribeBtn = document.getElementById('transcribe-btn') as HTMLButtonElement;
-const diagCopy = document.getElementById('diag-copy') as HTMLButtonElement;
-const diagOutput = document.getElementById('diag-output') as HTMLTextAreaElement;
+// Logo is static HTML — no buildTime stamp
+const cpuPlayBtn = document.getElementById('cpu-play') as HTMLButtonElement;
+const cpuResetBtn = document.getElementById('cpu-reset') as HTMLButtonElement;
+const cpuLoopBtn = document.getElementById('cpu-loop') as HTMLButtonElement;
+const cpuMhzBtn = document.getElementById('cpu-mhz') as HTMLButtonElement;
+const transcribeOverlay = document.getElementById('transcribe-overlay') as HTMLPreElement;
 
 const scaleSelect = document.getElementById('scale') as HTMLSelectElement;
 const volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
@@ -165,7 +162,6 @@ const fontAddBtn = document.getElementById('font-add-btn') as HTMLButtonElement;
 const fontInput = document.getElementById('font-input') as HTMLInputElement;
 const fontPreview = document.getElementById('font-preview') as HTMLCanvasElement;
 const romFontPreview = document.getElementById('rom-font-preview') as HTMLCanvasElement;
-const clockSpeedEl = document.getElementById('clock-speed') as HTMLSpanElement;
 
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
@@ -176,13 +172,20 @@ const ledBeep = document.getElementById('led-beep') as HTMLDivElement;
 const ledAy = document.getElementById('led-ay') as HTMLDivElement;
 const ledDsk = document.getElementById('led-dsk') as HTMLDivElement;
 
+const banksPanel = document.getElementById('banks-panel') as HTMLDivElement;
 const banksOutput = document.getElementById('banks-output') as HTMLPreElement;
-const diskPanel = document.getElementById('disk-panel') as HTMLDivElement;
-const diskOutput = document.getElementById('disk-output') as HTMLPreElement;
+const diskInfoPanel = document.getElementById('disk-info-panel') as HTMLDivElement;
+const diskInfoOutput = document.getElementById('disk-info-output') as HTMLPreElement;
+const drivePanel = document.getElementById('drive-panel') as HTMLDivElement;
+const driveOutput = document.getElementById('drive-output') as HTMLPreElement;
+const diskModeSelect = document.getElementById('disk-mode') as HTMLSelectElement;
+const trapLog = document.getElementById('trap-log') as HTMLPreElement;
 
 const regsOutput = document.getElementById('regs-output') as HTMLPreElement;
 
 let floppySound: FloppySound | null = null;
+let currentDiskInfo: import('./formats/dsk.ts').DskImage | null = null;
+let currentDiskName = '';
 
 const tapeBlocksContainer = document.getElementById('tape-blocks') as HTMLDivElement;
 const tapeRewindBtn = document.getElementById('tape-rewind') as HTMLButtonElement;
@@ -215,7 +218,7 @@ function updateClockSpeed(): void {
   speedLastTStates = spectrum.cpu.tStates;
   if (elapsed > 0) {
     const mhz = (tStates / elapsed) / 1_000_000;
-    clockSpeedEl.textContent = `${mhz.toFixed(2)} MHz`;
+    cpuMhzBtn.textContent = `${mhz.toFixed(2)} MHz`;
   }
 }
 
@@ -242,6 +245,7 @@ function updateActivityLEDs(): void {
   }
   updateTapeHighlight();
   updateRegsDisplay();
+  updateTranscribeOverlay();
 }
 
 // ── Tape viewer panel ───────────────────────────────────────────────────────
@@ -470,14 +474,14 @@ function tickAutoType(): void {
 
 function getSavedScale(): number {
   try {
-    const v = localStorage.getItem('ngspecz-scale');
+    const v = localStorage.getItem('zx84-scale');
     if (v === '1' || v === '2' || v === '3' || v === '4') return Number(v);
   } catch { /* */ }
   return 2;
 }
 
 function getSaved(key: string, fallback: string): string {
-  try { return localStorage.getItem(`ngspecz-${key}`) ?? fallback; } catch { return fallback; }
+  try { return localStorage.getItem(`zx84-${key}`) ?? fallback; } catch { return fallback; }
 }
 
 function applyDisplaySettings(): void {
@@ -505,7 +509,7 @@ function createMachine(): void {
   speedLastTime = performance.now();
   speedLastTStates = 0;
   speedFrameCount = 0;
-  clockSpeedEl.textContent = '';
+  cpuMhzBtn.textContent = 'MHz';
 
   if (romData) {
     spectrum.loadROM(romData);
@@ -513,7 +517,18 @@ function createMachine(): void {
     spectrum.start();
   }
 
+  // Apply saved disk mode for +3
+  if (isPlus3(currentModel)) {
+    const savedDiskMode = getSaved('disk-mode', 'fdc');
+    if (savedDiskMode === 'bios' || savedDiskMode === 'fdc') {
+      spectrum.diskMode = savedDiskMode as 'fdc' | 'bios';
+      diskModeSelect.value = savedDiskMode;
+    }
+  }
+
   // Floppy sound — create for +3, destroy otherwise
+  currentDiskInfo = null;
+  currentDiskName = '';
   if (isPlus3(currentModel)) {
     if (!floppySound) floppySound = new FloppySound();
     floppySound.reset();
@@ -542,7 +557,7 @@ snapSaveBtn.addEventListener('click', () => {
 
   const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
   const model = is128kClass(currentModel) ? '128k' : '48k';
-  const filename = `ngspecz-${model}.sna`;
+  const filename = `zx84-${model}.sna`;
 
   const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
@@ -561,8 +576,9 @@ snapSaveBtn.addEventListener('click', () => {
 let emulationPaused = false;
 
 function updatePlayBtn(): void {
-  playBtn.textContent = emulationPaused ? '\u25B6' : '\u23F8';
-  playBtn.title = emulationPaused ? 'Resume emulation' : 'Pause emulation';
+  cpuPlayBtn.textContent = emulationPaused ? '\u25B6' : '\u23F8';
+  cpuPlayBtn.title = emulationPaused ? 'Resume emulation' : 'Pause emulation';
+  cpuPlayBtn.classList.toggle('active', emulationPaused);
 }
 
 function unpause(): void {
@@ -577,19 +593,25 @@ function hex16(v: number): string { return v.toString(16).toUpperCase().padStart
 
 function flagHtml(label: string, on: boolean): string {
   return on
-    ? `<span class="flag-on">${label}</span>`
-    : `<span class="flag-off">${label.toLowerCase()}</span>`;
+    ? `<span class="flag-on">☑ ${label}</span>`
+    : `<span class="flag-off">☐ ${label}</span>`;
 }
 
 function renderRegs(cpu: Z80): string {
   const f = cpu.f;
-  const flags = [
-    flagHtml('S', (f & Z80.FLAG_S) !== 0),
-    flagHtml('Z', (f & Z80.FLAG_Z) !== 0),
-    flagHtml('H', (f & Z80.FLAG_H) !== 0),
-    flagHtml('P', (f & Z80.FLAG_PV) !== 0),
-    flagHtml('N', (f & Z80.FLAG_N) !== 0),
-    flagHtml('C', (f & Z80.FLAG_C) !== 0),
+  const flags1 = [
+    flagHtml('Sign', (f & Z80.FLAG_S) !== 0),
+    flagHtml('Zero', (f & Z80.FLAG_Z) !== 0),
+  ].join(' ');
+
+  const flags2 = [
+    flagHtml('Half', (f & Z80.FLAG_H) !== 0),
+    flagHtml('Prty', (f & Z80.FLAG_PV) !== 0),
+  ].join(' ');
+
+  const flags3 = [
+    flagHtml('Subt', (f & Z80.FLAG_N) !== 0),
+    flagHtml('Crry', (f & Z80.FLAG_C) !== 0),
   ].join(' ');
 
   const iff = cpu.iff1 ? 'EI' : 'DI';
@@ -598,12 +620,12 @@ function renderRegs(cpu: Z80): string {
   const n = '<span class="reg-name">';
   const e = '</span>';
   return [
-    `${n}AF${e}  ${hex16(cpu.af)}  ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}  ${flags}`,
-    `${n}BC${e}  ${hex16(cpu.bc)}  ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}  ${iff} ${n}IM${e}${cpu.im}${halt}`,
-    `${n}DE${e}  ${hex16(cpu.de)}  ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}`,
+    `${n}AF${e}  ${hex16(cpu.af)}  ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}   ${flags1}`,
+    `${n}BC${e}  ${hex16(cpu.bc)}  ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}   ${flags2}`,
+    `${n}DE${e}  ${hex16(cpu.de)}  ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}   ${flags3}`,
     `${n}HL${e}  ${hex16(cpu.hl)}  ${n}HL'${e} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
-    `${n}IX${e}  ${hex16(cpu.ix)}  ${n}IY${e}  ${hex16(cpu.iy)}  ${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
-    `${n}SP${e}  ${hex16(cpu.sp)}  ${n}PC${e}  ${hex16(cpu.pc)}`,
+    `${n}IX${e}  ${hex16(cpu.ix)}  ${n}IY${e}  ${hex16(cpu.iy)}   ${iff}  ${n}IM${e}${cpu.im}${halt}`,
+    `${n}SP${e}  ${hex16(cpu.sp)}  ${n}PC${e}  ${hex16(cpu.pc)}   ${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
   ].join('\n');
 }
 
@@ -613,6 +635,10 @@ function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
   const scr = (mem.port7FFD & 0x08) ? 7 : 5;
   const plus2a = isPlus2AClass(currentModel);
 
+  let portLine = `${n}7FFD${e} ${hex8(mem.port7FFD)}`;
+  if (plus2a) portLine += `  ${n}1FFD${e} ${hex8(mem.port1FFD)}`;
+  const lines = [portLine];
+
   let romLabel: string;
   if (plus2a) {
     romLabel = `(page ${mem.currentROM})`;
@@ -620,42 +646,49 @@ function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
     romLabel = mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)';
   }
 
-  const lines = [
+  lines.push(
     `${n}ROM${e}   ${mem.currentROM}  ${romLabel}`,
     `${n}Bank${e}  ${mem.currentBank}  ${n}at${e} C000-FFFF`,
-    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}  ${n}7FFD${e} ${hex8(mem.port7FFD)}`,
-  ];
+    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}`,
+  );
 
-  if (plus2a) {
-    let extra = `${n}1FFD${e} ${hex8(mem.port1FFD)}`;
-    if (mem.specialPaging) {
-      const mode = (mem.port1FFD >> 1) & 3;
-      extra += `  ${n}Special${e} mode ${mode}`;
-    }
-    if (isPlus3(currentModel) && spectrum) {
-      extra += `  ${n}Motor${e} ${spectrum.fdc.motorOn ? 'On' : 'Off'}`;
-    }
-    lines.push(extra);
+  if (plus2a && mem.specialPaging) {
+    const mode = (mem.port1FFD >> 1) & 3;
+    lines.push(`${n}Special${e} mode ${mode}`);
   }
 
   return lines.join('\n');
 }
 
-function renderDisk(): string {
+function renderDiskInfo(): string {
+  if (!currentDiskInfo) return '';
+  const n = '<span class="reg-name">';
+  const e = '</span>';
+  const img = currentDiskInfo;
+  const t0 = img.tracks[0]?.[0];
+  const spt = t0 ? t0.sectors.length : 0;
+  return [
+    currentDiskName,
+    `${n}Sides${e} ${img.numSides}  ${n}Tracks${e} ${img.numTracks}  ${n}Sectors${e} ${spt}`,
+    `${n}Format${e} ${img.diskFormat}`,
+    `${n}Prot.${e}  ${img.protection || 'None'}`,
+  ].join('\n');
+}
+
+function renderDrive(): string {
   if (!spectrum) return '';
   const fdc = spectrum.fdc;
   fdc.tickFrame();
   const n = '<span class="reg-name">';
   const e = '</span>';
+  const motor = fdc.motorOn ? 'On' : 'Off';
   const track = fdc.currentTrack.toString().padStart(2, '0');
   const head = fdc.currentHead;
   const sector = fdc.isExecuting ? fdc.currentSector.toString().padStart(2, '0') : '--';
-  const mode = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
-  const motor = fdc.motorOn ? 'On' : 'Off';
+  const ioMode = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
   return [
-    `${n}Track${e}  ${track}  ${n}Head${e} ${head}`,
-    `${n}Sector${e} ${sector}  ${mode}`,
-    `${n}Motor${e}  ${motor}`,
+    `${n}Motor${e}  ${motor}  ${n}Head${e} ${head}`,
+    `${n}Track${e}  ${track}  ${n}Sector${e} ${sector}  ${ioMode}`,
   ].join('\n');
 }
 
@@ -664,19 +697,41 @@ function updateRegsDisplay(): void {
   regsOutput.innerHTML = renderRegs(spectrum.cpu);
   if (is128kClass(currentModel)) {
     banksOutput.innerHTML = renderBanks(spectrum.memory);
-    banksOutput.style.display = '';
+    banksPanel.style.display = '';
   } else {
-    banksOutput.style.display = 'none';
+    banksPanel.style.display = 'none';
   }
   if (isPlus3(currentModel)) {
-    diskOutput.innerHTML = renderDisk();
-    diskPanel.style.display = '';
+    if (currentDiskInfo) {
+      diskInfoOutput.innerHTML = renderDiskInfo();
+      diskInfoPanel.style.display = '';
+    } else {
+      diskInfoPanel.style.display = 'none';
+    }
+    driveOutput.innerHTML = renderDrive();
+    drivePanel.style.display = '';
+    // Trap log — always show when in BIOS mode
+    if (spectrum.diskMode === 'bios' && spectrum.biosTrap) {
+      const entries = spectrum.biosTrap.trapLog;
+      trapLog.innerHTML = entries.length > 0
+        ? entries.map(e =>
+            e.startsWith('UNTRAPPED')
+              ? `<span class="trap-warn">${e}</span>`
+              : e
+          ).join('\n')
+        : '<span style="color:#666">(no traps fired)</span>';
+      trapLog.style.display = '';
+      if (entries.length > 0) trapLog.scrollTop = trapLog.scrollHeight;
+    } else {
+      trapLog.style.display = 'none';
+    }
   } else {
-    diskPanel.style.display = 'none';
+    diskInfoPanel.style.display = 'none';
+    drivePanel.style.display = 'none';
   }
 }
 
-playBtn.addEventListener('click', () => {
+cpuPlayBtn.addEventListener('click', () => {
   if (!spectrum) return;
   if (emulationPaused) {
     spectrum.start();
@@ -709,66 +764,77 @@ modelSelect.addEventListener('change', async () => {
   modelSelect.blur(); // release focus so keys go to the emulator, not the dropdown
 });
 
+// ── Disk mode selector ──────────────────────────────────────────────────────
+
+diskModeSelect.addEventListener('change', () => {
+  const mode = diskModeSelect.value as 'fdc' | 'bios';
+  if (spectrum) spectrum.diskMode = mode;
+  try { localStorage.setItem('zx84-disk-mode', mode); } catch { /* */ }
+  diskModeSelect.blur();
+});
+
 // ── Display / Sound controls ─────────────────────────────────────────────────
 
 scaleSelect.addEventListener('change', () => {
   const scale = Number(scaleSelect.value);
   if (spectrum) spectrum.display.setScale(scale);
-  try { localStorage.setItem('ngspecz-scale', String(scale)); } catch { /* */ }
+  try { localStorage.setItem('zx84-scale', String(scale)); } catch { /* */ }
+  if (transcribeActive) positionTranscribeOverlay();
 });
 
 volumeSlider.addEventListener('input', () => {
   const v = Number(volumeSlider.value);
   volumeValue.textContent = String(v);
   if (spectrum) spectrum['audio'].setVolume(v / 100);
-  try { localStorage.setItem('ngspecz-volume', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-volume', String(v)); } catch { /* */ }
 });
 
 smoothingSlider.addEventListener('input', () => {
   const v = Number(smoothingSlider.value);
   smoothingValue.textContent = String(v);
   if (spectrum) spectrum.display.setSmoothing(v / 100);
-  try { localStorage.setItem('ngspecz-smoothing', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-smoothing', String(v)); } catch { /* */ }
 });
 
 curvatureSlider.addEventListener('input', () => {
   const v = Number(curvatureSlider.value);
   curvatureValue.textContent = String(v);
   if (spectrum) spectrum.display.setCurvature(v / 100 * 0.15);
-  try { localStorage.setItem('ngspecz-curvature', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-curvature', String(v)); } catch { /* */ }
 });
 
 scanlinesSlider.addEventListener('input', () => {
   const v = Number(scanlinesSlider.value);
   scanlinesValue.textContent = String(v);
   if (spectrum) spectrum.display.setScanlines(v / 100);
-  try { localStorage.setItem('ngspecz-scanlines', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-scanlines', String(v)); } catch { /* */ }
 });
 
 dotmaskSelect.addEventListener('change', () => {
   const v = Number(dotmaskSelect.value);
   if (spectrum) spectrum.display.setDotmask(v as number);
-  try { localStorage.setItem('ngspecz-dotmask', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-dotmask', String(v)); } catch { /* */ }
 });
 
 brightnessSlider.addEventListener('input', () => {
   const v = Number(brightnessSlider.value);
   brightnessValue.textContent = String(v);
   if (spectrum) spectrum.display.setBrightness(v / 50);
-  try { localStorage.setItem('ngspecz-brightness', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-brightness', String(v)); } catch { /* */ }
 });
 
 contrastSlider.addEventListener('input', () => {
   const v = Number(contrastSlider.value);
   contrastValue.textContent = String(v);
   if (spectrum) spectrum.display.setContrast(v / 50);
-  try { localStorage.setItem('ngspecz-contrast', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-contrast', String(v)); } catch { /* */ }
 });
 
 borderSizeSelect.addEventListener('change', () => {
   const v = Number(borderSizeSelect.value) as 0 | 1 | 2;
   if (spectrum) spectrum.setBorderSize(v);
-  try { localStorage.setItem('ngspecz-border-size', String(v)); } catch { /* */ }
+  try { localStorage.setItem('zx84-border-size', String(v)); } catch { /* */ }
+  if (transcribeActive) positionTranscribeOverlay();
   borderSizeSelect.blur();
 });
 
@@ -776,13 +842,13 @@ borderSizeSelect.addEventListener('change', () => {
 
 function loadFontStore(): Record<string, string> {
   try {
-    const raw = localStorage.getItem('ngspecz-fonts');
+    const raw = localStorage.getItem('zx84-fonts');
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
 
 function saveFontStore(store: Record<string, string>): void {
-  try { localStorage.setItem('ngspecz-fonts', JSON.stringify(store)); } catch { /* */ }
+  try { localStorage.setItem('zx84-fonts', JSON.stringify(store)); } catch { /* */ }
 }
 
 function populateFontSelect(): void {
@@ -843,6 +909,7 @@ function fontDataHash(data: Uint8Array, offset: number, len: number): number {
 }
 
 function renderFontPreview(): void {
+  return; // font UI hidden
   const name = fontSelect.value;
 
   if (name) {
@@ -899,7 +966,7 @@ fontInput.addEventListener('change', () => {
     saveFontStore(store);
     populateFontSelect();
     fontSelect.value = name;
-    try { localStorage.setItem('ngspecz-font', name); } catch { /* */ }
+    try { localStorage.setItem('zx84-font', name); } catch { /* */ }
     renderFontPreview();
     setStatus(`Font "${name}" added`);
     fontInput.value = '';
@@ -908,7 +975,7 @@ fontInput.addEventListener('change', () => {
 });
 
 fontSelect.addEventListener('change', () => {
-  try { localStorage.setItem('ngspecz-font', fontSelect.value); } catch { /* */ }
+  try { localStorage.setItem('zx84-font', fontSelect.value); } catch { /* */ }
   renderFontPreview();
   fontSelect.blur();
 });
@@ -1062,10 +1129,6 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
   return true;
 }
 
-function showLoadedFile(filename: string): void {
-  loadedFileEl.textContent = filename;
-}
-
 async function handleZipFile(data: Uint8Array): Promise<void> {
   let entries;
   try {
@@ -1108,7 +1171,7 @@ async function loadFile(data: Uint8Array, filename: string): Promise<void> {
 
   if (ext === 'tap' || ext === 'tzx') {
     applyTape(data, filename);
-    showLoadedFile(filename);
+
     persistLastFile(data, filename);
     return;
   }
@@ -1117,9 +1180,11 @@ async function loadFile(data: Uint8Array, filename: string): Promise<void> {
     if (!spectrum) { setStatus('Load a ROM first'); return; }
     try {
       const image = parseDSK(data);
+      currentDiskInfo = image;
+      currentDiskName = filename;
       spectrum.loadDisk(image);
       setStatus(`Disk loaded: ${filename}`);
-      showLoadedFile(filename);
+  
       persistLastFile(data, filename);
     } catch (e) {
       setStatus(`DSK error: ${(e as Error).message}`);
@@ -1129,7 +1194,7 @@ async function loadFile(data: Uint8Array, filename: string): Promise<void> {
 
   if (ext === 'sna' || ext === 'z80') {
     if (await applySnapshot(data, filename)) {
-      showLoadedFile(filename);
+  
       persistLastFile(data, filename);
     }
     return;
@@ -1181,22 +1246,28 @@ function applyTape(data: Uint8Array, filename: string): void {
 
 // ── Reset ──────────────────────────────────────────────────────────────────
 
-resetBtn.addEventListener('click', () => {
+cpuResetBtn.addEventListener('click', () => {
   cancelAutoType();
   floppySound?.reset();
   if (spectrum) {
+    spectrum.turbo = false;
+    cpuMhzBtn.classList.remove('active');
+    cpuMhzBtn.title = 'Toggle turbo speed';
     spectrum.tape.rewind();
     spectrum.tape.paused = false;
     tapePauseBtn.classList.remove('active');
     tapePauseBtn.textContent = '\u23F8';
     tapePauseBtn.title = 'Pause';
     spectrum.reset();
-    spectrum.clearScreenGrid();
     if (romData) spectrum.start();
     buildTapeBlockList();
     unpause();
   }
-  diagOutput.value = '';
+  if (transcribeActive) {
+    transcribeActive = false;
+    canvas.classList.remove('dimmed');
+    transcribeOverlay.classList.remove('active');
+  }
   clearLastFile();
 });
 
@@ -1299,32 +1370,84 @@ document.querySelectorAll('.joy-dpad').forEach(dpad => {
 });
 
 captureCursor.addEventListener('change', () => {
-  try { localStorage.setItem('ngspecz-capture-cursor', captureCursor.checked ? '1' : '0'); } catch { /* */ }
+  try { localStorage.setItem('zx84-capture-cursor', captureCursor.checked ? '1' : '0'); } catch { /* */ }
 });
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
-stuckBtn.addEventListener('click', () => {
-  if (!spectrum) {
-    diagOutput.value = 'No machine running.';
-    return;
-  }
+// ── CPU control bar ─────────────────────────────────────────────────────────
+
+cpuLoopBtn.addEventListener('click', () => {
+  if (!spectrum) return;
   spectrum.stop();
-  diagOutput.value = diagnoseStuckLoop(spectrum.cpu, spectrum.memory);
+  const result = diagnoseStuckLoop(spectrum.cpu, spectrum.memory);
   spectrum.start();
+  navigator.clipboard.writeText(result);
+  setStatus('Loop capture copied to clipboard');
 });
 
-transcribeBtn.addEventListener('click', () => {
-  if (!spectrum) {
-    diagOutput.value = 'No machine running.';
-    return;
+cpuMhzBtn.addEventListener('click', () => {
+  if (!spectrum) return;
+  spectrum.turbo = !spectrum.turbo;
+  cpuMhzBtn.classList.toggle('active', spectrum.turbo);
+  cpuMhzBtn.title = spectrum.turbo ? 'Switch to normal speed' : 'Toggle turbo speed';
+  speedFrameCount = 49; // force immediate MHz update
+});
+
+let transcribeActive = false;
+
+/** Natural (unscaled) pixel size of the 32x24 monospace block. Measured once. */
+let transcribeNatW = 0;
+let transcribeNatH = 0;
+
+function positionTranscribeOverlay(): void {
+  if (!spectrum) return;
+  const scale = spectrum.display.scale;
+  const borderPx = (spectrum.ula.screenWidth - 256) / 2;
+  const offsetLeft = borderPx * scale + 2; // +2 for CSS border
+  const offsetTop = borderPx * scale + 2;
+  const targetW = 256 * scale;
+  const targetH = 192 * scale;
+
+  const ov = transcribeOverlay;
+  ov.style.left = offsetLeft + 'px';
+  ov.style.top = offsetTop + 'px';
+
+  // Measure natural size once (32 chars x 24 lines at the CSS font-size)
+  if (!transcribeNatW) {
+    ov.style.transform = 'none';
+    transcribeNatW = ov.scrollWidth || 1;
+    transcribeNatH = ov.scrollHeight || 1;
   }
-  diagOutput.value = spectrum.getScreenText();
-});
+  ov.style.transform = `scale(${targetW / transcribeNatW},${targetH / transcribeNatH})`;
+}
 
-diagCopy.addEventListener('click', () => {
-  if (diagOutput.value) {
-    navigator.clipboard.writeText(diagOutput.value);
+function updateTranscribeOverlay(): void {
+  if (!transcribeActive || !spectrum) return;
+  // Don't clobber the DOM while the user is selecting text
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed &&
+      transcribeOverlay.contains(sel.anchorNode)) return;
+  const grid = spectrum.screenGrid;
+  let text = '';
+  for (let row = 0; row < 24; row++) {
+    const offset = row * 32;
+    for (let col = 0; col < 32; col++) {
+      text += grid[offset + col];
+    }
+    if (row < 23) text += '\n';
+  }
+  transcribeOverlay.textContent = text;
+}
+
+ledRst16.addEventListener('click', () => {
+  if (!spectrum) return;
+  transcribeActive = !transcribeActive;
+  canvas.classList.toggle('dimmed', transcribeActive);
+  transcribeOverlay.classList.toggle('active', transcribeActive);
+  if (transcribeActive) {
+    updateTranscribeOverlay();
+    positionTranscribeOverlay();
   }
 });
 
@@ -1416,7 +1539,7 @@ async function init(): Promise<void> {
   populateFontSelect();
   renderFontPreview();
 
-  const savedCaptureCursor = getSaved('capture-cursor', '1');
+  const savedCaptureCursor = getSaved('capture-cursor', '0');
   captureCursor.checked = savedCaptureCursor === '1';
 
   const savedModel = loadSavedModel();
@@ -1448,11 +1571,11 @@ init();
 
 if (import.meta.hot) {
   import.meta.hot.on('hmr-freeze', () => {
-    const h1 = document.querySelector('#toolbar h1');
-    if (h1 && !h1.querySelector('.hmr-spinner')) {
+    const btns = document.getElementById('toolbar-btns');
+    if (btns && !btns.querySelector('.hmr-spinner')) {
       const spinner = document.createElement('span');
       spinner.className = 'hmr-spinner';
-      h1.appendChild(spinner);
+      btns.insertBefore(spinner, btns.firstChild);
     }
   });
 

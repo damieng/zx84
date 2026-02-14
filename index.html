@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ngspecz - ZX Spectrum Emulator</title>
+  <title>ZX84 - ZX Spectrum Emulator</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -21,7 +21,7 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
-      width: 200px;
+      width: 260px;
       flex-shrink: 0;
       padding-top: 4px;
     }
@@ -31,54 +31,113 @@
       justify-content: space-between;
     }
     #toolbar h1 {
-      font-size: 0.75rem;
-      color: #c0c0ff;
       margin: 0;
       display: flex;
-      align-items: center;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      line-height: 1;
+    }
+    .logo {
+      font-size: 1.05rem;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #fff;
+    }
+    .logo-num {
+      color: #a0a0ff;
+      font-weight: 600;
+    }
+    .logo-stripe {
+      height: 2px;
+      width: 100%;
+      background: linear-gradient(90deg, #e44, #ea4, #4e4, #4ee);
+      border-radius: 1px;
     }
     .hmr-spinner {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+    }
+    .hmr-spinner::after {
+      content: '';
+      display: block;
+      width: 10px;
+      height: 10px;
       border: 1.5px solid rgba(192, 192, 255, 0.25);
       border-top-color: #c0c0ff;
       border-radius: 50%;
       animation: hmr-spin 0.6s linear infinite;
-      margin-left: 6px;
     }
     @keyframes hmr-spin { to { transform: rotate(360deg); } }
-    #toolbar-btns {
-      display: flex;
-      gap: 2px;
-    }
-    #toolbar-btns button {
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border: 1px solid #555;
-      border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
-      font-size: 0.95rem;
-      cursor: pointer;
+    .section-label {
+      background: #000;
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
       display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
     }
-    #toolbar-btns button:hover { background: #3a3a5e; }
-    .section-label {
-      font-size: 0.8rem;
-      color: #999;
+    .section-label::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: -6px;
+      bottom: -6px;
+      width: 90px;
+      background: linear-gradient(
+        135deg,
+        #000 10px, #000 20px,
+        #f00 20px, #f00 30px,
+        #ff0 30px, #ff0 40px,
+        #0f0 40px, #0f0 50px,
+        #0ff 50px, #0ff 60px,
+        #000 60px, #000 70px
+      );
     }
-    #sidebar label {
+    /* Panel containers — white bg, black text, 128K menu style */
+    .panel {
+      background: #fff;
+      color: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      padding: 0 6px 6px;
+    }
+    .panel > .section-label {
+      margin: 0 -6px;
+      margin-bottom: 2px;
+    }
+    .panel select, .panel button {
+      padding: 5px 8px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: #eee;
+      color: #000;
+      font-size: 0.85rem;
+      cursor: pointer;
+      width: 100%;
+    }
+    .panel button:hover, .panel select:hover { background: #ddd; }
+    .panel label {
       display: flex;
       flex-direction: column;
       gap: 4px;
       font-size: 0.8rem;
-      color: #999;
+      color: #555;
     }
-    #sidebar select, #sidebar button {
+    .panel .slider-row { color: #333; }
+    .panel .slider-row .slider-label { color: #555; }
+    .panel .slider-row .slider-value { color: #555; }
+    .panel input[type="range"] { background: #ccc; }
+    #model-row select, #model-row button {
       padding: 5px 8px;
       border: 1px solid #555;
       border-radius: 4px;
@@ -86,9 +145,8 @@
       color: #e0e0e0;
       font-size: 0.85rem;
       cursor: pointer;
-      width: 100%;
     }
-    #sidebar button:hover { background: #3a3a5e; }
+    #model-row button:hover { background: #3a3a5e; }
     /* Model row: select + icon buttons inline */
     #model-row {
       display: flex;
@@ -107,17 +165,10 @@
       color: #c66;
       display: none;
     }
-    .clock-speed {
-      font-size: 0.75rem;
-      color: #8a8;
-      font-family: 'Consolas', 'Courier New', monospace;
-    }
     input[type="file"] { display: none; }
 
     /* Snapshot panel */
     #snapshot-panel {
-      border-top: 1px solid #333;
-      padding-top: 10px;
     }
     #snap-row {
       display: flex;
@@ -127,27 +178,45 @@
     #snap-row button {
       flex: 1;
     }
-    .loaded-file {
-      font-size: 0.7rem;
-      color: #8a8;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-height: 0;
-    }
-    .loaded-file:empty { display: none; }
 
     #main {
       display: flex;
       flex-direction: column;
       align-items: center;
     }
-    canvas {
+    #screen-wrap {
+      position: relative;
+      line-height: 0;
+    }
+    canvas#screen {
       image-rendering: pixelated;
       image-rendering: crisp-edges;
       border: 2px solid #333;
       background: #000;
+      transition: opacity 0.15s;
     }
+    canvas#screen.dimmed { opacity: 0.25; }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #transcribe-overlay {
+      display: none;
+      position: absolute;
+      margin: 0;
+      overflow: hidden;
+      pointer-events: none;
+      color: #fff;
+      background: transparent;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 16px;
+      line-height: 1;
+      white-space: pre;
+      border: none;
+      padding: 0;
+      transform-origin: 0 0;
+    }
+    #transcribe-overlay.active { display: block; pointer-events: auto; cursor: text; user-select: text; }
     #status-bar {
       display: flex;
       align-items: center;
@@ -200,8 +269,6 @@
 
     /* Display/Graphics panel */
     #display-panel {
-      border-top: 1px solid #333;
-      padding-top: 10px;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -279,8 +346,6 @@
 
     /* Sound panel */
     #sound-panel {
-      border-top: 1px solid #333;
-      padding-top: 10px;
       display: flex;
       flex-direction: column;
       gap: 6px;
@@ -288,8 +353,6 @@
 
     /* Joystick panel */
     #joystick-panel {
-      border-top: 1px solid #333;
-      padding-top: 10px;
     }
     #joy-columns {
       display: flex;
@@ -306,7 +369,7 @@
     }
     .joy-column label {
       font-size: 0.75rem;
-      color: #999;
+      color: #555;
       display: flex;
       flex-direction: column;
       gap: 2px;
@@ -324,10 +387,10 @@
       gap: 1px;
     }
     .joy-btn {
-      border: 1px solid #555;
+      border: 1px solid #bbb;
       border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
+      background: #eee;
+      color: #333;
       font-size: 0.75rem;
       cursor: pointer;
       display: flex;
@@ -336,16 +399,16 @@
       user-select: none;
       -webkit-user-select: none;
     }
-    .joy-btn:hover { background: #3a3a5e; }
-    .joy-btn:active, .joy-btn.pressed { background: #5a5a8e; border-color: #88f; }
+    .joy-btn:hover { background: #ddd; }
+    .joy-btn:active, .joy-btn.pressed { background: #cce; border-color: #66f; }
     .joy-spacer { visibility: hidden; }
     .joy-fire {
-      background: #3e2a2a;
-      border-color: #755;
+      background: #fee;
+      border-color: #daa;
       font-size: 0.55rem;
     }
-    .joy-fire:hover { background: #5e3a3a; }
-    .joy-fire:active, .joy-fire.pressed { background: #8e5a5a; border-color: #f88; }
+    .joy-fire:hover { background: #fdd; }
+    .joy-fire:active, .joy-fire.pressed { background: #ecc; border-color: #f66; }
     #capture-cursor-row {
       flex-direction: row !important;
       align-items: center;
@@ -369,13 +432,7 @@
       flex-shrink: 0;
       padding-top: 4px;
     }
-    #right-sidebar label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-size: 0.8rem;
-      color: #999;
-    }
+    /* right-sidebar labels styled via .panel label */
 
     /* Register panel */
     #regs-panel {
@@ -383,52 +440,99 @@
       flex-direction: column;
       gap: 4px;
     }
-    #regs-label {
-      font-size: 0.8rem;
-      color: #999;
+    /* #regs-label is styled in diag section below */
+    #cpu-controls {
+      display: flex;
+      gap: 2px;
+    }
+    #cpu-controls button {
+      flex: 1;
+      padding: 4px 0;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: #eee;
+      color: #000;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    #cpu-controls button:hover { background: #ddd; }
+    #cpu-controls button.active {
+      background: #fdd;
+      border-color: #c66;
+      color: #c00;
+    }
+    #cpu-mhz {
+      flex: 2;
+      font-size: 0.7rem !important;
+      font-variant-numeric: tabular-nums;
     }
     #regs-output {
       margin: 0;
       padding: 6px;
-      background: #0a0a18;
-      border: 1px solid #333;
       border-radius: 4px;
       font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 0.7rem;
+      font-size: 0.75rem;
       line-height: 1.5;
-      color: #8cf;
       white-space: pre;
       overflow-x: auto;
     }
-    #regs-output .reg-name { color: #999; }
-    #regs-output .flag-on { color: #8f8; }
-    #regs-output .flag-off { color: #444; }
+    #regs-output .reg-name { color: #999 }
 
-    /* Memory bank config */
+    /* Memory bank panel */
+    #banks-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    /* banks-label styled via .section-label */
     #banks-output {
       margin: 0;
       padding: 6px;
-      background: #0a0a18;
       border: 1px solid #333;
       border-radius: 4px;
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: 0.7rem;
       line-height: 1.5;
-      color: #ca8;
       white-space: pre;
     }
     #banks-output .reg-name { color: #999; }
 
-    /* Disk panel */
-    #disk-panel { display: flex; flex-direction: column; gap: 4px; }
-    #disk-panel-label { font-size: 0.8rem; color: #999; }
-    #disk-output {
+    /* Disk info panel (static image metadata) */
+    #disk-info-panel { display: flex; flex-direction: column; gap: 4px; }
+    /* disk-info-label styled via .section-label */
+    #disk-info-output {
       margin: 0; padding: 6px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem; line-height: 1.5;  white-space: pre;
+    }
+    #disk-info-output .reg-name { color: #999; }
+    /* Drive panel (live FDC state) */
+    #drive-panel { display: flex; flex-direction: column; gap: 4px; }
+    #drive-panel-label {
+      justify-content: space-between;
+    }
+    #drive-output {
+      margin: 0; padding: 6px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.7rem; line-height: 1.5; white-space: pre;
+    }
+    #drive-panel-label select {
+      padding: 2px 4px;
+      font-size: 0.7rem;
+      background: rgba(255,255,255,0.1);
+      border-color: #555;
+      color: #fff;
+    }
+    #drive-output .reg-name { color: #999; }
+    #trap-log {
+      display: none;
+      margin: 0; padding: 4px 6px;
       background: #0a0a18; border: 1px solid #333; border-radius: 4px;
       font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 0.7rem; line-height: 1.5; color: #ca8; white-space: pre;
+      font-size: 0.65rem; line-height: 1.4; color: #8a8;
+      white-space: pre; max-height: 120px; overflow-y: auto;
     }
-    #disk-output .reg-name { color: #999; }
+    #trap-log .trap-warn { color: #fa0; }
 
     /* Tape panel — always visible */
     #tape-panel {
@@ -436,10 +540,7 @@
       flex-direction: column;
       gap: 6px;
     }
-    #tape-panel-label {
-      font-size: 0.8rem;
-      color: #999;
-    }
+    /* tape-panel-label styled via .section-label */
     #tape-controls {
       display: flex;
       gap: 2px;
@@ -447,18 +548,18 @@
     #tape-controls button {
       flex: 1;
       padding: 4px 0;
-      border: 1px solid #555;
+      border: 1px solid #bbb;
       border-radius: 4px;
-      background: #2a2a3e;
-      color: #e0e0e0;
+      background: #eee;
+      color: #000;
       font-size: 0.85rem;
       cursor: pointer;
     }
-    #tape-controls button:hover { background: #3a3a5e; }
+    #tape-controls button:hover { background: #ddd; }
     #tape-controls button.active {
-      background: #3e2a2a;
-      border-color: #a55;
-      color: #f88;
+      background: #fdd;
+      border-color: #c66;
+      color: #c00;
     }
     #tape-blocks {
       max-height: 400px;
@@ -495,47 +596,40 @@
       font-style: italic;
     }
 
-    /* Diag panel */
+    /* Diag panel — below screen */
     #diag {
-      margin-top: 10px;
-      width: 100%;
+      align-self: stretch;
+      margin-top: 6px;
+      position: relative;
     }
-    #diag-output {
-      width: 100%;
-      height: 200px;
-      background: #0a0a18;
-      color: #8f8;
-      border: 1px solid #333;
-      border-radius: 4px;
-      font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 0.75rem;
-      padding: 6px;
-      resize: vertical;
-      white-space: pre;
-      tab-size: 8;
+    #diag-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
     }
-    #diag button {
-      padding: 4px 10px;
+    #diag-header button {
+      padding: 3px 8px;
       border: 1px solid #555;
       border-radius: 4px;
       background: #2a2a3e;
       color: #e0e0e0;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       cursor: pointer;
-      margin-bottom: 4px;
     }
-    #diag button:hover { background: #3a3a5e; }
-    #diag button.active { background: #2a3e2a; border-color: #5a5; color: #8f8; }
+    #diag-header button:hover { background: #3a3a5e; }
+    #diag-header button.active { background: #2a3e2a; border-color: #5a5; color: #8f8; }
+    /* Section-label inline controls (selects etc.) */
+    .section-label button, .section-label select {
+      position: relative;
+      z-index: 1;
+    }
   </style>
 </head>
 <body>
   <div id="sidebar">
     <div id="toolbar">
-      <h1>ngspecz</h1>
-      <div id="toolbar-btns">
-        <button id="play-btn" title="Pause emulation">&#x23F8;</button>
-        <button id="reset-btn" title="Reset machine">&#x27F3;</button>
-      </div>
+      <h1><span class="logo">ZX<span class="logo-num">84</span></span><span class="logo-stripe"></span></h1>
     </div>
 
     <div id="model-row">
@@ -550,19 +644,17 @@
       <input type="file" id="rom-input" accept=".rom,.bin" multiple>
     </div>
     <span class="rom-status" id="rom-status"></span>
-    <span class="clock-speed" id="clock-speed"></span>
 
-    <div id="snapshot-panel">
+    <div id="snapshot-panel" class="panel">
       <div class="section-label">Load / Save</div>
       <div id="snap-row">
         <button id="snap-load-btn" title="Load file">&#x1F4C2; Load</button>
         <button id="snap-save-btn" title="Save snapshot">&#x1F4BE; Save</button>
         <input type="file" id="snap-input" accept=".sna,.z80,.tap,.tzx,.dsk,.zip">
       </div>
-      <div id="loaded-file" class="loaded-file"></div>
     </div>
 
-    <div id="joystick-panel">
+    <div id="joystick-panel" class="panel">
       <div class="section-label">Joystick</div>
       <div id="joy-columns">
         <div class="joy-column">
@@ -610,10 +702,10 @@
           </div>
         </div>
       </div>
-      <label id="capture-cursor-row"><input type="checkbox" id="capture-cursor" checked> Capture cursor keys</label>
+      <label id="capture-cursor-row"><input type="checkbox" id="capture-cursor"> Capture cursor keys</label>
     </div>
 
-    <div id="sound-panel">
+    <div id="sound-panel" class="panel">
       <div class="section-label">Sound</div>
       <div class="slider-row">
         <span class="slider-label">Volume</span>
@@ -622,7 +714,7 @@
       </div>
     </div>
 
-    <div id="display-panel">
+    <div id="display-panel" class="panel">
       <div class="section-label">Graphics</div>
       <div id="display-controls">
         <label>
@@ -678,19 +770,22 @@
           <option value="5">Microvitec CUB</option>
         </select>
       </div>
-      <div class="slider-row" id="font-row">
+      <div class="slider-row" id="font-row" style="display:none">
         <span class="slider-label">Font</span>
         <select id="font-select"><option value="">(none)</option></select>
         <button id="font-add-btn" title="Add font (.ch8, 768 bytes)">+</button>
       </div>
       <canvas id="font-preview" width="128" height="16" style="display:none"></canvas>
       <canvas id="rom-font-preview" width="128" height="16" style="display:none"></canvas>
-      <input type="file" id="font-input" accept=".ch8,.bin">
+      <input type="file" id="font-input" accept=".ch8,.bin" style="display:none">
     </div>
   </div>
 
   <div id="main">
-    <canvas id="screen"></canvas>
+    <div id="screen-wrap">
+      <canvas id="screen"></canvas>
+      <pre id="transcribe-overlay"></pre>
+    </div>
     <div id="status-bar">
       <div id="status">Load a ROM to start</div>
       <div id="activity">
@@ -698,28 +793,53 @@
         <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
         <div class="led" id="led-tape" data-kind="tape"><span class="led-dot"></span>TAPE</div>
         <div class="led" id="led-load" data-kind="load"><span class="led-dot"></span>LOAD</div>
-        <div class="led" id="led-rst16" data-kind="rst16"><span class="led-dot"></span>RST16</div>
+        <div class="led" id="led-rst16" data-kind="rst16" style="cursor:pointer" title="Toggle transcribe overlay"><span class="led-dot"></span>RST16</div>
         <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
         <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
-        <div class="led" id="led-dsk" data-kind="dsk"><span class="led-dot"></span>DSK</div>
+        <div class="led" id="led-dsk" data-kind="dsk"><span class="led-dot"></span>DISK</div>
+      </div>
+    </div>
+    <div id="diag">
+      <div id="diag-header">
       </div>
     </div>
   </div>
 
   <div id="right-sidebar">
-    <div id="regs-panel">
-      <div id="regs-label">Registers</div>
+    <div id="regs-panel" class="panel">
+      <div id="regs-label" class="section-label">CPU</div>
+      <div id="cpu-controls">
+        <button id="cpu-play" title="Pause emulation">&#x23F8;</button>
+        <button id="cpu-reset" title="Reset machine">&#x27F3;</button>
+        <button id="cpu-loop" title="Capture loop to clipboard">&#x21BB;</button>
+        <button id="cpu-mhz" title="Toggle turbo speed">MHz</button>
+      </div>
       <pre id="regs-output"></pre>
+    </div>
+
+    <div id="banks-panel" class="panel" style="display: none">
+      <div id="banks-label" class="section-label">Memory</div>
       <pre id="banks-output"></pre>
     </div>
 
-    <div id="disk-panel" style="display: none">
-      <div id="disk-panel-label">Disk</div>
-      <pre id="disk-output"></pre>
+    <div id="disk-info-panel" class="panel" style="display: none">
+      <div id="disk-info-label" class="section-label">Disk</div>
+      <pre id="disk-info-output"></pre>
     </div>
 
-    <div id="tape-panel">
-      <div id="tape-panel-label">Tape</div>
+    <div id="drive-panel" class="panel" style="display: none">
+      <div id="drive-panel-label" class="section-label">Drive
+        <select id="disk-mode">
+          <option value="fdc">FDC</option>
+          <option value="bios">BIOS</option>
+        </select>
+      </div>
+      <pre id="drive-output"></pre>
+      <pre id="trap-log"></pre>
+    </div>
+
+    <div id="tape-panel" class="panel">
+      <div id="tape-panel-label" class="section-label">Tape</div>
       <div id="tape-controls">
         <button id="tape-rewind" title="Rewind">&#x23EE;</button>
         <button id="tape-prev" title="Previous">&#x23EA;</button>
@@ -729,12 +849,6 @@
       <div id="tape-blocks"></div>
     </div>
 
-    <div id="diag">
-      <button id="stuck-btn">Dump Loop</button>
-      <button id="transcribe-btn">Transcribe</button>
-      <button id="diag-copy">Copy</button>
-      <textarea id="diag-output" readonly></textarea>
-    </div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>
