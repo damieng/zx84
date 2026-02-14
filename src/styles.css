@@ -905,11 +905,41 @@ input[type="range"]::-moz-range-thumb {
   border-left-color: #44e;
 }
 
+.d-line.d-bp {
+  border-left-color: #c22;
+  background: #fef0f0;
+}
+
+.d-line.d-bp.d-cur {
+  border-left-color: #c22;
+  background: #f0e0fe;
+}
+
 .d-off { color: #999; }
 .d-hex { color: #aaa; }
 .d-val { color: #22c; }
 .d-adr { color: #808; }
 .d-port { color: #c22; }
+
+.disasm-ctx-menu {
+  position: absolute;
+  background: #fff;
+  border: 1px solid #ccc;
+  box-shadow: 2px 2px 6px rgba(0,0,0,.2);
+  z-index: 100;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+}
+
+.disasm-ctx-item {
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.disasm-ctx-item:hover {
+  background: #eef;
+}
 
 /* Section-label inline controls (selects etc.) */
 .section-label button,

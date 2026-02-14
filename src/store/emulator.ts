@@ -351,6 +351,35 @@ export function toggleTurbo(): void {
   speedFrameCount = 49; // force immediate MHz update
 }
 
+export function toggleBreakpoint(addr: number): void {
+  if (!spectrum) return;
+  if (spectrum.breakpoints.has(addr)) {
+    spectrum.breakpoints.delete(addr);
+    setStatus(`Breakpoint removed at ${hex16(addr)}`);
+  } else {
+    spectrum.breakpoints.add(addr);
+    setStatus(`Breakpoint set at ${hex16(addr)}`);
+  }
+  updateRegsOnce();
+}
+
+export function runTo(addr: number): void {
+  if (!spectrum) return;
+  // Add a temporary breakpoint, resume, and clean up when it hits
+  const wasSet = spectrum.breakpoints.has(addr);
+  spectrum.breakpoints.add(addr);
+  if (!wasSet) {
+    pendingRunTo = addr;
+  }
+  if (emulationPaused.value) {
+    spectrum.start();
+    emulationPaused.value = false;
+  }
+}
+
+/** Address of a temporary "run to" breakpoint to clean up on hit */
+let pendingRunTo = -1;
+
 export function copyCpuState(): void {
   if (!spectrum) return;
   const cpu = spectrum.cpu;
@@ -977,7 +1006,7 @@ function updateRegsOnce(): void {
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
     const cpu = spectrum!.cpu;
     const dLines = disassemble(cpu.memory, cpu.pc, 24);
-    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc);
+    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();
     }
@@ -1080,6 +1109,20 @@ function onFrame(): void {
   const a = spectrum.activity;
   const model = currentModel.value;
 
+  // Check if a breakpoint fired this frame
+  if (spectrum.breakpointHit >= 0) {
+    spectrum.stop();
+    emulationPaused.value = true;
+    const addr = spectrum.breakpointHit;
+    if (pendingRunTo === addr) {
+      spectrum.breakpoints.delete(addr);
+      pendingRunTo = -1;
+      setStatus(`Run-to reached ${hex16(addr)}`);
+    } else {
+      setStatus(`Breakpoint hit at ${hex16(addr)}`);
+    }
+  }
+
   // Sync tracing signal if trace auto-stopped (buffer full)
   if (tracing.value && !spectrum.tracing) {
     const text = spectrum.stopTrace();
@@ -1137,7 +1180,7 @@ function onFrame(): void {
     // Disassembly at PC
     const cpu = spectrum!.cpu;
     const dLines = disassemble(cpu.memory, cpu.pc, 24);
-    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc);
+    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
 
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();

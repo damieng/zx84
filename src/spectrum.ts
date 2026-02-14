@@ -518,6 +518,7 @@ export class Spectrum {
     if (!this.running) return;
 
     // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
+    this.breakpointHit = -1;
     const now = performance.now();
     if (this.turbo) {
       // Turbo: run as many frames as possible (target ~50MHz ≈ 14x)
@@ -526,6 +527,7 @@ export class Spectrum {
       while (framesRun < 14) {
         this.runFrame();
         framesRun++;
+        if (this.breakpointHit >= 0) break;
       }
       this.lastFrameTime = now;
     } else {
@@ -544,6 +546,7 @@ export class Spectrum {
         this.runFrame();
         this.frameTimeAccum -= FRAME_PERIOD;
         framesRun++;
+        if (this.breakpointHit >= 0) break;
       }
     }
 

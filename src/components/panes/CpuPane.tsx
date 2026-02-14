@@ -1,25 +1,15 @@
 import { Pane } from '../Pane.tsx';
-import { HiPower, HiPlay, HiPause, HiClipboardDocument } from 'react-icons/hi2';
+import { HiPower } from 'react-icons/hi2';
 import {
-  regsHtml, emulationPaused, turboMode, clockSpeedText,
-  resetMachine, togglePause, copyCpuState, toggleTurbo,
+  regsHtml, turboMode, clockSpeedText,
+  resetMachine, toggleTurbo,
 } from '../../store/emulator.ts';
 
 export function CpuPane() {
-  const paused = emulationPaused.value;
-
   return (
     <Pane id="regs-panel" label="CPU" mono>
       <div id="cpu-controls">
         <button id="cpu-reset" title="Reset machine" onClick={resetMachine}><HiPower /></button>
-        <button
-          title={paused ? 'Resume emulation' : 'Pause emulation'}
-          class={paused ? 'active' : ''}
-          onClick={togglePause}
-        >{paused ? <HiPlay /> : <HiPause />}</button>
-        <button title="Copy CPU state to clipboard" onClick={copyCpuState}>
-          <HiClipboardDocument />
-        </button>
         <button
           id="cpu-mhz"
           title={turboMode.value ? 'Switch to normal speed' : 'Toggle turbo speed'}

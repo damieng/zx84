@@ -354,15 +354,19 @@ export function stripMarkers(text: string): string {
   return text.replace(/[\x01\x02\x03]/g, '');
 }
 
-export function formatDisasmHtml(lines: DisasmLine[], mem: Uint8Array, pc: number): string {
+export function formatDisasmHtml(
+  lines: DisasmLine[], mem: Uint8Array, pc: number,
+  breakpoints?: Set<number>,
+): string {
   return lines.map(l => {
     const cur = l.addr === pc;
-    const cls = cur ? 'd-line d-cur' : 'd-line';
+    const bp = breakpoints?.has(l.addr);
+    const cls = 'd-line' + (cur ? ' d-cur' : '') + (bp ? ' d-bp' : '');
     const addr = h16(l.addr);
     const bytes: string[] = [];
     for (let i = 0; i < l.length; i++) bytes.push(h8(mem[(l.addr + i) & 0xFFFF]));
     const bytesStr = bytes.join(' ').padEnd(11);
     const mnem = colorize(l.text);
-    return `<div class="${cls}"><span class="d-off">${addr}</span> <span class="d-hex">${bytesStr}</span> ${mnem}</div>`;
+    return `<div class="${cls}" data-addr="${l.addr}"><span class="d-off">${addr}</span> <span class="d-hex">${bytesStr}</span> ${mnem}</div>`;
   }).join('');
 }
