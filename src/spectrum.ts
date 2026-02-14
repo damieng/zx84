@@ -177,6 +177,18 @@ export class Spectrum {
   /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
   turbo = false;
 
+  /** Sub-frame precision rendering: per-scanline rendering for rainbow effects */
+  subFrameRendering = false;
+
+  /** Sub-frame state: last rendered display line (-1 = none yet) */
+  private lastRenderedLine = -1;
+  /** Sub-frame state: border color changes logged this frame as [frameTState, color] */
+  private borderChanges: [number, number][] = [];
+  /** Sub-frame state: border color at frame start */
+  private frameStartBorderColor = 0;
+  /** Sub-frame state: first beam line of display area */
+  private firstDisplayBeamLine = 0;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
@@ -228,6 +240,14 @@ export class Spectrum {
         if (newBeeperBit !== this.prevBeeperBit) {
           this.activity.beeperToggled = true;
           this.prevBeeperBit = newBeeperBit;
+        }
+        // Log border color changes for sub-frame rendering
+        if (this.subFrameRendering) {
+          const newBorder = val & 0x07;
+          if (newBorder !== this.ula.borderColor) {
+            const frameTStates = this.cpu.tStates - this.frameStartTStates;
+            this.borderChanges.push([frameTStates, newBorder]);
+          }
         }
         this.ula.writePort(val);
       }
@@ -419,7 +439,9 @@ export class Spectrum {
 
     // Always render display (even if we skipped emulation) so the screen stays up to date
     if (this.needsDisplay) {
-      this.ula.renderFrame(this.memory.flat);
+      if (!this.subFrameRendering) {
+        this.ula.renderFrame(this.memory.flat);
+      }
       this.display.updateTexture(this.ula.pixels);
       this.needsDisplay = false;
     }
@@ -505,6 +527,16 @@ export class Spectrum {
     // Run CPU for one frame's worth of T-states
     this.frameStartTStates = this.cpu.tStates;
     const frameEnd = this.cpu.tStates + this.timing.tStatesPerFrame;
+
+    // Sub-frame rendering: initialise per-frame state
+    const subFrame = this.subFrameRendering;
+    if (subFrame) {
+      this.lastRenderedLine = -1;
+      this.borderChanges.length = 0;
+      this.frameStartBorderColor = this.ula.borderColor;
+      this.firstDisplayBeamLine = (this.timing.contentionStart / this.timing.tStatesPerLine) | 0;
+      this.ula.advanceFlash();
+    }
 
     while (this.cpu.tStates < frameEnd) {
       const tBefore = this.cpu.tStates;
@@ -597,6 +629,9 @@ export class Spectrum {
         this.ula.tapeActive = false;
       }
 
+      // Sub-frame rendering: catch up scanlines to current beam position
+      if (subFrame) this.renderCatchUp();
+
       // Accumulate beeper duty for audio sample
       this.beeperAccum += this.ula.beeperBit * elapsed;
       this.beeperTStatesAccum += elapsed;
@@ -632,8 +667,99 @@ export class Spectrum {
       }
     }
 
+    // Sub-frame rendering: render any remaining scanlines + bottom border
+    if (subFrame) this.renderFinalize();
+
     // Mark that we have a new frame to display
     this.needsDisplay = true;
+  }
+
+  /** Sub-frame: render scanlines up to the current beam position. */
+  private renderCatchUp(): void {
+    const frameTStates = this.cpu.tStates - this.frameStartTStates;
+    const tpl = this.timing.tStatesPerLine;
+    const beamLine = (frameTStates / tpl) | 0;
+    const firstDisplay = this.firstDisplayBeamLine;
+    const displayLine = beamLine - firstDisplay;
+    const mem = this.memory.flat;
+    const borderTop = this.ula['borderTop'];
+
+    // Render top border rows that haven't been rendered yet
+    if (borderTop > 0 && this.lastRenderedLine < -1) {
+      // lastRenderedLine: -1 means no display lines rendered yet but top border not done
+      // We use a secondary approach: track via lastRenderedLine starting at -(borderTop+1)
+    }
+
+    // Top border: render rows as beam passes through them
+    if (this.lastRenderedLine === -1 && beamLine >= 0) {
+      const topBorderRows = borderTop;
+      if (topBorderRows > 0) {
+        // Determine border color for top border region
+        const borderColor = this.borderColorAtTState(0);
+        for (let row = 0; row < topBorderRows; row++) {
+          this.ula.renderBorderLine(row, borderColor);
+        }
+      }
+    }
+
+    // Display lines 0..191
+    if (displayLine < 0) return;
+    const targetLine = Math.min(displayLine, 191);
+
+    const startLine = this.lastRenderedLine < 0 ? 0 : this.lastRenderedLine + 1;
+    if (startLine > targetLine) return;
+
+    for (let y = startLine; y <= targetLine; y++) {
+      const lineBeamStart = (firstDisplay + y) * tpl;
+      const borderColor = this.borderColorAtTState(lineBeamStart);
+      this.ula.renderScanline(y, mem, borderColor);
+    }
+
+    this.lastRenderedLine = targetLine;
+  }
+
+  /** Sub-frame: render remaining display lines and bottom border. */
+  private renderFinalize(): void {
+    const mem = this.memory.flat;
+    const borderTop = this.ula['borderTop'];
+    const firstDisplay = this.firstDisplayBeamLine;
+    const tpl = this.timing.tStatesPerLine;
+
+    // If top border wasn't rendered yet, do it now
+    if (this.lastRenderedLine === -1 && borderTop > 0) {
+      const borderColor = this.borderColorAtTState(0);
+      for (let row = 0; row < borderTop; row++) {
+        this.ula.renderBorderLine(row, borderColor);
+      }
+    }
+
+    // Render remaining display lines
+    const startLine = this.lastRenderedLine < 0 ? 0 : this.lastRenderedLine + 1;
+    for (let y = startLine; y <= 191; y++) {
+      const lineBeamStart = (firstDisplay + y) * tpl;
+      const borderColor = this.borderColorAtTState(lineBeamStart);
+      this.ula.renderScanline(y, mem, borderColor);
+    }
+
+    // Bottom border
+    const bottomStart = borderTop + 192;
+    const screenHeight = this.ula.screenHeight;
+    if (bottomStart < screenHeight) {
+      const lastBorderColor = this.ula.borderColor;
+      for (let row = bottomStart; row < screenHeight; row++) {
+        this.ula.renderBorderLine(row, lastBorderColor);
+      }
+    }
+  }
+
+  /** Sub-frame: find the border color active at a given frame T-state. */
+  private borderColorAtTState(tState: number): number {
+    let color = this.frameStartBorderColor;
+    for (let i = 0; i < this.borderChanges.length; i++) {
+      if (this.borderChanges[i][0] > tState) break;
+      color = this.borderChanges[i][1];
+    }
+    return color;
   }
 
   loadTAP(data: Uint8Array): void {

@@ -140,7 +140,7 @@ body {
   right: 0;
   top: -6px;
   bottom: -6px;
-  width: 110px;
+  width: 115px;
   background: linear-gradient(
     135deg,
     #000 8px, #000 15px,
@@ -539,9 +539,9 @@ input[type="range"]::-moz-range-thumb {
 #cpu-controls button:hover { background: #ddd; }
 
 #cpu-controls button.active {
-  background: #fdd;
-  border-color: #c66;
-  color: #c00;
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
 }
 
 #cpu-mhz {
@@ -701,9 +701,9 @@ input[type="range"]::-moz-range-thumb {
 #tape-controls button:hover { background: #ddd; }
 
 #tape-controls button.active {
-  background: #fdd;
-  border-color: #c66;
-  color: #c00;
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
 }
 
 #tape-auto-rewind.active {

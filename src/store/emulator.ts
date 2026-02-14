@@ -21,7 +21,7 @@ import type { TAPBlock } from '../formats/tap.ts';
 
 export const statusText = signal('Load a ROM to start');
 export const romStatusText = signal('');
-export const currentModel = signal<SpectrumModel>(loadSavedModel() ?? '48k');
+export const currentModel = signal<SpectrumModel>(loadSavedModel() ?? '128k');
 export const emulationPaused = signal(false);
 export const turboMode = signal(false);
 
@@ -52,7 +52,7 @@ export const clockSpeedText = signal('MHz');
 export const tapeLoaded = signal(false);
 export const tapeBlocks = signal<TAPBlock[]>([]);
 export const tapePosition = signal(0);
-export const tapePaused = signal(false);
+export const tapePaused = signal(true);
 export const tapePlaying = signal(false);
 
 // Transcribe mode
@@ -191,6 +191,7 @@ export function applyDisplaySettings(): void {
   spectrum.display.setDotPitch(settings.dotPitch.value / 10);
   spectrum.display.setCurvatureMode(settings.curvatureMode.value);
   spectrum['audio'].setVolume(settings.volume.value / 100);
+  spectrum.subFrameRendering = settings.subFrameRendering.value;
 }
 
 export function createMachine(): void {
@@ -239,7 +240,7 @@ export function createMachine(): void {
     tapeLoaded.value = false;
     tapeBlocks.value = [];
     tapePosition.value = 0;
-    tapePaused.value = false;
+    tapePaused.value = true;
     tapePlaying.value = false;
     turboMode.value = false;
   });
@@ -269,8 +270,8 @@ export function resetMachine(): void {
     spectrum.turbo = false;
     turboMode.value = false;
     spectrum.tape.rewind();
-    spectrum.tape.paused = false;
-    tapePaused.value = false;
+    spectrum.tape.paused = true;
+    tapePaused.value = true;
     spectrum.reset();
     if (romData) spectrum.start();
     batch(() => {
@@ -512,7 +513,8 @@ export function applyTape(data: Uint8Array, filename: string): void {
     tapeLoaded.value = true;
     tapeBlocks.value = [...spectrum!.tape.blocks];
     tapePosition.value = 0;
-    tapePaused.value = false;
+    tapePaused.value = true;
+    spectrum!.tape.paused = true;
     tapePlaying.value = true;
   });
 
@@ -816,8 +818,7 @@ function renderBanks(): string {
   }
 
   lines.push(
-    `${n}ROM${e}   ${mem.currentROM}  ${romLabel}`,
-    `${n}Bank${e}  ${mem.currentBank}  ${n}at${e} C000-FFFF`,
+    `${n}ROM${e}   ${mem.currentROM}  ${romLabel}  ${n}Bank${e} ${mem.currentBank} ${n}at${e} C000-FFFF`,
     `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}`,
   );
 
@@ -854,10 +855,10 @@ function renderDriveStr(): string {
   const track = fdc.currentTrack.toString().padStart(2, '0');
   const head = fdc.currentHead;
   const sector = fdc.isExecuting ? fdc.currentSector.toString().padStart(2, '0') : '--';
-  const ioMode = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
+  const operation = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
   return [
-    `${n}Motor${e}  ${motor}  ${n}Head${e} ${head}`,
-    `${n}Track${e}  ${track}  ${n}Sector${e} ${sector}  ${ioMode}`,
+    `${n}Motor${e}  ${motor}  ${n}Operation${e} ${operation}`,
+    `${n}Head${e} ${head}  ${n}Track${e}  ${track}  ${n}Sector${e} ${sector}`,
   ].join('\n');
 }
 

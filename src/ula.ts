@@ -122,7 +122,7 @@ export class ULA {
 
   /**
    * Render the full screen (border + display area) from memory.
-   * Called once per frame.
+   * Called once per frame (non-sub-frame path).
    */
   renderFrame(memory: Uint8Array): void {
     // Increment flash
@@ -177,6 +177,76 @@ export class ULA {
             (byteVal & (1 << bit)) ? inkRGBA : paperRGBA;
         }
       }
+    }
+  }
+
+  /** Advance flash counter (called once per frame in sub-frame mode). */
+  advanceFlash(): void {
+    this.flashCounter++;
+    if (this.flashCounter >= 16) {
+      this.flashCounter = 0;
+      this.flashState = !this.flashState;
+    }
+  }
+
+  /** Render one display line (y=0..191) with the given border color. */
+  renderScanline(y: number, memory: Uint8Array, borderColor: number): void {
+    const screenY = y + this.borderTop;
+    const borderRGBA = PALETTE[borderColor];
+    const w = this.screenWidth;
+    const rowStart = screenY * w;
+
+    // Left border
+    for (let x = 0; x < this.borderLeft; x++) {
+      this.pixels32[rowStart + x] = borderRGBA;
+    }
+    // Right border
+    for (let x = this.borderLeft + 256; x < w; x++) {
+      this.pixels32[rowStart + x] = borderRGBA;
+    }
+
+    // Bitmap address decoding
+    const bitmapAddr = 0x4000 |
+      ((y & 0xC0) << 5) |
+      ((y & 0x07) << 8) |
+      ((y & 0x38) << 2);
+
+    const attrBase = 0x5800 + ((y >> 3) << 5);
+
+    for (let col = 0; col < 32; col++) {
+      const byteVal = memory[bitmapAddr + col];
+      const attr = memory[attrBase + col];
+
+      const bright = (attr & 0x40) ? 8 : 0;
+      let ink = (attr & 0x07) + bright;
+      let paper = ((attr >> 3) & 0x07) + bright;
+
+      if ((attr & 0x80) && this.flashState) {
+        const tmp = ink;
+        ink = paper;
+        paper = tmp;
+      }
+
+      const inkRGBA = PALETTE[ink];
+      const paperRGBA = PALETTE[paper];
+
+      const px = this.borderLeft + (col << 3);
+      const baseIdx = rowStart + px;
+
+      for (let bit = 7; bit >= 0; bit--) {
+        this.pixels32[baseIdx + (7 - bit)] =
+          (byteVal & (1 << bit)) ? inkRGBA : paperRGBA;
+      }
+    }
+  }
+
+  /** Render a full-width border-only row (top/bottom border). */
+  renderBorderLine(screenY: number, borderColor: number): void {
+    if (screenY < 0 || screenY >= this.screenHeight) return;
+    const borderRGBA = PALETTE[borderColor];
+    const rowStart = screenY * this.screenWidth;
+    for (let x = 0; x < this.screenWidth; x++) {
+      this.pixels32[rowStart + x] = borderRGBA;
     }
   }
 }

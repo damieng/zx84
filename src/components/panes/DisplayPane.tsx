@@ -1,7 +1,7 @@
 import { Pane } from '../Pane.tsx';
 import {
   scale, brightness, contrast, smoothing, curvature, scanlines,
-  maskType, dotPitch, curvatureMode, monitor, borderSize, persistSetting,
+  maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, persistSetting,
 } from '../../store/settings.ts';
 import { spectrum } from '../../store/emulator.ts';
 
@@ -119,6 +119,16 @@ export function DisplayPane() {
             <option value="1">Small</option>
             <option value="0">None</option>
           </select>
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" checked={subFrameRendering.value}
+            onChange={(e) => {
+              const v = (e.target as HTMLInputElement).checked;
+              subFrameRendering.value = v;
+              persistSetting('sub-frame-rendering', v ? 'on' : 'off');
+              if (spectrum) spectrum.subFrameRendering = v;
+            }} />
+          Sub-frame precision
         </label>
       </div>
       <div class="slider-row">

@@ -47,6 +47,10 @@ export const diskMode = signal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
 
 export const tapeAutoRewind = signal(getSaved('tape-auto-rewind', 'on') === 'on');
 
+// ── Sub-frame rendering ────────────────────────────────────────────────
+
+export const subFrameRendering = signal(getSaved('sub-frame-rendering', 'off') === 'on');
+
 // ── Derived ─────────────────────────────────────────────────────────────
 
 export const needsGamepadPolling = computed(() =>
