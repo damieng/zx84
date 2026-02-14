@@ -130,7 +130,7 @@ export class Spectrum {
   ay: AY3891x;
   ula: ULA;
   keyboard: SpectrumKeyboard;
-  display: Display;
+  display: Display | null;
   audio: Audio;
   tape: TapeDeck;
   fdc: UPD765A;
@@ -176,6 +176,8 @@ export class Spectrum {
   /** Model-dependent timing */
   private timing: MachineTiming;
 
+  get tStatesPerFrame(): number { return this.timing.tStatesPerFrame; }
+
   /** T-state counter at start of current frame (for contention/floating bus). */
   private frameStartTStates = 0;
 
@@ -215,13 +217,18 @@ export class Spectrum {
   private _portTallyIn: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
   private _portTallyOut: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
 
+  /** Breakpoints (checked every instruction in runFrame) */
+  breakpoints = new Set<number>();
+  /** Set to the hit address when a breakpoint fires mid-frame */
+  breakpointHit = -1;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
   /** Frame callback (fires each rAF after rendering) */
   onFrame: (() => void) | null = null;
 
-  constructor(model: SpectrumModel, canvas: HTMLCanvasElement) {
+  constructor(model: SpectrumModel, canvas?: HTMLCanvasElement | null) {
     this.model = model;
 
     this.memory = new SpectrumMemory(model);
@@ -229,7 +236,7 @@ export class Spectrum {
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
     this.ula = new ULA(this.keyboard);
-    this.display = new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT);
+    this.display = canvas ? new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT) : null;
     this.audio = new Audio();
     this.tape = new TapeDeck();
     this.fdc = new UPD765A();
@@ -430,7 +437,7 @@ export class Spectrum {
 
   setBorderSize(mode: BorderMode): void {
     this.ula.setBorderMode(mode);
-    this.display.resize(this.ula.screenWidth, this.ula.screenHeight);
+    if (this.display) this.display.resize(this.ula.screenWidth, this.ula.screenHeight);
   }
 
   reset(): void {
@@ -491,6 +498,22 @@ export class Spectrum {
     this.audio.destroy();
   }
 
+  /** Run one frame (for headless / test harness use). */
+  tick(): void { this.breakpointHit = -1; this.runFrame(); }
+
+  /**
+   * Run up to `maxFrames` frames, stopping early if a breakpoint is hit.
+   * Returns the number of frames actually executed.
+   */
+  runUntil(maxFrames: number): number {
+    this.breakpointHit = -1;
+    for (let i = 0; i < maxFrames; i++) {
+      this.runFrame();
+      if (this.breakpointHit >= 0) return i + 1;
+    }
+    return maxFrames;
+  }
+
   private frameLoop = (): void => {
     if (!this.running) return;
 
@@ -529,7 +552,7 @@ export class Spectrum {
       if (!this.subFrameRendering) {
         this.ula.renderFrame(this.memory.flat);
       }
-      this.display.updateTexture(this.ula.pixels);
+      if (this.display) this.display.updateTexture(this.ula.pixels);
       this.needsDisplay = false;
     }
 
@@ -740,6 +763,11 @@ export class Spectrum {
           this.cpu.iff2 = true;
         }
       } else {
+        // Breakpoint check (skipped when set is empty for zero overhead)
+        if (this.breakpoints.size > 0 && this.breakpoints.has(this.cpu.pc)) {
+          this.breakpointHit = this.cpu.pc;
+          break;
+        }
         if (this._tracing && this._traceMode === 'full' && this.cpu.pc >= 0x4000) this.captureTraceLine();
         this.cpu.step();
       }

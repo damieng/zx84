@@ -184,15 +184,17 @@ export function setCanvas(el: HTMLCanvasElement): void {
 export function applyDisplaySettings(): void {
   if (!spectrum) return;
   spectrum.setBorderSize(settings.borderSize.value as 0 | 1 | 2);
-  spectrum.display.setScale(settings.scale.value);
-  spectrum.display.setBrightness(settings.brightness.value / 50);
-  spectrum.display.setContrast(settings.contrast.value / 50);
-  spectrum.display.setSmoothing(settings.smoothing.value / 100);
-  spectrum.display.setCurvature(settings.curvature.value / 100 * 0.15);
-  spectrum.display.setScanlines(settings.scanlines.value / 100);
-  spectrum.display.setMaskType(settings.maskType.value);
-  spectrum.display.setDotPitch(settings.dotPitch.value / 10);
-  spectrum.display.setCurvatureMode(settings.curvatureMode.value);
+  if (spectrum.display) {
+    spectrum.display.setScale(settings.scale.value);
+    spectrum.display.setBrightness(settings.brightness.value / 50);
+    spectrum.display.setContrast(settings.contrast.value / 50);
+    spectrum.display.setSmoothing(settings.smoothing.value / 100);
+    spectrum.display.setCurvature(settings.curvature.value / 100 * 0.15);
+    spectrum.display.setScanlines(settings.scanlines.value / 100);
+    spectrum.display.setMaskType(settings.maskType.value);
+    spectrum.display.setDotPitch(settings.dotPitch.value / 10);
+    spectrum.display.setCurvatureMode(settings.curvatureMode.value);
+  }
   spectrum['audio'].setVolume(settings.volume.value / 100);
   spectrum.subFrameRendering = settings.subFrameRendering.value;
 }
@@ -810,7 +812,7 @@ function flagHtml(label: string, on: boolean): string {
     : `<span class="flag-off" data-tip="${tip}">☐ ${label}</span>`;
 }
 
-function renderRegs(cpu: Z80): string {
+function renderRegs(cpu: Z80, tStatesPerFrame?: number): string {
   const f = cpu.f;
   const flags1 = [
     flagHtml('Sign', (f & Z80.FLAG_S) !== 0),
@@ -833,7 +835,7 @@ function renderRegs(cpu: Z80): string {
     `${r('AF','Accumulator and Flags')}  ${hex16(cpu.af)}  ${r("AF'",'Shadow Accumulator and Flags')} ${hex16((cpu.a_ << 8) | cpu.f_)}   ${flags1}`,
     `${r('BC','General-purpose register pair B and C')}  ${hex16(cpu.bc)}  ${r("BC'",'Shadow BC')} ${hex16((cpu.b_ << 8) | cpu.c_)}   ${flags2}`,
     `${r('DE','General-purpose register pair D and E')}  ${hex16(cpu.de)}  ${r("DE'",'Shadow DE')} ${hex16((cpu.d_ << 8) | cpu.e_)}   ${flags3}`,
-    `${r('HL','General-purpose register pair H and L')}  ${hex16(cpu.hl)}  ${r("HL'",'Shadow HL')} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+    `${r('HL','General-purpose register pair H and L')}  ${hex16(cpu.hl)}  ${r("HL'",'Shadow HL')} ${hex16((cpu.h_ << 8) | cpu.l_)}   ${tStatesPerFrame != null ? `${r('T/F','T-states per frame')} ${tStatesPerFrame.toLocaleString()}` : ''}`,
     `${r('IX','Index register X')}  ${hex16(cpu.ix)}  ${r('IY','Index register Y')}  ${hex16(cpu.iy)}   ${iff}  ${r('IM','Interrupt mode')}${cpu.im}${halt}`,
     `${r('SP','Stack pointer')}  ${hex16(cpu.sp)}  ${r('PC','Program counter')}  ${hex16(cpu.pc)}   ${r('IR','Interrupt vector + Refresh counter')}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
   ].join('\n');
@@ -971,7 +973,7 @@ function updateRegsOnce(): void {
   if (!spectrum) return;
   const model = currentModel.value;
   batch(() => {
-    regsHtml.value = renderRegs(spectrum!.cpu);
+    regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
     const cpu = spectrum!.cpu;
     const dLines = disassemble(cpu.memory, cpu.pc, 24);
@@ -1129,7 +1131,7 @@ function onFrame(): void {
     }
 
     // Registers + system state
-    regsHtml.value = renderRegs(spectrum!.cpu);
+    regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
 
     // Disassembly at PC

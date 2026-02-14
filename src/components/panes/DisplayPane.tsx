@@ -52,38 +52,38 @@ const MONITOR_PRESETS: Record<string, MonitorPreset> = {
 
 function applyPreset(preset: MonitorPreset) {
   maskType.value = preset.maskType;
-  if (spectrum) spectrum.display.setMaskType(preset.maskType);
+  if (spectrum) spectrum.display!.setMaskType(preset.maskType);
   persistSetting('mask-type', preset.maskType);
 
   dotPitch.value = preset.dotPitch;
-  if (spectrum) spectrum.display.setDotPitch(preset.dotPitch / 10);
+  if (spectrum) spectrum.display!.setDotPitch(preset.dotPitch / 10);
   persistSetting('dot-pitch', preset.dotPitch);
 
   curvature.value = preset.curvature;
-  if (spectrum) spectrum.display.setCurvature(preset.curvature / 100 * 0.15);
+  if (spectrum) spectrum.display!.setCurvature(preset.curvature / 100 * 0.15);
   persistSetting('curvature', preset.curvature);
 
   curvatureMode.value = preset.curvatureMode;
-  if (spectrum) spectrum.display.setCurvatureMode(preset.curvatureMode);
+  if (spectrum) spectrum.display!.setCurvatureMode(preset.curvatureMode);
   persistSetting('curvature-mode', preset.curvatureMode);
 
   scanlines.value = preset.scanlines;
-  if (spectrum) spectrum.display.setScanlines(preset.scanlines / 100);
+  if (spectrum) spectrum.display!.setScanlines(preset.scanlines / 100);
   persistSetting('scanlines', preset.scanlines);
 
   smoothing.value = preset.smoothing;
-  if (spectrum) spectrum.display.setSmoothing(preset.smoothing / 100);
+  if (spectrum) spectrum.display!.setSmoothing(preset.smoothing / 100);
   persistSetting('smoothing', preset.smoothing);
 
   if (preset.brightness != null) {
     brightness.value = preset.brightness;
-    if (spectrum) spectrum.display.setBrightness(preset.brightness / 50);
+    if (spectrum) spectrum.display!.setBrightness(preset.brightness / 50);
     persistSetting('brightness', preset.brightness);
   }
 
   if (preset.contrast != null) {
     contrast.value = preset.contrast;
-    if (spectrum) spectrum.display.setContrast(preset.contrast / 50);
+    if (spectrum) spectrum.display!.setContrast(preset.contrast / 50);
     persistSetting('contrast', preset.contrast);
   }
 }
@@ -97,7 +97,7 @@ export function DisplayPane() {
           <select id="scale" value={scale.value} onChange={(e) => {
             const v = Number((e.target as HTMLSelectElement).value);
             scale.value = v;
-            if (spectrum) spectrum.display.setScale(v);
+            if (spectrum) spectrum.display!.setScale(v);
             persistSetting('scale', v);
           }}>
             <option value="1">1x</option>
@@ -155,19 +155,19 @@ export function DisplayPane() {
         </select>
       </div>
       <SliderRow label="Brightness" id="brightness" min={-50} max={50} sig={brightness}
-        apply={(v) => spectrum?.display.setBrightness(v / 50)} settingKey="brightness" />
+        apply={(v) => spectrum?.display?.setBrightness(v / 50)} settingKey="brightness" />
       <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast}
-        apply={(v) => spectrum?.display.setContrast(v / 50)} settingKey="contrast" />
+        apply={(v) => spectrum?.display?.setContrast(v / 50)} settingKey="contrast" />
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing}
-        apply={(v) => spectrum?.display.setSmoothing(v / 100)} settingKey="smoothing" />
+        apply={(v) => spectrum?.display?.setSmoothing(v / 100)} settingKey="smoothing" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature}
-        apply={(v) => spectrum?.display.setCurvature(v / 100 * 0.15)} settingKey="curvature" />
+        apply={(v) => spectrum?.display?.setCurvature(v / 100 * 0.15)} settingKey="curvature" />
       <div class="slider-row">
         <span class="slider-label">Curv. mode</span>
         <select id="curvature-mode-select" value={curvatureMode.value} onChange={(e) => {
           const v = Number((e.target as HTMLSelectElement).value);
           curvatureMode.value = v;
-          if (spectrum) spectrum.display.setCurvatureMode(v);
+          if (spectrum) spectrum.display!.setCurvatureMode(v);
           persistSetting('curvature-mode', v);
         }}>
           <option value="0">Spherical</option>
@@ -175,13 +175,13 @@ export function DisplayPane() {
         </select>
       </div>
       <SliderRow label="Scanlines" id="scanlines" min={0} max={100} sig={scanlines}
-        apply={(v) => spectrum?.display.setScanlines(v / 100)} settingKey="scanlines" />
+        apply={(v) => spectrum?.display?.setScanlines(v / 100)} settingKey="scanlines" />
       <div class="slider-row">
         <span class="slider-label">Mask type</span>
         <select id="mask-type-select" value={maskType.value} onChange={(e) => {
           const v = Number((e.target as HTMLSelectElement).value);
           maskType.value = v;
-          if (spectrum) spectrum.display.setMaskType(v);
+          if (spectrum) spectrum.display!.setMaskType(v);
           persistSetting('mask-type', v);
         }}>
           <option value="0">None</option>
@@ -192,7 +192,7 @@ export function DisplayPane() {
         </select>
       </div>
       <SliderRow label="Dot pitch" id="dot-pitch" min={10} max={40} sig={dotPitch}
-        apply={(v) => spectrum?.display.setDotPitch(v / 10)} settingKey="dot-pitch" />
+        apply={(v) => spectrum?.display?.setDotPitch(v / 10)} settingKey="dot-pitch" />
     </Pane>
   );
 }

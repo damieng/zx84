@@ -27,7 +27,7 @@ export function Screen() {
     if (!spectrum || !overlayRef.current || !canvasRef.current) return;
 
     const ov = overlayRef.current;
-    const scale = spectrum.display.scale;
+    const scale = spectrum.display!.scale;
     const borderPx = (spectrum.ula.screenWidth - 256) / 2;
     const offsetLeft = borderPx * scale + 2;
     const offsetTop = borderPx * scale + 2;
