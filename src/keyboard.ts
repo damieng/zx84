@@ -84,6 +84,30 @@ const KEY_MAP: Record<string, KeyMapping | ComboMapping> = {
   'ArrowUp':      [{ row: 0, bit: 0 }, { row: 4, bit: 3 }],  // SHIFT + 7
   'ArrowRight':   [{ row: 0, bit: 0 }, { row: 4, bit: 2 }],  // SHIFT + 8
   'CapsLock':     [{ row: 0, bit: 0 }, { row: 3, bit: 1 }],  // SHIFT + 2 (CAPS LOCK)
+  'Escape':       [{ row: 0, bit: 0 }, { row: 7, bit: 0 }],  // SHIFT + SPACE (BREAK)
+};
+
+// Symbol character → Spectrum key combo (SYM SHIFT + key)
+// For PC keys that don't exist on the Spectrum keyboard.
+const SS: KeyMapping = { row: 7, bit: 1 };  // Symbol Shift
+const CS: KeyMapping = { row: 0, bit: 0 };  // Caps Shift
+
+const CHAR_MAP: Record<string, ComboMapping> = {
+  ';':  [SS, { row: 5, bit: 1 }],  // SYM + O
+  ':':  [SS, { row: 0, bit: 1 }],  // SYM + Z
+  "'":  [SS, { row: 4, bit: 3 }],  // SYM + 7
+  '#':  [SS, { row: 3, bit: 2 }],  // SYM + 3
+  '?':  [SS, { row: 0, bit: 3 }],  // SYM + C
+  '@':  [SS, { row: 3, bit: 1 }],  // SYM + 2
+  '~':  [SS, { row: 1, bit: 0 }],  // SYM + A
+  '{':  [SS, { row: 1, bit: 3 }],  // SYM + F
+  '}':  [SS, { row: 1, bit: 4 }],  // SYM + G
+  '-':  [SS, { row: 6, bit: 3 }],  // SYM + J
+  '+':  [SS, { row: 6, bit: 2 }],  // SYM + K
+  '=':  [SS, { row: 6, bit: 1 }],  // SYM + L
+  '_':  [SS, { row: 4, bit: 0 }],  // SYM + 0
+  '[':  [CS, SS, { row: 5, bit: 4 }],  // EXT + Y (128K extended mode)
+  ']':  [CS, SS, { row: 5, bit: 3 }],  // EXT + U (128K extended mode)
 };
 
 export class SpectrumKeyboard {
@@ -121,14 +145,21 @@ export class SpectrumKeyboard {
     }
   }
 
-  handleKeyEvent(code: string, pressed: boolean): boolean {
+  handleKeyEvent(code: string, pressed: boolean, key?: string): boolean {
+    // Check character map first for symbol keys (';', ':', etc.)
+    // but only when the code-based map doesn't have a direct match,
+    // or the code maps to a modifier that the char map would override.
+    const charMapping = key ? CHAR_MAP[key] : undefined;
+    if (charMapping) {
+      for (const k of charMapping) this.setKey(k.row, k.bit, pressed);
+      return true;
+    }
+
     const mapping = KEY_MAP[code];
     if (!mapping) return false;
 
     if (Array.isArray(mapping)) {
-      for (const key of mapping) {
-        this.setKey(key.row, key.bit, pressed);
-      }
+      for (const k of mapping) this.setKey(k.row, k.bit, pressed);
     } else {
       this.setKey(mapping.row, mapping.bit, pressed);
     }

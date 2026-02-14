@@ -90,7 +90,7 @@ function onKeyDown(e: KeyboardEvent): void {
     if (handled) { e.preventDefault(); return; }
   }
 
-  if (spectrum.keyboard.handleKeyEvent(e.code, true)) {
+  if (spectrum.keyboard.handleKeyEvent(e.code, true, e.key)) {
     e.preventDefault();
   }
 }
@@ -113,7 +113,7 @@ function onKeyUp(e: KeyboardEvent): void {
     if (handled) { e.preventDefault(); return; }
   }
 
-  if (spectrum.keyboard.handleKeyEvent(e.code, false)) {
+  if (spectrum.keyboard.handleKeyEvent(e.code, false, e.key)) {
     e.preventDefault();
   }
 }
