@@ -19,7 +19,12 @@ export function Screen() {
   // Position the transcribe overlay
   useEffect(() => {
     const mode = transcribeMode.value;
-    if (mode === 'off' || !spectrum || !overlayRef.current || !canvasRef.current) return;
+    if (mode === 'off') {
+      // Clear cached measurement so it's remeasured next time
+      natSizeRef.current = { w: 0, h: 0 };
+      return;
+    }
+    if (!spectrum || !overlayRef.current || !canvasRef.current) return;
 
     const ov = overlayRef.current;
     const scale = spectrum.display.scale;
@@ -33,6 +38,8 @@ export function Screen() {
     ov.style.top = offsetTop + 'px';
 
     if (!natSizeRef.current.w) {
+      // Need actual text content to measure — skip if empty
+      if (!ov.textContent || ov.textContent.length < 32) return;
       ov.style.transform = 'none';
       natSizeRef.current.w = ov.scrollWidth || 1;
       natSizeRef.current.h = ov.scrollHeight || 1;

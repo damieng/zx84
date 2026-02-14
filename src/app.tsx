@@ -26,7 +26,7 @@ import { DisassemblyPane } from './components/panes/DisassemblyPane.tsx';
 import { paneOrder } from './store/panes.ts';
 import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling } from './store/settings.ts';
 import {
-  spectrum, cancelAutoType, joyPressForType, initAudio, init,
+  spectrum, cancelAutoType, joyPressForType, initAudio, init, loadFile,
 } from './store/emulator.ts';
 
 // ── Pane registry ───────────────────────────────────────────────────────
@@ -165,16 +165,31 @@ function pollGamepads(): void {
 }
 
 export function App() {
-  // Register global keyboard/audio handlers
+  // Register global keyboard/audio/drag-drop handlers
   useEffect(() => {
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     document.addEventListener('click', initAudio, { once: true });
 
+    function onDragOver(e: DragEvent) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    }
+    function onDrop(e: DragEvent) {
+      e.preventDefault();
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+      file.arrayBuffer().then(buf => loadFile(new Uint8Array(buf), file.name));
+    }
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('drop', onDrop);
+
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('click', initAudio);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('drop', onDrop);
     };
   }, []);
 

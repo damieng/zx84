@@ -12,7 +12,7 @@ import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
 import { showFilePicker } from '../ui/zip-picker.ts';
-import { disassemble, formatDisasmHtml } from '../z80-disasm.ts';
+import { disassemble, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
@@ -372,20 +372,27 @@ export function copyCpuState(): void {
     `SP  ${hex16(cpu.sp)}  PC  ${hex16(cpu.pc)}  IR  ${hex8(cpu.i)}${hex8(cpu.r)}`,
     `Flags: ${flags}`,
   ];
+  // Disassembly at PC
   const mem = cpu.memory;
-  const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
-  lines.push('', 'System Variables:');
-  lines.push(`ERR_NR ${hex8(mem[0x5C3A])}  FLAGS  ${hex8(mem[0x5C3B])}  FLAGS2 ${hex8(mem[0x5C71])}`);
-  lines.push(`PROG   ${hex16(w(0x5C53))}  VARS   ${hex16(w(0x5C4B))}  E_LINE ${hex16(w(0x5C59))}`);
-  lines.push(`RAMTOP ${hex16(w(0x5CB2))}  P_RAMT ${hex16(w(0x5CB4))}  CHARS  ${hex16(w(0x5C36))}`);
-  lines.push(`SP_CC  ${hex16(w(0x5C88))}  ATTR_P ${hex8(mem[0x5C8D])}  BORDCR ${hex8(mem[0x5C48])}`);
+  const dLines = disassemble(mem, cpu.pc, 16);
+  lines.push('');
+  for (const dl of dLines) {
+    const addr = hex16(dl.addr);
+    const bytes: string[] = [];
+    for (let i = 0; i < dl.length; i++) bytes.push(hex8(mem[(dl.addr + i) & 0xFFFF]));
+    const bytesStr = bytes.join(' ').padEnd(11);
+    const mnem = stripMarkers(dl.text);
+    lines.push(`${dl.addr === cpu.pc ? '>' : ' '} ${addr}  ${bytesStr}  ${mnem}`);
+  }
   navigator.clipboard.writeText(lines.join('\n'));
-  setStatus('CPU state copied to clipboard');
+  setStatus('CPU state + disassembly copied to clipboard');
 }
 
-export function startTrace(): void {
+export type TraceMode = 'full' | 'contention' | 'portio';
+
+export function startTrace(mode: TraceMode = 'full'): void {
   if (!spectrum) return;
-  spectrum.startTrace();
+  spectrum.startTrace(mode);
   tracing.value = true;
 }
 

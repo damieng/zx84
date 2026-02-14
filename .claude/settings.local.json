@@ -29,7 +29,8 @@
       "WebFetch(domain:forums.bannister.org)",
       "WebFetch(domain:programbytes48k.wordpress.com)",
       "WebFetch(domain:www.vintageisthenewold.com)",
-      "WebFetch(domain:www.everygamegoing.com)"
+      "WebFetch(domain:www.everygamegoing.com)",
+      "Bash(test:*)"
     ]
   }
 }

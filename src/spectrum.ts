@@ -204,7 +204,16 @@ export class Spectrum {
 
   /** Execution trace */
   private _tracing = false;
+  private _traceMode: 'full' | 'contention' | 'portio' = 'full';
   private _traceBuffer: string[] = [];
+  /** Loop detection (full mode): direct-mapped cache of PC → register hash */
+  private _traceLoopPC = new Int32Array(1024).fill(-1);
+  private _traceLoopHash = new Int32Array(1024);
+  private _traceLoopAddr = -1;
+  private _traceLoopCount = 0;
+  /** Port IO tally (portio mode) */
+  private _portTallyIn: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
+  private _portTallyOut: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
 
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
@@ -272,11 +281,14 @@ export class Spectrum {
 
     this.cpu.portIn = (port: number): number => {
       this.applyIOContention(port);
-      return this.cpu.portInHandler ? this.cpu.portInHandler(port) : 0xFF;
+      const val = this.cpu.portInHandler ? this.cpu.portInHandler(port) : 0xFF;
+      if (this._tracing && this._traceMode !== 'full') this.logPortAccess('IN', port, val);
+      return val;
     };
 
     this.cpu.portOut = (port: number, val: number): void => {
       this.applyIOContention(port);
+      if (this._tracing && this._traceMode !== 'full') this.logPortAccess('OUT', port, val);
       if (this.cpu.portOutHandler) this.cpu.portOutHandler(port, val);
     };
   }
@@ -728,7 +740,7 @@ export class Spectrum {
           this.cpu.iff2 = true;
         }
       } else {
-        if (this._tracing && this.cpu.pc >= 0x4000) this.captureTraceLine();
+        if (this._tracing && this._traceMode === 'full' && this.cpu.pc >= 0x4000) this.captureTraceLine();
         this.cpu.step();
       }
 
@@ -1005,20 +1017,58 @@ export class Spectrum {
 
   get tracing(): boolean { return this._tracing; }
 
-  startTrace(): void {
+  startTrace(mode: 'full' | 'contention' | 'portio' = 'full'): void {
     this._traceBuffer = [];
+    this._traceMode = mode;
+    this._traceLoopPC.fill(-1);
+    this._traceLoopHash.fill(0);
+    this._traceLoopAddr = -1;
+    this._traceLoopCount = 0;
+    if (mode === 'portio') {
+      this._portTallyIn = new Map();
+      this._portTallyOut = new Map();
+    }
     this._tracing = true;
   }
 
   stopTrace(): string {
     this._tracing = false;
+    if (this._traceMode === 'portio') return this.formatPortTally();
+    if (this._traceLoopCount > 0) {
+      const h = this._traceLoopAddr.toString(16).toUpperCase().padStart(4, '0');
+      this._traceBuffer.push(`      ... loops back to ${h} x${this._traceLoopCount}`);
+    }
     return this._traceBuffer.join('\n');
   }
 
   private captureTraceLine(): void {
     const cpu = this.cpu;
-    const mem = cpu.memory;
     const pc = cpu.pc;
+
+    // Loop detection: hash key registers and compare against cache
+    const slot = pc & 0x3FF;
+    const hash = ((cpu.a << 24) | (cpu.f << 16) | cpu.bc) ^ ((cpu.de << 16) | cpu.hl);
+
+    if (this._traceLoopPC[slot] === pc && this._traceLoopHash[slot] === hash) {
+      // Same PC, same register state — suppress duplicate iteration
+      if (this._traceLoopCount === 0) this._traceLoopAddr = pc;
+      this._traceLoopCount++;
+      return;
+    }
+
+    // Flush any accumulated loop marker
+    if (this._traceLoopCount > 0) {
+      const h = this._traceLoopAddr.toString(16).toUpperCase().padStart(4, '0');
+      this._traceBuffer.push(`      ... loops back to ${h} x${this._traceLoopCount}`);
+      this._traceLoopCount = 0;
+    }
+
+    // Update cache
+    this._traceLoopPC[slot] = pc;
+    this._traceLoopHash[slot] = hash;
+
+    // Record trace line
+    const mem = cpu.memory;
     const line = disasmOne(mem, pc);
     const mnem = stripMarkers(line.text);
     const ctx = this.traceCtx(pc);
@@ -1109,6 +1159,86 @@ export class Spectrum {
     }
 
     return '';
+  }
+
+  private logPortAccess(dir: string, port: number, val: number): void {
+    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
+    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
+    const pc = this.cpu.pc;
+
+    if (this._traceMode === 'portio') {
+      const tally = dir === 'IN' ? this._portTallyIn! : this._portTallyOut!;
+      let entry = tally.get(port);
+      if (!entry) {
+        entry = { count: 0, pcs: new Set(), vals: new Set() };
+        tally.set(port, entry);
+      }
+      entry.count++;
+      if (entry.pcs.size < 32) entry.pcs.add(pc);
+      if (entry.vals.size < 64) entry.vals.add(val);
+      return;
+    } else if (this._traceMode === 'contention' && pc >= 0x4000) {
+      const frameTStates = this.cpu.tStates - this.frameStartTStates;
+      const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
+      const contended = this.isContended(pc);
+      const isULA = (port & 1) === 0;
+      const label = this.portLabel(port);
+      // Log ULA reads from contended memory (contention probes) and
+      // reads from unrecognised ports (potential floating bus reads)
+      if (dir === 'IN' && (contended || !label)) {
+        const tag = isULA && contended ? ' (contention probe)' :
+                    !label ? ` (floating bus? ${val === 0xFF ? 'idle' : 'VRAM'})` : '';
+        this._traceBuffer.push(
+          `${h16(pc)}  IN port=${h16(port)} val=${h8(val)} fT=${frameTStates} line=${line}${tag}`
+        );
+      }
+    }
+    if (this._traceBuffer.length >= 500_000) this._tracing = false;
+  }
+
+  private portLabel(port: number): string {
+    if ((port & 1) === 0) return 'ULA';
+    if ((port & 0x00E0) === 0) return 'Kemp';
+    if (is128kClass(this.model)) {
+      if ((port & 0xC002) === 0xC000) return 'AY';
+      if ((port & 0xC002) === 0x8000) return 'AY';
+      if (isPlus2AClass(this.model)) {
+        if ((port & 0xC002) === 0x4000) return '7FFD';
+        if ((port & 0xF002) === 0x1000) return '1FFD';
+        if ((port & 0xF002) === 0x2000) return 'FDC';
+        if ((port & 0xF002) === 0x3000) return 'FDC';
+      } else {
+        if ((port & 0x8002) === 0) return '7FFD';
+      }
+    }
+    return '';
+  }
+
+  private formatPortTally(): string {
+    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
+    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
+
+    const formatSection = (title: string, tally: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }>) => {
+      if (!tally.size) return '';
+      const entries = [...tally.entries()].sort((a, b) => b[1].count - a[1].count);
+      const lines = [`${title}:`];
+      for (const [port, info] of entries) {
+        const label = (this.portLabel(port) || '').padEnd(6);
+        const pcs = [...info.pcs].map(h16).join(',');
+        const vals = [...info.vals].map(h8).join(',');
+        lines.push(`  ${h16(port)}  ${String(info.count).padStart(8)}x  ${label} from ${pcs}  vals ${vals}`);
+      }
+      return lines.join('\n');
+    };
+
+    const parts = ['=== Port IO Summary ===', ''];
+    const inSection = formatSection('IN', this._portTallyIn!);
+    const outSection = formatSection('OUT', this._portTallyOut!);
+    if (inSection) parts.push(inSection, '');
+    if (outSection) parts.push(outSection, '');
+    this._portTallyIn = null;
+    this._portTallyOut = null;
+    return parts.join('\n');
   }
 
   /**
