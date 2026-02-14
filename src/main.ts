@@ -217,6 +217,123 @@ const tapeRewindBtn = document.getElementById('tape-rewind') as HTMLButtonElemen
 const tapePrevBtn = document.getElementById('tape-prev') as HTMLButtonElement;
 const tapePauseBtn = document.getElementById('tape-pause') as HTMLButtonElement;
 const tapeNextBtn = document.getElementById('tape-next') as HTMLButtonElement;
+const tapeAutoRewindBtn = document.getElementById('tape-auto-rewind') as HTMLButtonElement;
+
+// ── Pane drag reorder ────────────────────────────────────────────────────
+
+const ORDER_KEY = 'zx84-pane-order';
+const leftSidebar = document.getElementById('sidebar')!;
+const rightSidebar = document.getElementById('right-sidebar')!;
+
+interface PanePosition { id: string; sidebar: 'left' | 'right'; }
+
+function savePaneOrder(): void {
+  const order: PanePosition[] = [];
+  for (const sb of [leftSidebar, rightSidebar]) {
+    const side: 'left' | 'right' = sb === leftSidebar ? 'left' : 'right';
+    sb.querySelectorAll(':scope > .pane').forEach(pane => {
+      if (pane.id) order.push({ id: pane.id, sidebar: side });
+    });
+  }
+  try { localStorage.setItem(ORDER_KEY, JSON.stringify(order)); } catch { /* */ }
+}
+
+function restorePaneOrder(): void {
+  try {
+    const raw = localStorage.getItem(ORDER_KEY);
+    if (!raw) return;
+    const order: PanePosition[] = JSON.parse(raw);
+    for (const { id, sidebar } of order) {
+      const pane = document.getElementById(id);
+      if (!pane || !pane.classList.contains('pane')) continue;
+      const target = sidebar === 'left' ? leftSidebar : rightSidebar;
+      target.appendChild(pane);
+    }
+  } catch { /* */ }
+}
+
+restorePaneOrder();
+
+// Drag state
+let draggedPane: HTMLElement | null = null;
+let dragStartedFromLabel = false;
+const dropIndicator = document.createElement('div');
+dropIndicator.className = 'drop-indicator';
+
+document.querySelectorAll('.pane').forEach(pane => {
+  const label = pane.querySelector(':scope > .section-label');
+  if (!label) return;
+  (pane as HTMLElement).draggable = true;
+
+  // Only allow drag to start from the section-label
+  label.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).closest('select, button')) return;
+    dragStartedFromLabel = true;
+  });
+
+  pane.addEventListener('dragstart', (e) => {
+    if (!dragStartedFromLabel) { e.preventDefault(); return; }
+    draggedPane = pane as HTMLElement;
+    draggedPane.classList.add('dragging');
+    (e as DragEvent).dataTransfer!.effectAllowed = 'move';
+    (e as DragEvent).dataTransfer!.setData('text/plain', (pane as HTMLElement).id);
+  });
+
+  pane.addEventListener('dragend', () => {
+    if (draggedPane) {
+      draggedPane.classList.remove('dragging');
+      draggedPane = null;
+    }
+    dragStartedFromLabel = false;
+    dropIndicator.remove();
+  });
+});
+
+document.addEventListener('mouseup', () => { dragStartedFromLabel = false; });
+
+for (const sidebar of [leftSidebar, rightSidebar]) {
+  sidebar.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!draggedPane) return;
+    (e as DragEvent).dataTransfer!.dropEffect = 'move';
+
+    const panes = Array.from(sidebar.querySelectorAll(':scope > .pane'));
+    const y = (e as DragEvent).clientY;
+    let insertBefore: Element | null = null;
+    for (const p of panes) {
+      if (p === draggedPane) continue;
+      const rect = p.getBoundingClientRect();
+      if (y < rect.top + rect.height / 2) {
+        insertBefore = p;
+        break;
+      }
+    }
+
+    if (insertBefore) {
+      sidebar.insertBefore(dropIndicator, insertBefore);
+    } else {
+      sidebar.appendChild(dropIndicator);
+    }
+  });
+
+  sidebar.addEventListener('dragleave', (e) => {
+    if (!sidebar.contains((e as DragEvent).relatedTarget as Node)) {
+      dropIndicator.remove();
+    }
+  });
+
+  sidebar.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!draggedPane) return;
+    if (dropIndicator.parentElement === sidebar) {
+      sidebar.insertBefore(draggedPane, dropIndicator);
+    } else {
+      sidebar.appendChild(draggedPane);
+    }
+    dropIndicator.remove();
+    savePaneOrder();
+  });
+}
 
 // ── Pane collapse/expand ─────────────────────────────────────────────────
 
@@ -249,6 +366,46 @@ document.querySelectorAll('.pane > .section-label').forEach(label => {
     }
     saveCollapsed(collapsedPanes);
   });
+});
+
+// ── Custom tooltip for per-frame innerHTML elements ─────────────────────
+
+const tooltipEl = document.createElement('div');
+tooltipEl.className = 'zx-tooltip';
+document.body.appendChild(tooltipEl);
+
+let tipTimer = 0;
+let tipTarget: HTMLElement | null = null;
+
+function showTooltip(el: HTMLElement): void {
+  const text = el.getAttribute('data-tip');
+  if (!text) return;
+  tooltipEl.textContent = text;
+  const rect = el.getBoundingClientRect();
+  tooltipEl.style.left = rect.left + 'px';
+  tooltipEl.style.top = (rect.bottom + 6) + 'px';
+  tooltipEl.classList.add('visible');
+}
+
+function hideTooltip(): void {
+  clearTimeout(tipTimer);
+  tipTimer = 0;
+  tipTarget = null;
+  tooltipEl.classList.remove('visible');
+}
+
+document.addEventListener('mouseover', (e) => {
+  const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
+  if (!el) { if (tipTarget) hideTooltip(); return; }
+  if (el === tipTarget) return;
+  hideTooltip();
+  tipTarget = el;
+  tipTimer = window.setTimeout(() => showTooltip(el), 400);
+});
+
+document.addEventListener('mouseout', (e) => {
+  const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
+  if (el === tipTarget) hideTooltip();
 });
 
 // ── Status helpers ───────────────────────────────────────────────────────
@@ -388,6 +545,8 @@ let tapeBlockElements: HTMLDivElement[] = [];
 let tapeIdleFrames = 0;
 let tapeEverRead = false;
 let lastRenderedTapePosition = -1;
+let tapeAutoRewind = getSaved('tape-auto-rewind', 'off') === 'on';
+tapeAutoRewindBtn.classList.toggle('active', tapeAutoRewind);
 
 function buildTapeBlockList(): void {
   tapeBlocksContainer.innerHTML = '';
@@ -434,6 +593,14 @@ function buildTapeBlockList(): void {
 function updateTapeHighlight(): void {
   if (!spectrum || !spectrum.tape.loaded) return;
   const pos = spectrum.tape.position;
+
+  // Auto-rewind when tape reaches the end
+  if (tapeAutoRewind && pos >= spectrum.tape.blocks.length && spectrum.tape.blocks.length > 0) {
+    spectrum.tape.rewind();
+    lastRenderedTapePosition = -1;
+    return;
+  }
+
   if (pos === lastRenderedTapePosition) return;
   lastRenderedTapePosition = pos;
 
@@ -477,6 +644,12 @@ tapeNextBtn.addEventListener('click', () => {
   if (spectrum.tape.position < spectrum.tape.blocks.length) spectrum.tape.position++;
   lastRenderedTapePosition = -1;
   updateTapeHighlight();
+});
+
+tapeAutoRewindBtn.addEventListener('click', () => {
+  tapeAutoRewind = !tapeAutoRewind;
+  tapeAutoRewindBtn.classList.toggle('active', tapeAutoRewind);
+  try { localStorage.setItem('zx84-tape-auto-rewind', tapeAutoRewind ? 'on' : 'off'); } catch { /* */ }
 });
 
 // ── Auto-type for TAP auto-loading ──────────────────────────────────────────
@@ -676,10 +849,20 @@ function unpause(): void {
 function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
 function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
 
+const FLAG_TIPS: Record<string, string> = {
+  Sign: 'Set if result is negative (bit 7 of result)',
+  Zero: 'Set if result is zero',
+  Half: 'Half-carry: set on carry from bit 3 to bit 4',
+  Prty: 'Parity/Overflow: set on even parity or arithmetic overflow',
+  Subt: 'Subtract: set if last operation was a subtraction',
+  Crry: 'Carry: set on carry from bit 7 or borrow',
+};
+
 function flagHtml(label: string, on: boolean): string {
+  const tip = FLAG_TIPS[label] || '';
   return on
-    ? `<span class="flag-on">☑ ${label}</span>`
-    : `<span class="flag-off">☐ ${label}</span>`;
+    ? `<span class="flag-on" data-tip="${tip}">☑ ${label}</span>`
+    : `<span class="flag-off" data-tip="${tip}">☐ ${label}</span>`;
 }
 
 function renderRegs(cpu: Z80): string {
@@ -702,36 +885,54 @@ function renderRegs(cpu: Z80): string {
   const iff = cpu.iff1 ? 'EI' : 'DI';
   const halt = cpu.halted ? ' HALT' : '';
 
-  const n = '<span class="reg-name">';
-  const e = '</span>';
+  const r = (name: string, tip: string) => `<span class="reg-name" data-tip="${tip}">${name}</span>`;
   return [
-    `${n}AF${e}  ${hex16(cpu.af)}  ${n}AF'${e} ${hex16((cpu.a_ << 8) | cpu.f_)}   ${flags1}`,
-    `${n}BC${e}  ${hex16(cpu.bc)}  ${n}BC'${e} ${hex16((cpu.b_ << 8) | cpu.c_)}   ${flags2}`,
-    `${n}DE${e}  ${hex16(cpu.de)}  ${n}DE'${e} ${hex16((cpu.d_ << 8) | cpu.e_)}   ${flags3}`,
-    `${n}HL${e}  ${hex16(cpu.hl)}  ${n}HL'${e} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
-    `${n}IX${e}  ${hex16(cpu.ix)}  ${n}IY${e}  ${hex16(cpu.iy)}   ${iff}  ${n}IM${e}${cpu.im}${halt}`,
-    `${n}SP${e}  ${hex16(cpu.sp)}  ${n}PC${e}  ${hex16(cpu.pc)}   ${n}IR${e}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
+    `${r('AF','Accumulator and Flags')}  ${hex16(cpu.af)}  ${r("AF'",'Shadow Accumulator and Flags')} ${hex16((cpu.a_ << 8) | cpu.f_)}   ${flags1}`,
+    `${r('BC','General-purpose register pair B and C')}  ${hex16(cpu.bc)}  ${r("BC'",'Shadow BC')} ${hex16((cpu.b_ << 8) | cpu.c_)}   ${flags2}`,
+    `${r('DE','General-purpose register pair D and E')}  ${hex16(cpu.de)}  ${r("DE'",'Shadow DE')} ${hex16((cpu.d_ << 8) | cpu.e_)}   ${flags3}`,
+    `${r('HL','General-purpose register pair H and L')}  ${hex16(cpu.hl)}  ${r("HL'",'Shadow HL')} ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+    `${r('IX','Index register X')}  ${hex16(cpu.ix)}  ${r('IY','Index register Y')}  ${hex16(cpu.iy)}   ${iff}  ${r('IM','Interrupt mode')}${cpu.im}${halt}`,
+    `${r('SP','Stack pointer')}  ${hex16(cpu.sp)}  ${r('PC','Program counter')}  ${hex16(cpu.pc)}   ${r('IR','Interrupt vector + Refresh counter')}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
   ].join('\n');
 }
 
 function renderSysVars(mem: Uint8Array): string {
-  const n = '<span class="reg-name">';
-  const e = '</span>';
   const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
-  return [
-    `${n}ERR_NR${e}  ${hex8(mem[0x5C3A])}    ${n}FLAGS${e}   ${hex8(mem[0x5C3B])}`,
-    `${n}FLAGS2${e}  ${hex8(mem[0x5C71])}    ${n}TV_FLAG${e} ${hex8(mem[0x5C3C])}`,
-    `${n}MODE${e}    ${hex8(mem[0x5C41])}    ${n}PPC${e}     ${hex16(w(0x5C45))}`,
-    `${n}CHARS${e}   ${hex16(w(0x5C36))}  ${n}UDG${e}     ${hex16(w(0x5C7B))}`,
-    `${n}DF_CC${e}   ${hex16(w(0x5C84))}  ${n}DFCCL${e}   ${hex16(w(0x5C86))}`,
-    `${n}S_POSN${e}  ${hex8(mem[0x5C88])},${hex8(mem[0x5C89])}  ${n}ATTR_P${e}  ${hex8(mem[0x5C8D])}`,
-    `${n}ATTR_T${e}  ${hex8(mem[0x5C8F])}    ${n}BORDCR${e} ${hex8(mem[0x5C48])}`,
-    `${n}CHANS${e}   ${hex16(w(0x5C4F))}  ${n}CURCHL${e} ${hex16(w(0x5C51))}`,
-    `${n}PROG${e}    ${hex16(w(0x5C53))}  ${n}VARS${e}    ${hex16(w(0x5C4B))}`,
-    `${n}E_LINE${e}  ${hex16(w(0x5C59))}  ${n}STKEND${e} ${hex16(w(0x5C65))}`,
-    `${n}RAMTOP${e}  ${hex16(w(0x5CB2))}  ${n}P_RAMT${e} ${hex16(w(0x5CB4))}`,
-    `${n}DF_SZ${e}   ${hex8(mem[0x5C6B])}    ${n}SCR_CT${e} ${hex8(mem[0x5C8C])}`,
-  ].join('\n');
+
+  // Each entry: [name, value, tooltip, name2, value2, tooltip2]
+  const rows: [string, string, string, string, string, string][] = [
+    ['ERR_NR',  hex8(mem[0x5C3A]),        '1 less than error report code',
+     'FLAGS',   hex8(mem[0x5C3B]),         'Various flags to control the BASIC system'],
+    ['FLAGS2',  hex8(mem[0x5C71]),         'More flags',
+     'TV_FLAG', hex8(mem[0x5C3C]),         'Flags associated with the TV'],
+    ['MODE',    hex8(mem[0x5C41]),         'Current cursor mode: K/L/C/E/G',
+     'PPC',     hex16(w(0x5C45)),          'Line number of statement currently being executed'],
+    ['CHARS',   hex16(w(0x5C36)),          'Address of character set (256 less than actual)',
+     'UDG',     hex16(w(0x5C7B)),          'Address of first user-defined graphic'],
+    ['DF_CC',   hex16(w(0x5C84)),          'Address in display file of PRINT position',
+     'DFCCL',   hex16(w(0x5C86)),          'Like DF_CC for lower part of screen'],
+    ['S_POSN',  hex8(mem[0x5C88]) + ',' + hex8(mem[0x5C89]), 'Column and line number for PRINT position',
+     'ATTR_P',  hex8(mem[0x5C8D]),         'Permanent current colours (as set by INK, PAPER etc.)'],
+    ['ATTR_T',  hex8(mem[0x5C8F]),         'Temporary current colours (as used by PRINT items)',
+     'BORDCR',  hex8(mem[0x5C48]),         'Border colour * 8; also attributes for lower screen'],
+    ['CHANS',   hex16(w(0x5C4F)),          'Address of channel data area',
+     'CURCHL',  hex16(w(0x5C51)),          'Address of currently selected channel information'],
+    ['PROG',    hex16(w(0x5C53)),          'Address of BASIC program',
+     'VARS',    hex16(w(0x5C4B)),          'Address of variables area'],
+    ['E_LINE',  hex16(w(0x5C59)),          'Address of command being typed in',
+     'STKEND',  hex16(w(0x5C65)),          'Address of start of spare space (end of calculator stack)'],
+    ['RAMTOP',  hex16(w(0x5CB2)),          'Address of last byte of BASIC system area',
+     'P_RAMT',  hex16(w(0x5CB4)),          'Address of last byte of physical RAM'],
+    ['DF_SZ',   hex8(mem[0x5C6B]),         'Number of lines in lower part of screen',
+     'SCR_CT',  hex8(mem[0x5C8C]),         'Scroll count — number of scrolls before "scroll?" message'],
+  ];
+
+  const s = (name: string, tip: string) =>
+    `<span class="reg-name" data-tip="${tip}">${name}</span>`;
+
+  return rows.map(([n1, v1, t1, n2, v2, t2]) =>
+    `${s(n1, t1)}${n1.length < 7 ? ' '.repeat(7 - n1.length) : ''} ${v1.length < 5 ? ' '.repeat(5 - v1.length) : ''}${v1}       ${s(n2, t2)}${n2.length < 7 ? ' '.repeat(7 - n2.length) : ''} ${v2.length < 5 ? ' '.repeat(5 - v2.length) : ''}${v2}`
+  ).join('\n');
 }
 
 function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
@@ -1596,11 +1797,37 @@ joyMapP2.addEventListener('change', updateGamepadPolling);
 
 cpuLoopBtn.addEventListener('click', () => {
   if (!spectrum) return;
-  spectrum.stop();
-  const result = diagnoseStuckLoop(spectrum.cpu, spectrum.memory);
-  spectrum.start();
-  navigator.clipboard.writeText(result);
-  setStatus('Loop capture copied to clipboard');
+  const cpu = spectrum.cpu;
+  const f = cpu.f;
+  const flags = [
+    `Sign=${(f & Z80.FLAG_S) ? 1 : 0}`,
+    `Zero=${(f & Z80.FLAG_Z) ? 1 : 0}`,
+    `Half=${(f & Z80.FLAG_H) ? 1 : 0}`,
+    `P/V=${(f & Z80.FLAG_PV) ? 1 : 0}`,
+    `Sub=${(f & Z80.FLAG_N) ? 1 : 0}`,
+    `Carry=${(f & Z80.FLAG_C) ? 1 : 0}`,
+  ].join('  ');
+  const iff = cpu.iff1 ? 'EI' : 'DI';
+  const halt = cpu.halted ? ' HALT' : '';
+  const lines = [
+    `AF  ${hex16(cpu.af)}  AF' ${hex16((cpu.a_ << 8) | cpu.f_)}`,
+    `BC  ${hex16(cpu.bc)}  BC' ${hex16((cpu.b_ << 8) | cpu.c_)}`,
+    `DE  ${hex16(cpu.de)}  DE' ${hex16((cpu.d_ << 8) | cpu.e_)}`,
+    `HL  ${hex16(cpu.hl)}  HL' ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+    `IX  ${hex16(cpu.ix)}  IY  ${hex16(cpu.iy)}  ${iff}  IM${cpu.im}${halt}`,
+    `SP  ${hex16(cpu.sp)}  PC  ${hex16(cpu.pc)}  IR  ${hex8(cpu.i)}${hex8(cpu.r)}`,
+    `Flags: ${flags}`,
+  ];
+  // Add sys vars
+  const mem = cpu.memory;
+  const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
+  lines.push('', 'System Variables:');
+  lines.push(`ERR_NR ${hex8(mem[0x5C3A])}  FLAGS  ${hex8(mem[0x5C3B])}  FLAGS2 ${hex8(mem[0x5C71])}`);
+  lines.push(`PROG   ${hex16(w(0x5C53))}  VARS   ${hex16(w(0x5C4B))}  E_LINE ${hex16(w(0x5C59))}`);
+  lines.push(`RAMTOP ${hex16(w(0x5CB2))}  P_RAMT ${hex16(w(0x5CB4))}  CHARS  ${hex16(w(0x5C36))}`);
+  lines.push(`SP_CC  ${hex16(w(0x5C88))}  ATTR_P ${hex8(mem[0x5C8D])}  BORDCR ${hex8(mem[0x5C48])}`);
+  navigator.clipboard.writeText(lines.join('\n'));
+  setStatus('CPU state copied to clipboard');
 });
 
 cpuMhzBtn.addEventListener('click', () => {
@@ -1847,6 +2074,7 @@ if (import.meta.hot) {
   });
 
   import.meta.hot.dispose(() => {
+    tooltipEl.remove();
     floppySound?.destroy();
     floppySound = null;
     if (gamepadRafId) { cancelAnimationFrame(gamepadRafId); gamepadRafId = 0; }
