@@ -175,13 +175,17 @@
           <option value="5">Microvitec CUB</option>
         </select>
       </div>
-      <div class="slider-row" id="font-row" style="display:none">
-        <span class="slider-label">Font</span>
-        <select id="font-select"><option value="">(none)</option></select>
+    </div>
+
+    <div id="font-panel" class="pane">
+      <div class="section-label">Font</div>
+      <div class="slider-row" id="font-row">
+        <select id="font-select"><option value="">Current</option></select>
         <button id="font-add-btn" title="Add font (.ch8, 768 bytes)">+</button>
+        <button id="font-save-btn" title="Save displayed font as .ch8">&#x1F4BE;</button>
       </div>
-      <canvas id="font-preview" width="128" height="16" style="display:none"></canvas>
-      <canvas id="rom-font-preview" width="128" height="16" style="display:none"></canvas>
+      <canvas id="font-preview" width="128" height="16"></canvas>
+      <canvas id="rom-font-preview" width="128" height="16"></canvas>
       <input type="file" id="font-input" accept=".ch8,.bin" style="display:none">
     </div>
   </div>
@@ -196,9 +200,10 @@
       <div id="activity">
         <div class="led" id="led-kbd" data-kind="kbd"><span class="led-dot"></span>KBD</div>
         <div class="led" id="led-kemp" data-kind="kemp"><span class="led-dot"></span>KEMP</div>
-        <div class="led" id="led-tape" data-kind="tape"><span class="led-dot"></span>TAPE</div>
+        <div class="led" id="led-ear" data-kind="ear"><span class="led-dot"></span>EAR</div>
         <div class="led" id="led-load" data-kind="load"><span class="led-dot"></span>LOAD</div>
-        <div class="led" id="led-rst16" data-kind="rst16" style="cursor:pointer" title="Toggle transcribe overlay"><span class="led-dot"></span>RST16</div>
+        <div class="led" id="led-rst16" data-kind="rst16" style="cursor:pointer" title="RST 16 capture overlay"><span class="led-dot"></span>RST16</div>
+        <div class="led" id="led-text" data-kind="text" style="cursor:pointer" title="Pixel OCR overlay"><span class="led-dot"></span>TEXT</div>
         <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
         <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY-3</div>
         <div class="led" id="led-dsk" data-kind="dsk"><span class="led-dot"></span>DISK</div>
@@ -220,6 +225,11 @@
         <button id="cpu-mhz" title="Toggle turbo speed">MHz</button>
       </div>
       <pre id="regs-output"></pre>
+    </div>
+
+    <div id="sysvar-panel" class="pane pane--mono">
+      <div class="section-label">System</div>
+      <pre id="sysvar-output"></pre>
     </div>
 
     <div id="banks-panel" class="pane pane--mono" style="display: none">

@@ -21,7 +21,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  width: 260px;
+  width: 272px;
   flex-shrink: 0;
   padding-top: 4px;
 }
@@ -303,6 +303,8 @@ canvas {
 
 .led.on .led-dot { background: #0f0; }
 .led.on { color: #8f8; }
+.led[data-kind="ear"].on .led-dot { background: #f80; }
+.led[data-kind="ear"].on { color: #ca6; }
 .led[data-kind="dsk"].on .led-dot { background: #0f0; }
 
 /* Display pane */
@@ -519,6 +521,22 @@ input[type="range"]::-moz-range-thumb {
 
 #regs-output .reg-name { color: #999; }
 
+/* System variables pane */
+#sysvar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#sysvar-output {
+  margin: 0;
+  padding: 6px;
+  font-size: 0.7rem;
+  white-space: pre;
+}
+
+#sysvar-output .reg-name { color: #999; }
+
 /* Memory bank pane */
 #banks-panel {
   display: flex;
@@ -639,7 +657,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 3px 6px;
   cursor: pointer;
   border-left: 3px solid transparent;
-  color: #444;
+  color: #000;
 }
 
 .tape-block:hover { background: #eef; }
@@ -654,7 +672,7 @@ input[type="range"]::-moz-range-thumb {
 
 .tb-detail {
   font-size: 0.6rem;
-  color: #888;
+  color: #999;
   padding-left: 14px;
 }
 

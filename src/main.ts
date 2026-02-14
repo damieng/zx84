@@ -181,19 +181,22 @@ const dotmaskSelect = document.getElementById('dotmask-select') as HTMLSelectEle
 const borderSizeSelect = document.getElementById('border-size') as HTMLSelectElement;
 const fontSelect = document.getElementById('font-select') as HTMLSelectElement;
 const fontAddBtn = document.getElementById('font-add-btn') as HTMLButtonElement;
+const fontSaveBtn = document.getElementById('font-save-btn') as HTMLButtonElement;
 const fontInput = document.getElementById('font-input') as HTMLInputElement;
 const fontPreview = document.getElementById('font-preview') as HTMLCanvasElement;
 const romFontPreview = document.getElementById('rom-font-preview') as HTMLCanvasElement;
 
 const ledKbd = document.getElementById('led-kbd') as HTMLDivElement;
 const ledKemp = document.getElementById('led-kemp') as HTMLDivElement;
-const ledTape = document.getElementById('led-tape') as HTMLDivElement;
+const ledEar = document.getElementById('led-ear') as HTMLDivElement;
 const ledLoad = document.getElementById('led-load') as HTMLDivElement;
 const ledRst16 = document.getElementById('led-rst16') as HTMLDivElement;
+const ledText = document.getElementById('led-text') as HTMLDivElement;
 const ledBeep = document.getElementById('led-beep') as HTMLDivElement;
 const ledAy = document.getElementById('led-ay') as HTMLDivElement;
 const ledDsk = document.getElementById('led-dsk') as HTMLDivElement;
 
+const sysvarOutput = document.getElementById('sysvar-output') as HTMLPreElement;
 const banksPanel = document.getElementById('banks-panel') as HTMLDivElement;
 const banksOutput = document.getElementById('banks-output') as HTMLPreElement;
 const diskInfoPanel = document.getElementById('disk-info-panel') as HTMLDivElement;
@@ -252,11 +255,30 @@ function updateActivityLEDs(): void {
   const a = spectrum.activity;
   ledKbd.classList.toggle('on', a.ulaReads > 0);
   ledKemp.classList.toggle('on', a.kempstonReads > 0);
-  ledTape.classList.toggle('on', a.ulaReads > 100);
+  ledEar.classList.toggle('on', a.earReads > 100);
   ledLoad.classList.toggle('on', a.tapeLoads > 0);
-  ledRst16.classList.toggle('on', a.rst16Calls > 0);
+  // Auto-pause tape when nothing is reading the EAR port
+  // (only after EAR has been read at least once, so we don't pause before loading starts)
+  if (spectrum.tape.playing && !spectrum.tape.paused) {
+    if (a.earReads > 100) {
+      tapeIdleFrames = 0;
+      tapeEverRead = true;
+    } else if (tapeEverRead) {
+      tapeIdleFrames++;
+      if (tapeIdleFrames > 100) { // ~2 seconds of no EAR reads
+        spectrum.tape.paused = true;
+        tapePauseBtn.classList.add('active');
+        tapePauseBtn.textContent = '\u25B6';
+        tapePauseBtn.title = 'Resume';
+      }
+    }
+  } else {
+    tapeIdleFrames = 0;
+  }
+  ledRst16.classList.toggle('on', transcribeMode === 'rst16' || a.rst16Calls > 0);
+  ledText.classList.toggle('on', transcribeMode === 'text');
   ledBeep.classList.toggle('on', a.beeperToggled);
-  ledAy.classList.toggle('on', a.ayWrites > 0);
+  ledAy.classList.toggle('on', a.ayWrites > 5);
   ledDsk.classList.toggle('on', a.fdcAccesses > 0);
   if (floppySound && isPlus3(currentModel)) {
     // Lazy-attach to AudioContext when it becomes available
@@ -328,6 +350,8 @@ function parseTapeBlockMeta(block: TAPBlock, index: number): { line: string; det
 }
 
 let tapeBlockElements: HTMLDivElement[] = [];
+let tapeIdleFrames = 0;
+let tapeEverRead = false;
 let lastRenderedTapePosition = -1;
 
 function buildTapeBlockList(): void {
@@ -655,6 +679,26 @@ function renderRegs(cpu: Z80): string {
   ].join('\n');
 }
 
+function renderSysVars(mem: Uint8Array): string {
+  const n = '<span class="reg-name">';
+  const e = '</span>';
+  const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
+  return [
+    `${n}ERR_NR${e}  ${hex8(mem[0x5C3A])}    ${n}FLAGS${e}   ${hex8(mem[0x5C3B])}`,
+    `${n}FLAGS2${e}  ${hex8(mem[0x5C71])}    ${n}TV_FLAG${e} ${hex8(mem[0x5C3C])}`,
+    `${n}MODE${e}    ${hex8(mem[0x5C41])}    ${n}PPC${e}     ${hex16(w(0x5C45))}`,
+    `${n}CHARS${e}   ${hex16(w(0x5C36))}  ${n}UDG${e}     ${hex16(w(0x5C7B))}`,
+    `${n}DF_CC${e}   ${hex16(w(0x5C84))}  ${n}DFCCL${e}   ${hex16(w(0x5C86))}`,
+    `${n}S_POSN${e}  ${hex8(mem[0x5C88])},${hex8(mem[0x5C89])}  ${n}ATTR_P${e}  ${hex8(mem[0x5C8D])}`,
+    `${n}ATTR_T${e}  ${hex8(mem[0x5C8F])}    ${n}BORDCR${e} ${hex8(mem[0x5C48])}`,
+    `${n}CHANS${e}   ${hex16(w(0x5C4F))}  ${n}CURCHL${e} ${hex16(w(0x5C51))}`,
+    `${n}PROG${e}    ${hex16(w(0x5C53))}  ${n}VARS${e}    ${hex16(w(0x5C4B))}`,
+    `${n}E_LINE${e}  ${hex16(w(0x5C59))}  ${n}STKEND${e} ${hex16(w(0x5C65))}`,
+    `${n}RAMTOP${e}  ${hex16(w(0x5CB2))}  ${n}P_RAMT${e} ${hex16(w(0x5CB4))}`,
+    `${n}DF_SZ${e}   ${hex8(mem[0x5C6B])}    ${n}SCR_CT${e} ${hex8(mem[0x5C8C])}`,
+  ].join('\n');
+}
+
 function renderBanks(mem: import('./memory.ts').SpectrumMemory): string {
   const n = '<span class="reg-name">';
   const e = '</span>';
@@ -721,6 +765,7 @@ function renderDrive(): string {
 function updateRegsDisplay(): void {
   if (!spectrum) return;
   regsOutput.innerHTML = renderRegs(spectrum.cpu);
+  sysvarOutput.innerHTML = renderSysVars(spectrum.cpu.memory);
   if (is128kClass(currentModel)) {
     banksOutput.innerHTML = renderBanks(spectrum.memory);
     banksPanel.style.display = '';
@@ -806,7 +851,7 @@ scaleSelect.addEventListener('change', () => {
   const scale = Number(scaleSelect.value);
   if (spectrum) spectrum.display.setScale(scale);
   try { localStorage.setItem('zx84-scale', String(scale)); } catch { /* */ }
-  if (transcribeActive) positionTranscribeOverlay();
+  if (transcribeMode !== 'off') positionTranscribeOverlay();
 });
 
 volumeSlider.addEventListener('input', () => {
@@ -867,7 +912,7 @@ borderSizeSelect.addEventListener('change', () => {
   const v = Number(borderSizeSelect.value) as 0 | 1 | 2;
   if (spectrum) spectrum.setBorderSize(v);
   try { localStorage.setItem('zx84-border-size', String(v)); } catch { /* */ }
-  if (transcribeActive) positionTranscribeOverlay();
+  if (transcribeMode !== 'off') positionTranscribeOverlay();
   borderSizeSelect.blur();
 });
 
@@ -897,33 +942,27 @@ function populateFontSelect(): void {
   fontSelect.value = saved;
 }
 
-function renderTextToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array, text: string): void {
-  const scale = 2;
-  const w = text.length * 8 * scale;
-  const h = 8 * scale;
+/** Render all 96 printable chars (32 per row, 3 rows) at 1:1 pixel scale. */
+function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void {
+  const cols = 32, rows = 3; // 96 chars = 32 × 3
+  const w = cols * 8;
+  const h = rows * 8;
   cvs.width = w;
   cvs.height = h;
   const ctx = cvs.getContext('2d')!;
   const img = ctx.createImageData(w, h);
   const d = img.data;
-  const stride = w * 4;
 
-  for (let ci = 0; ci < text.length; ci++) {
-    const ch = text.charCodeAt(ci) - 32;
-    if (ch < 0 || ch >= 96) continue;
-    const off = ch * 8;
-    for (let row = 0; row < 8; row++) {
-      const byte = fontData[off + row];
-      for (let bit = 0; bit < 8; bit++) {
-        if (byte & (0x80 >> bit)) {
-          const x = (ci * 8 + bit) * scale;
-          const y = row * scale;
-          for (let sy = 0; sy < scale; sy++) {
-            for (let sx = 0; sx < scale; sx++) {
-              const px = (y + sy) * stride + (x + sx) * 4;
-              d[px] = 0xCD; d[px + 1] = 0xCD; d[px + 2] = 0xCD; d[px + 3] = 0xFF;
-            }
-          }
+  for (let c = 0; c < 96; c++) {
+    const col = c % cols;
+    const row = (c / cols) | 0;
+    const off = c * 8;
+    for (let py = 0; py < 8; py++) {
+      const byte = fontData[off + py];
+      for (let px = 0; px < 8; px++) {
+        if (byte & (0x80 >> px)) {
+          const idx = ((row * 8 + py) * w + col * 8 + px) * 4;
+          d[idx] = 0; d[idx + 1] = 0; d[idx + 2] = 0; d[idx + 3] = 0xFF;
         }
       }
     }
@@ -934,6 +973,7 @@ function renderTextToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array, text: 
 
 let romFontCacheAddr = -1;
 let romFontCacheHash = -1;
+let capturedFontData: Uint8Array | null = null;
 
 function fontDataHash(data: Uint8Array, offset: number, len: number): number {
   let h = 0;
@@ -942,7 +982,6 @@ function fontDataHash(data: Uint8Array, offset: number, len: number): number {
 }
 
 function renderFontPreview(): void {
-  return; // font UI hidden
   const name = fontSelect.value;
 
   if (name) {
@@ -953,13 +992,13 @@ function renderFontPreview(): void {
     const binary = atob(b64);
     const font = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) font[i] = binary.charCodeAt(i);
-    renderTextToCanvas(fontPreview, font, 'Flexible');
+    renderFontToCanvas(fontPreview, font);
     fontPreview.style.display = 'block';
     romFontPreview.style.display = 'none';
     romFontCacheAddr = -1;
     romFontCacheHash = -1;
   } else {
-    // Show ROM font from CHARS sysvar (23606/0x5C36)
+    // Show current font from CHARS sysvar (23606/0x5C36)
     fontPreview.style.display = 'none';
     if (!spectrum) { romFontPreview.style.display = 'none'; return; }
     const mem = spectrum.memory.flat;
@@ -968,12 +1007,19 @@ function renderFontPreview(): void {
     const fontStart = charsAddr + 256;
     if (fontStart + 768 > 65536) { romFontPreview.style.display = 'none'; return; }
 
+    // If the space character (first 8 bytes) isn't all zeros, the font data
+    // isn't valid yet — keep the previous preview.
+    let spaceBlank = true;
+    for (let i = 0; i < 8; i++) { if (mem[fontStart + i] !== 0) { spaceBlank = false; break; } }
+    if (!spaceBlank) return;
+
     const hash = fontDataHash(mem, fontStart, 768);
     if (fontStart === romFontCacheAddr && hash === romFontCacheHash) return;
     romFontCacheAddr = fontStart;
     romFontCacheHash = hash;
 
-    renderTextToCanvas(romFontPreview, mem.subarray(fontStart, fontStart + 768), 'Flexible');
+    capturedFontData = mem.slice(fontStart, fontStart + 768);
+    renderFontToCanvas(romFontPreview, capturedFontData);
     romFontPreview.style.display = 'block';
   }
 }
@@ -1011,6 +1057,33 @@ fontSelect.addEventListener('change', () => {
   try { localStorage.setItem('zx84-font', fontSelect.value); } catch { /* */ }
   renderFontPreview();
   fontSelect.blur();
+});
+
+fontSaveBtn.addEventListener('click', () => {
+  // Get the currently displayed font data
+  let data: Uint8Array | null = null;
+  const name = fontSelect.value;
+  if (name) {
+    const store = loadFontStore();
+    const b64 = store[name];
+    if (b64) {
+      const binary = atob(b64);
+      data = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+    }
+  } else {
+    data = capturedFontData;
+  }
+  if (!data || data.length !== 768) {
+    setStatus('No font data to save');
+    return;
+  }
+  const blob = new Blob([data], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (name || 'font') + '.ch8';
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 
 // ── ROM file input ─────────────────────────────────────────────────────────
@@ -1272,6 +1345,8 @@ function applyTape(data: Uint8Array, filename: string): void {
   spectrum.reset();
   spectrum.start();
   spectrum.tape.startPlayback();
+  tapeIdleFrames = 0;
+  tapeEverRead = false;
   startAutoType(is128kClass(currentModel) ? AUTO_LOAD_128K : AUTO_LOAD_48K);
   unpause();
   setStatus(`Tape loaded — auto-loading ${filename}`);
@@ -1296,10 +1371,8 @@ cpuResetBtn.addEventListener('click', () => {
     buildTapeBlockList();
     unpause();
   }
-  if (transcribeActive) {
-    transcribeActive = false;
-    canvas.classList.remove('dimmed');
-    transcribeOverlay.classList.remove('active');
+  if (transcribeMode !== 'off') {
+    setTranscribeMode('off');
   }
   clearLastFile();
 });
@@ -1503,7 +1576,7 @@ cpuMhzBtn.addEventListener('click', () => {
   speedFrameCount = 49; // force immediate MHz update
 });
 
-let transcribeActive = false;
+let transcribeMode: 'off' | 'rst16' | 'text' = 'off';
 
 /** Natural (unscaled) pixel size of the 32x24 monospace block. Measured once. */
 let transcribeNatW = 0;
@@ -1532,32 +1605,50 @@ function positionTranscribeOverlay(): void {
 }
 
 function updateTranscribeOverlay(): void {
-  if (!transcribeActive || !spectrum) return;
+  if (transcribeMode === 'off' || !spectrum) return;
   // Don't clobber the DOM while the user is selecting text
   const sel = window.getSelection();
   if (sel && sel.rangeCount > 0 && !sel.isCollapsed &&
       transcribeOverlay.contains(sel.anchorNode)) return;
-  const grid = spectrum.screenGrid;
-  let text = '';
-  for (let row = 0; row < 24; row++) {
-    const offset = row * 32;
-    for (let col = 0; col < 32; col++) {
-      text += grid[offset + col];
+
+  let text: string;
+  if (transcribeMode === 'text') {
+    text = spectrum.ocrScreen();
+  } else {
+    const grid = spectrum.screenGrid;
+    text = '';
+    for (let row = 0; row < 24; row++) {
+      const offset = row * 32;
+      for (let col = 0; col < 32; col++) {
+        text += grid[offset + col];
+      }
+      if (row < 23) text += '\n';
     }
-    if (row < 23) text += '\n';
   }
   transcribeOverlay.textContent = text;
 }
 
-ledRst16.addEventListener('click', () => {
-  if (!spectrum) return;
-  transcribeActive = !transcribeActive;
-  canvas.classList.toggle('dimmed', transcribeActive);
-  transcribeOverlay.classList.toggle('active', transcribeActive);
-  if (transcribeActive) {
+function setTranscribeMode(mode: 'off' | 'rst16' | 'text'): void {
+  transcribeMode = mode;
+  const active = mode !== 'off';
+  canvas.classList.toggle('dimmed', active);
+  transcribeOverlay.classList.toggle('active', active);
+  ledRst16.classList.toggle('on', mode === 'rst16');
+  ledText.classList.toggle('on', mode === 'text');
+  if (active) {
     updateTranscribeOverlay();
     positionTranscribeOverlay();
   }
+}
+
+ledRst16.addEventListener('click', () => {
+  if (!spectrum) return;
+  setTranscribeMode(transcribeMode === 'rst16' ? 'off' : 'rst16');
+});
+
+ledText.addEventListener('click', () => {
+  if (!spectrum) return;
+  setTranscribeMode(transcribeMode === 'text' ? 'off' : 'text');
 });
 
 // ── Keyboard ───────────────────────────────────────────────────────────────
