@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
+import { HiBackward, HiPlay, HiPause, HiArrowPath } from 'react-icons/hi2';
 import {
   tapeLoaded, tapeBlocks, tapePosition, tapePaused,
-  tapeRewind, tapePrev, tapeTogglePause, tapeNext, tapeSetPosition, toggleAutoRewind,
+  tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
 } from '../../store/emulator.ts';
 import { tapeAutoRewind } from '../../store/settings.ts';
 import type { TAPBlock } from '../../formats/tap.ts';
@@ -45,8 +46,8 @@ function parseTapeBlockMeta(block: TAPBlock, index: number): { line: string; det
     for (let i = 1; i <= 10; i++) filename += String.fromCharCode(block.data[i]);
     const dataLen = block.data[11] | (block.data[12] << 8);
     const param1 = block.data[13] | (block.data[14] << 8);
-    const line = `${index}: H "${filename.trimEnd()}"${tag}`;
-    let detail = `${typeName} ${dataLen}b`;
+    const line = `${index}: Header "${filename.trimEnd()}"${tag}`;
+    let detail = `${typeName} ${dataLen} bytes`;
     if (typeId === 0 && param1 < 10000) detail += ` LINE ${param1}`;
     else if (typeId === 3) detail += ` @ ${param1}`;
     if (timing) detail += `\n${timing}`;
@@ -55,7 +56,7 @@ function parseTapeBlockMeta(block: TAPBlock, index: number): { line: string; det
   const size = block.data.length;
   let detail = '';
   if (timing) detail = timing;
-  return { line: `${index}: D ${size}b${tag}`, detail };
+  return { line: `${index}: Data ${size} bytes${tag}`, detail };
 }
 
 export function TapePane() {
@@ -75,21 +76,19 @@ export function TapePane() {
   return (
     <Pane id="tape-panel" label="Tape" mono>
       <div id="tape-controls">
-        <button id="tape-rewind" title="Rewind" onClick={tapeRewind}>&#x23EE;</button>
-        <button id="tape-prev" title="Previous" onClick={tapePrev}>&#x23EA;</button>
+        <button id="tape-rewind" title="Rewind" onClick={tapeRewind}><HiBackward /></button>
         <button
           id="tape-pause"
           title={paused ? 'Resume' : 'Pause'}
           class={paused ? 'active' : ''}
           onClick={tapeTogglePause}
-        >{paused ? '\u25B6' : '\u23F8'}</button>
-        <button id="tape-next" title="Next" onClick={tapeNext}>&#x23E9;</button>
+        >{paused ? <HiPlay /> : <HiPause />}</button>
         <button
           id="tape-auto-rewind"
           title="Auto-rewind when tape ends"
           class={tapeAutoRewind.value ? 'active' : ''}
           onClick={toggleAutoRewind}
-        >&#x1F501;</button>
+        ><HiArrowPath /></button>
       </div>
       <div id="tape-blocks" class="mono-block" ref={containerRef}>
         {!loaded ? (

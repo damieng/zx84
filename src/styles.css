@@ -1,5 +1,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* react-icons SVGs: inline vertical alignment */
+button > svg, a > svg { vertical-align: -0.125em; }
+
 :root {
   --font-ui: 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Consolas', 'Courier New', monospace;
@@ -40,9 +43,10 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 2px;
   line-height: 1;
+  width: 100%;
 }
 
 .logo {
@@ -54,7 +58,7 @@ body {
 }
 
 .logo-num {
-  color: #a0a0ff;
+  color: #fa4;
   font-weight: 600;
 }
 
@@ -136,15 +140,15 @@ body {
   right: 0;
   top: -6px;
   bottom: -6px;
-  width: 90px;
+  width: 110px;
   background: linear-gradient(
     135deg,
-    #000 10px, #000 20px,
-    #f00 20px, #f00 30px,
-    #ff0 30px, #ff0 40px,
-    #0f0 40px, #0f0 50px,
-    #0ff 50px, #0ff 60px,
-    #000 60px, #000 70px
+    #000 8px, #000 15px,
+    #f00 15px, #f00 30px,
+    #ff0 30px, #ff0 45px,
+    #0f0 45px, #0f0 60px,
+    #0ff 60px, #0ff 75px,
+    #000 75px, #000 83px
   );
 }
 
@@ -489,6 +493,7 @@ input[type="range"]::-moz-range-thumb {
   background: #eee;
   color: #333;
   font-size: 0.75rem;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -611,8 +616,37 @@ input[type="range"]::-moz-range-thumb {
   gap: 4px;
 }
 
-#drive-panel-label {
-  justify-content: space-between;
+#disk-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+#disk-mode-toggle .disk-mode-label {
+  font-size: 0.75rem;
+  color: #555;
+  margin-right: 2px;
+}
+
+#disk-mode-toggle button {
+  flex: 1;
+  padding: 3px 0;
+  font-size: 0.75rem;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #666;
+  cursor: pointer;
+}
+
+#disk-mode-toggle button:hover { background: #ddd; }
+
+#disk-mode-toggle button.active {
+  background: #ddf;
+  border-color: #66f;
+  color: #000;
+  font-weight: 600;
 }
 
 #drive-output {
@@ -620,14 +654,6 @@ input[type="range"]::-moz-range-thumb {
   padding: 6px;
   font-size: 0.7rem;
   white-space: pre;
-}
-
-#drive-panel-label select {
-  padding: 2px 4px;
-  font-size: 0.7rem;
-  background: rgba(255, 255, 255, 0.1);
-  border-color: #555;
-  color: #fff;
 }
 
 #drive-output .reg-name { color: #999; }
@@ -680,16 +706,22 @@ input[type="range"]::-moz-range-thumb {
   color: #c00;
 }
 
+#tape-auto-rewind.active {
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
+}
+
 #tape-blocks {
   max-height: 400px;
   overflow-y: auto;
   border: 1px solid #ccc;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .tape-block {
-  padding: 3px 6px;
+  padding: 4px 6px;
   cursor: pointer;
   border-left: 3px solid transparent;
   color: #000;
@@ -700,18 +732,18 @@ input[type="range"]::-moz-range-thumb {
 .tape-block.played { color: #aaa; }
 
 .tape-block.current {
-  background: #fef0f0;
-  border-left-color: #e44;
-  color: #c22;
+  background: #f0f0fe;
+  border-left-color: #44e;
+  color: #22c;
 }
 
 .tb-detail {
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   color: #999;
   padding-left: 14px;
 }
 
-.tape-block.current .tb-detail { color: #c88; }
+.tape-block.current .tb-detail { color: #88c; }
 
 .tape-empty {
   padding: 8px;

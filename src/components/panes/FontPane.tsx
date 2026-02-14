@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
+import { HiPlus, HiArrowDownTray } from 'react-icons/hi2';
 import { fontName, persistSetting } from '../../store/settings.ts';
 import {
   setStatus, updateFontPreview, loadFontStore, saveFontStore, capturedFontData,
@@ -67,7 +68,7 @@ export function FontPane() {
           <option value="">Current</option>
           {fontNames.map(name => <option key={name} value={name}>{name}</option>)}
         </select>
-        <button id="font-add-btn" title="Add font (.ch8, 768 bytes)" onClick={() => fontInputRef.current?.click()}>+</button>
+        <button id="font-add-btn" title="Add font (.ch8, 768 bytes)" onClick={() => fontInputRef.current?.click()}><HiPlus /></button>
         <button id="font-save-btn" title="Save displayed font as .ch8" onClick={() => {
           let data: Uint8Array | null = null;
           const name = fontName.value;
@@ -92,7 +93,7 @@ export function FontPane() {
           a.download = (name || 'font') + '.ch8';
           a.click();
           URL.revokeObjectURL(a.href);
-        }}>&#x1F4BE;</button>
+        }}><HiArrowDownTray /></button>
       </div>
       <canvas id="font-preview" ref={fontPreviewRef} width="128" height="16" style="display:none" />
       <canvas id="rom-font-preview" ref={romFontPreviewRef} width="128" height="16" style="display:none" />

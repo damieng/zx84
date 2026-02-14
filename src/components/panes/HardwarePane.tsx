@@ -1,5 +1,6 @@
 import { useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
+import { HiCpuChip } from 'react-icons/hi2';
 import { currentModel, romStatusText, switchModel, loadRomFiles } from '../../store/emulator.ts';
 import type { SpectrumModel } from '../../spectrum.ts';
 
@@ -24,12 +25,7 @@ export function HardwarePane() {
           <option value="+3">ZX Spectrum +3</option>
         </select>
         <button id="rom-btn" title="Load ROM" onClick={() => romInputRef.current?.click()}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="4" y="2" width="8" height="12" rx="1"/>
-            <line x1="1" y1="5" x2="4" y2="5"/><line x1="1" y1="8" x2="4" y2="8"/>
-            <line x1="1" y1="11" x2="4" y2="11"/><line x1="12" y1="5" x2="16" y2="5"/>
-            <line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="11" x2="16" y2="11"/>
-          </svg>
+          <HiCpuChip />
         </button>
         <input
           type="file"

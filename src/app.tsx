@@ -194,6 +194,7 @@ export function App() {
       <Sidebar id="sidebar" side="left" extra={
         <div id="toolbar">
           <h1>
+            <span class="logo-stripe" />
             <span class="logo">ZX<span class="logo-num">84</span></span>
             <span class="logo-stripe" />
           </h1>

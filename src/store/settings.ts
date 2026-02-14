@@ -45,7 +45,7 @@ export const diskMode = signal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
 
 // ── Tape auto-rewind ────────────────────────────────────────────────────
 
-export const tapeAutoRewind = signal(getSaved('tape-auto-rewind', 'off') === 'on');
+export const tapeAutoRewind = signal(getSaved('tape-auto-rewind', 'on') === 'on');
 
 // ── Derived ─────────────────────────────────────────────────────────────
 

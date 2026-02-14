@@ -1,5 +1,6 @@
 import { useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
+import { HiFolderOpen, HiArrowDownTray } from 'react-icons/hi2';
 import { loadFile, saveSnapshot } from '../../store/emulator.ts';
 
 export function LoadSavePane() {
@@ -9,10 +10,10 @@ export function LoadSavePane() {
     <Pane id="snapshot-panel" label="Load / Save">
       <div id="snap-row">
         <button id="snap-load-btn" title="Load file" onClick={() => snapInputRef.current?.click()}>
-          &#x1F4C2; Load
+          <HiFolderOpen /> Load
         </button>
         <button id="snap-save-btn" title="Save snapshot" onClick={saveSnapshot}>
-          &#x1F4BE; Save
+          <HiArrowDownTray /> Save
         </button>
         <input
           type="file"

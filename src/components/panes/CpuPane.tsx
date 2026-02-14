@@ -1,4 +1,5 @@
 import { Pane } from '../Pane.tsx';
+import { HiPlay, HiPause, HiPower, HiClipboardDocument } from 'react-icons/hi2';
 import {
   regsHtml, emulationPaused, turboMode, clockSpeedText,
   togglePause, resetMachine, toggleTurbo, copyCpuState,
@@ -15,12 +16,10 @@ export function CpuPane() {
           title={paused ? 'Resume emulation' : 'Pause emulation'}
           class={paused ? 'active' : ''}
           onClick={togglePause}
-        >{paused ? '\u25B6' : '\u23F8'}</button>
-        <button id="cpu-reset" title="Reset machine" onClick={resetMachine}>&#x27F3;</button>
+        >{paused ? <HiPlay /> : <HiPause />}</button>
+        <button id="cpu-reset" title="Reset machine" onClick={resetMachine}><HiPower /></button>
         <button id="cpu-loop" title="Copy CPU state to clipboard" onClick={copyCpuState}>
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="5" y="3" width="8" height="11" rx="1"/><path d="M3 12V3a1 1 0 0 1 1-1h6"/>
-          </svg>
+          <HiClipboardDocument />
         </button>
         <button
           id="cpu-mhz"
