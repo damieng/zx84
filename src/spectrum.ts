@@ -260,6 +260,16 @@ export class Spectrum {
       }
       this.cpu.memory[addr] = val & 0xFF;
     };
+
+    this.cpu.portIn = (port: number): number => {
+      this.applyIOContention(port);
+      return this.cpu.portInHandler ? this.cpu.portInHandler(port) : 0xFF;
+    };
+
+    this.cpu.portOut = (port: number, val: number): void => {
+      this.applyIOContention(port);
+      if (this.cpu.portOutHandler) this.cpu.portOutHandler(port, val);
+    };
   }
 
   private wirePortIO(): void {
@@ -503,6 +513,48 @@ export class Spectrum {
     const col = offset - line * t.tStatesPerLine;
     if (col >= 128) return 0;
     return CONTENTION_PATTERN[col & 7];
+  }
+
+  /**
+   * Apply I/O contention for port access.
+   * On real hardware, the ULA applies contention during I/O cycles based on
+   * whether the port address high byte is contended and whether it's a ULA port.
+   *
+   * Patterns (C = contention delay, N = none, number = sub-cycle T-states):
+   *   Contended + ULA (A0=0): C:1, C:3  —  2 contention checks
+   *   Contended + non-ULA:    C:1, C:1, C:1, C:1  —  4 checks
+   *   Non-contended + ULA:    N:1, C:3  —  1 check
+   *   Non-contended + non-ULA: N:4  —  no contention
+   *
+   * The intermediate +1/-1 advances position tStates correctly for each check
+   * without adding extra time (sub-cycle T-states are in the base instruction timing).
+   */
+  private applyIOContention(port: number): void {
+    const highContended = this.isContended(port);
+    const isULA = (port & 1) === 0;
+
+    if (highContended && isULA) {
+      // C:1, C:3
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates += 1;
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates -= 1;
+    } else if (highContended) {
+      // C:1, C:1, C:1, C:1
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates += 1;
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates += 1;
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates += 1;
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates -= 3;
+    } else if (isULA) {
+      // N:1, C:3
+      this.cpu.tStates += 1;
+      this.cpu.tStates += this.contentionDelay();
+      this.cpu.tStates -= 1;
+    }
   }
 
   /**
