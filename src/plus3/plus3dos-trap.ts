@@ -10,9 +10,9 @@
  * compatibility.
  */
 
-import { Z80 } from './cores/z80.ts';
-import type { SpectrumMemory } from './memory.ts';
-import type { UPD765A } from './cores/upd765a.ts';
+import { Z80 } from '../cores/z80.ts';
+import type { SpectrumMemory } from '../memory.ts';
+import type { UPD765A } from '../cores/upd765a.ts';
 
 /** Nominal T-state costs for trapped operations. */
 const TSTATES_READ = 100;

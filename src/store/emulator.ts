@@ -4,10 +4,11 @@
 
 import { signal, batch } from '@preact/signals';
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '../spectrum.ts';
-import { FloppySound } from '../floppy-sound.ts';
+import { FloppySound } from '../plus3/floppy-sound.ts';
 import { Z80 } from '../cores/z80.ts';
 import { loadSNA, saveSNA } from '../formats/sna.ts';
 import { loadZ80 } from '../formats/z80format.ts';
+import { loadSZX } from '../formats/szx.ts';
 import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
@@ -565,6 +566,57 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
         spectrum.start();
       }
       setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
+    } else if (ext === 'szx') {
+      spectrum.stop();
+      spectrum.reset();
+      const result = await loadSZX(data, spectrum.cpu, spectrum.memory);
+
+      if (result.is128K && !is128kClass(currentModel.value)) {
+        const entry128 = await restoreROM('128k');
+        const entryPlus2 = entry128 ? null : await restoreROM('+2');
+        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
+        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
+        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
+        if (entry) {
+          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
+          romData = entry.data;
+          setRomStatus('');
+          createMachine();
+          spectrum!.stop();
+          spectrum!.reset();
+          await loadSZX(data, spectrum!.cpu, spectrum!.memory);
+        } else {
+          setStatus('128K .szx snapshot requires a 128K ROM — load one first');
+          return false;
+        }
+      }
+
+      // Apply paging state for 128K
+      if (result.is128K) {
+        spectrum!.memory.port7FFD = result.port7FFD;
+        spectrum!.memory.currentBank = result.port7FFD & 0x07;
+        spectrum!.memory.currentROM = (result.port7FFD >> 4) & 1;
+        spectrum!.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
+        if (isPlus2AClass(currentModel.value)) {
+          spectrum!.memory.port1FFD = result.port1FFD;
+          spectrum!.memory.specialPaging = (result.port1FFD & 1) !== 0;
+        }
+        spectrum!.memory.applyBanking();
+      }
+
+      spectrum!.ula.borderColor = result.borderColor;
+      spectrum!.cpu.memory = spectrum!.memory.flat;
+
+      // Restore AY state if present
+      if (result.ayRegs) {
+        spectrum!.ay.setRegisters(result.ayRegs);
+        if (result.ayCurrentReg !== undefined) {
+          spectrum!.ay.selectedReg = result.ayCurrentReg;
+        }
+      }
+
+      spectrum!.start();
+      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .szx: ${filename}`);
     } else {
       setStatus(`Unknown format: .${ext}`);
       return false;
@@ -648,7 +700,7 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
     return;
   }
 
-  if (ext === 'sna' || ext === 'z80') {
+  if (ext === 'sna' || ext === 'z80' || ext === 'szx') {
     if (await applySnapshot(data, filename)) {
       persistLastFile(data, filename);
     }
@@ -690,16 +742,7 @@ async function handleZipFile(data: Uint8Array): Promise<void> {
 
 // ── Save snapshot ───────────────────────────────────────────────────────
 
-export function saveSnapshot(): void {
-  if (!spectrum) { setStatus('No machine running'); return; }
-
-  const wasPaused = emulationPaused.value;
-  if (!wasPaused) spectrum.stop();
-
-  const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
-  const model = is128kClass(currentModel.value) ? '128k' : '48k';
-  const filename = `zx84-${model}.sna`;
-
+function downloadFile(data: Uint8Array, filename: string): void {
   const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -707,6 +750,64 @@ export function saveSnapshot(): void {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export function saveSnapshot(format: 'sna' | 'z80' = 'sna'): void {
+  if (!spectrum) { setStatus('No machine running'); return; }
+
+  const wasPaused = emulationPaused.value;
+  if (!wasPaused) spectrum.stop();
+
+  // For now, .z80 saves as .sna (full .z80 writer not yet implemented)
+  const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+  const model = is128kClass(currentModel.value) ? '128k' : '48k';
+  const ext = format === 'z80' ? 'sna' : format; // TODO: implement .z80 writer
+  const filename = `zx84-${model}.${ext}`;
+
+  downloadFile(data, filename);
+
+  if (!wasPaused) spectrum.start();
+  setStatus(`Saved ${filename}`);
+}
+
+export function saveScreenshot(format: 'png' | 'scr'): void {
+  if (!spectrum) { setStatus('No machine running'); return; }
+
+  if (format === 'scr') {
+    // .scr = raw 6912 bytes from 0x4000 (6144 pixels + 768 attrs)
+    const screenData = spectrum.memory.flat.slice(0x4000, 0x4000 + 6912);
+    downloadFile(screenData, 'screen.scr');
+    setStatus('Saved screen.scr');
+  } else {
+    // PNG export via canvas
+    if (!spectrum.display) { setStatus('No display available'); return; }
+    const canvas = spectrum.display['canvas'] as HTMLCanvasElement;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'screen.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      setStatus('Saved screen.png');
+    });
+  }
+}
+
+export function saveRAM(): void {
+  if (!spectrum) { setStatus('No machine running'); return; }
+
+  const wasPaused = emulationPaused.value;
+  if (!wasPaused) spectrum.stop();
+
+  // Check if RAM is at 0x0000 (special paging mode on +2A/+3)
+  const mem = spectrum.memory;
+  const startAddr = mem.specialPaging ? 0 : 0x4000;
+  const ramData = spectrum.memory.flat.slice(startAddr);
+
+  const filename = startAddr === 0 ? 'ram-64k.bin' : 'ram-48k.bin';
+  downloadFile(ramData, filename);
 
   if (!wasPaused) spectrum.start();
   setStatus(`Saved ${filename}`);

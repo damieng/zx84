@@ -19,7 +19,7 @@ import { Display } from './display.ts';
 import { Audio } from './audio.ts';
 import { TapeDeck } from './formats/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
-import { Plus3DosTrap } from './plus3dos-trap.ts';
+import { Plus3DosTrap } from './plus3/plus3dos-trap.ts';
 import type { DskImage } from './formats/dsk.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz

@@ -941,6 +941,27 @@ input[type="range"]::-moz-range-thumb {
   background: #eef;
 }
 
+.save-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #ccc;
+  box-shadow: 2px 2px 6px rgba(0,0,0,.2);
+  z-index: 1000;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  min-width: 160px;
+}
+
+.save-menu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.save-menu-item:hover {
+  background: #eef;
+}
+
 /* Section-label inline controls (selects etc.) */
 .section-label button,
 .section-label select {
