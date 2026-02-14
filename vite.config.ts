@@ -1,4 +1,5 @@
 import { defineConfig, Plugin } from 'vite';
+import preact from '@preact/preset-vite';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 
@@ -55,7 +56,7 @@ function hmrFreezePlugin(): Plugin {
 // (buildTimePlugin removed — logo is static HTML)
 
 export default defineConfig({
-  plugins: [hmrFreezePlugin()],
+  plugins: [hmrFreezePlugin(), preact()],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

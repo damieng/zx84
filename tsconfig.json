@@ -10,6 +10,8 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "types": ["vite/client"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
