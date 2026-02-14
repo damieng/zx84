@@ -94,6 +94,26 @@ body {
   gap: 6px;
   position: relative;
   overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-label::before {
+  content: '\25BE';
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.pane.collapsed .section-label::before {
+  content: '\25B8';
+}
+
+.pane.collapsed {
+  padding-bottom: 0;
+}
+
+.pane.collapsed > :not(.section-label) {
+  display: none !important;
 }
 
 .section-label::after {

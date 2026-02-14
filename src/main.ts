@@ -218,6 +218,41 @@ const tapePrevBtn = document.getElementById('tape-prev') as HTMLButtonElement;
 const tapePauseBtn = document.getElementById('tape-pause') as HTMLButtonElement;
 const tapeNextBtn = document.getElementById('tape-next') as HTMLButtonElement;
 
+// ── Pane collapse/expand ─────────────────────────────────────────────────
+
+const COLLAPSE_KEY = 'zx84-collapsed';
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveCollapsed(set: Set<string>): void {
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...set])); } catch { /* */ }
+}
+
+const collapsedPanes = loadCollapsed();
+
+document.querySelectorAll('.pane > .section-label').forEach(label => {
+  const pane = label.parentElement!;
+  if (!pane.id) return;
+  if (collapsedPanes.has(pane.id)) pane.classList.add('collapsed');
+  label.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('select, button')) return;
+    pane.classList.toggle('collapsed');
+    if (pane.classList.contains('collapsed')) {
+      collapsedPanes.add(pane.id);
+    } else {
+      collapsedPanes.delete(pane.id);
+    }
+    saveCollapsed(collapsedPanes);
+  });
+});
+
+// ── Status helpers ───────────────────────────────────────────────────────
+
 function setStatus(msg: string): void {
   statusEl.textContent = msg;
 }
