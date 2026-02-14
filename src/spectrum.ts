@@ -10,6 +10,7 @@
  */
 
 import { Z80 } from './cores/z80.ts';
+import { disasmOne, stripMarkers } from './z80-disasm.ts';
 import { AY3891x } from './cores/ay-3-8910.ts';
 import { SpectrumMemory } from './memory.ts';
 import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from './ula.ts';
@@ -200,6 +201,10 @@ export class Spectrum {
   contentionLog: string[] = [];
   contentionFloatingBusReads = 0;
   contentionProbes = 0;
+
+  /** Execution trace */
+  private _tracing = false;
+  private _traceBuffer: string[] = [];
 
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
@@ -723,6 +728,7 @@ export class Spectrum {
           this.cpu.iff2 = true;
         }
       } else {
+        if (this._tracing && this.cpu.pc >= 0x4000) this.captureTraceLine();
         this.cpu.step();
       }
 
@@ -995,6 +1001,114 @@ export class Spectrum {
 
   get contentionMonitorActive(): boolean {
     return this._contentionMonitor;
+  }
+
+  get tracing(): boolean { return this._tracing; }
+
+  startTrace(): void {
+    this._traceBuffer = [];
+    this._tracing = true;
+  }
+
+  stopTrace(): string {
+    this._tracing = false;
+    return this._traceBuffer.join('\n');
+  }
+
+  private captureTraceLine(): void {
+    const cpu = this.cpu;
+    const mem = cpu.memory;
+    const pc = cpu.pc;
+    const line = disasmOne(mem, pc);
+    const mnem = stripMarkers(line.text);
+    const ctx = this.traceCtx(pc);
+    const addr = pc.toString(16).toUpperCase().padStart(4, '0');
+    this._traceBuffer.push(ctx
+      ? `${addr}  ${mnem.padEnd(24)} ${ctx}`
+      : `${addr}  ${mnem}`);
+    if (this._traceBuffer.length >= 500_000) this._tracing = false;
+  }
+
+  private traceCtx(pc: number): string {
+    const cpu = this.cpu;
+    const mem = cpu.memory;
+    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
+    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
+
+    let op = mem[pc];
+
+    // DD/FD prefix → IX/IY memory access
+    if (op === 0xDD || op === 0xFD) {
+      const ixr = op === 0xDD ? cpu.ix : cpu.iy;
+      const op2 = mem[(pc + 1) & 0xFFFF];
+      if (op2 === 0xCB) {
+        const d = mem[(pc + 2) & 0xFFFF];
+        const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
+        return `(${h16(addr)})=${h8(mem[addr])}`;
+      }
+      if (op2 === 0xED || op2 === 0xDD || op2 === 0xFD) return '';
+      const x = (op2 >> 6) & 3, y = (op2 >> 3) & 7, z = op2 & 7;
+      if ((x === 1 && (y === 6 || z === 6) && !(y === 6 && z === 6)) ||
+          (x === 2 && z === 6) ||
+          (x === 0 && (z === 4 || z === 5) && y === 6) ||
+          op2 === 0x36) {
+        const d = mem[(pc + 2) & 0xFFFF];
+        const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
+        if (x === 2) return `A=${h8(cpu.a)} (${h16(addr)})=${h8(mem[addr])}`;
+        return `(${h16(addr)})=${h8(mem[addr])}`;
+      }
+      return '';
+    }
+
+    // CB: bit ops on (HL)
+    if (op === 0xCB) {
+      if ((mem[(pc + 1) & 0xFFFF] & 7) === 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl])}`;
+      return '';
+    }
+
+    // ED prefix
+    if (op === 0xED) {
+      const ed = mem[(pc + 1) & 0xFFFF];
+      const x = (ed >> 6) & 3, y = (ed >> 3) & 7, z = ed & 7;
+      if (x === 1 && (z === 0 || z === 1)) return `port=${h16(cpu.bc)}`;
+      if (x === 2 && y >= 4 && z < 4) return `HL=${h16(cpu.hl)} DE=${h16(cpu.de)} BC=${h16(cpu.bc)}`;
+      return '';
+    }
+
+    // Main table
+    const x = (op >> 6) & 3, y = (op >> 3) & 7, z = op & 7;
+    const p = (y >> 1) & 3, q = y & 1;
+
+    if (x === 0) {
+      if (z === 0 && y === 2) return `B=${h8((cpu.bc >> 8) & 0xFF)}`; // DJNZ
+      if (z === 0 && y >= 4) return cpu.checkCondition(y - 4) ? 'taken' : '--'; // JR cc
+      if (z === 2) {
+        if (q === 0 && p <= 1) return `A=${h8(cpu.a)}→(${h16(p === 0 ? cpu.bc : cpu.de)})`;
+        if (q === 1 && p === 0) return `(${h16(cpu.bc)})=${h8(mem[cpu.bc & 0xFFFF])}`;
+        if (q === 1 && p === 1) return `(${h16(cpu.de)})=${h8(mem[cpu.de & 0xFFFF])}`;
+      }
+      if ((z === 4 || z === 5) && y === 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
+    }
+
+    if (x === 1) {
+      if (y === 6 && z !== 6) return `${h8(cpu.getReg8(z))}→(${h16(cpu.hl)})`;
+      if (z === 6 && y !== 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
+    }
+
+    if (x === 2) {
+      if (z === 6) return `A=${h8(cpu.a)} (${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
+      return `A=${h8(cpu.a)}`;
+    }
+
+    if (x === 3) {
+      if (z === 0) return cpu.checkCondition(y) ? 'taken' : '--'; // RET cc
+      if (z === 2) return cpu.checkCondition(y) ? 'taken' : '--'; // JP cc
+      if (z === 4) return cpu.checkCondition(y) ? 'taken' : '--'; // CALL cc
+      if (z === 6) return `A=${h8(cpu.a)}`; // ALU A,n
+      if (z === 3 && y === 2) return `A=${h8(cpu.a)}`; // OUT (n),A
+    }
+
+    return '';
   }
 
   /**

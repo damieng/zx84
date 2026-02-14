@@ -1,32 +1,34 @@
 import { Pane } from '../Pane.tsx';
-import { HiPlay, HiPause, HiClipboardDocument } from 'react-icons/hi2';
+import { HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight } from 'react-icons/hi2';
 import {
-  disasmText, emulationPaused,
-  togglePause, stepInto, stepOver, copyCpuState,
+  disasmText, tracing,
+  stepInto, stepOver, stepOut,
+  startTrace, stopTrace,
 } from '../../store/emulator.ts';
 
 export function DisassemblyPane() {
-  const paused = emulationPaused.value;
+  const isTracing = tracing.value;
 
   return (
     <Pane id="disasm-panel" label="Disassembly" mono>
       <div class="disasm-toolbar">
         <button
-          title={paused ? 'Resume emulation' : 'Pause emulation'}
-          class={paused ? 'active' : ''}
-          onClick={togglePause}
-        >{paused ? <HiPlay /> : <HiPause />}</button>
-        <button
-          title="Step into (execute one instruction)"
+          title="Step Into (execute one instruction)"
           onClick={stepInto}
-        >Into</button>
+        ><HiArrowDownRight /></button>
         <button
-          title="Step over (execute, stepping over CALLs)"
+          title="Step Over (execute, stepping over CALLs)"
           onClick={stepOver}
-        >Over</button>
-        <button title="Copy CPU state to clipboard" onClick={copyCpuState}>
-          <HiClipboardDocument />
-        </button>
+        ><HiArrowTrendingDown /></button>
+        <button
+          title="Step Out (run until RET)"
+          onClick={stepOut}
+        ><HiArrowUpRight /></button>
+        <button
+          title={isTracing ? 'Stop tracing and copy to clipboard' : 'Trace execution (copies to clipboard on stop)'}
+          class={isTracing ? 'active' : ''}
+          onClick={isTracing ? stopTrace : startTrace}
+        >{isTracing ? 'Stop' : 'Trace'}</button>
       </div>
       <div class="disasm-output" dangerouslySetInnerHTML={{ __html: disasmText.value }} />
     </Pane>

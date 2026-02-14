@@ -349,6 +349,11 @@ function colorize(text: string): string {
     .replace(/\x03([^\x03]*)\x03/g, '<span class="d-port">$1</span>');
 }
 
+/** Strip marker bytes from tagged mnemonic text to get plain text. */
+export function stripMarkers(text: string): string {
+  return text.replace(/[\x01\x02\x03]/g, '');
+}
+
 export function formatDisasmHtml(lines: DisasmLine[], mem: Uint8Array, pc: number): string {
   return lines.map(l => {
     const cur = l.addr === pc;

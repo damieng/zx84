@@ -25,6 +25,7 @@ export const romStatusText = signal('');
 export const currentModel = signal<SpectrumModel>(loadSavedModel() ?? '128k');
 export const emulationPaused = signal(false);
 export const turboMode = signal(false);
+export const tracing = signal(false);
 
 // Per-frame updated signals (written by bridge)
 export const regsHtml = signal('');
@@ -301,6 +302,22 @@ export function stepOver(): void {
   updateRegsOnce();
 }
 
+export function stepOut(): void {
+  if (!spectrum) return;
+  if (!emulationPaused.value) {
+    spectrum.stop();
+    emulationPaused.value = true;
+  }
+  const cpu = spectrum.cpu;
+  const targetSP = cpu.sp + 2; // SP after RET pops return address
+  const limit = cpu.tStates + 10_000_000; // safety: max ~2.8 seconds
+  // Run until we execute a RET that brings SP back to or above target
+  while (cpu.sp < targetSP && cpu.tStates < limit) {
+    cpu.step();
+  }
+  updateRegsOnce();
+}
+
 export function resetMachine(): void {
   cancelAutoType();
   floppySound?.reset();
@@ -364,6 +381,21 @@ export function copyCpuState(): void {
   lines.push(`SP_CC  ${hex16(w(0x5C88))}  ATTR_P ${hex8(mem[0x5C8D])}  BORDCR ${hex8(mem[0x5C48])}`);
   navigator.clipboard.writeText(lines.join('\n'));
   setStatus('CPU state copied to clipboard');
+}
+
+export function startTrace(): void {
+  if (!spectrum) return;
+  spectrum.startTrace();
+  tracing.value = true;
+}
+
+export function stopTrace(): void {
+  if (!spectrum) return;
+  const text = spectrum.stopTrace();
+  tracing.value = false;
+  navigator.clipboard.writeText(text);
+  const lines = text.split('\n').length;
+  setStatus(`Trace copied to clipboard (${lines.toLocaleString()} lines)`);
 }
 
 // ── Model switching ─────────────────────────────────────────────────────
@@ -841,29 +873,57 @@ function renderBanks(): string {
   const model = currentModel.value;
   const n = '<span class="reg-name">';
   const e = '</span>';
-  const scr = (mem.port7FFD & 0x08) ? 7 : 5;
   const plus2a = isPlus2AClass(model);
 
+  // Helper to format a memory region
+  const region = (addr: string, label: string) => `${n}${addr}${e} ${label}`;
+
+  const lines: string[] = [];
+
+  // Determine memory layout
+  if (plus2a && mem.specialPaging) {
+    // Special paging mode - all RAM
+    const mode = (mem.port1FFD >> 1) & 3;
+    const configs = [
+      ['0', '1', '2', '3'],
+      ['4', '5', '6', '7'],
+      ['4', '5', '6', '3'],
+      ['4', '7', '6', '3'],
+    ];
+    const [b0, b1, b2, b3] = configs[mode];
+    lines.push(
+      region('C000-FFFF', `RAM Bank ${b3}`),
+      region('8000-BFFF', `RAM Bank ${b2}`),
+      region('4000-7FFF', `RAM Bank ${b1}`),
+      region('0000-3FFF', `RAM Bank ${b0}`),
+    );
+  } else {
+    // Normal paging
+    const romNum = mem.currentROM;
+    let romLabel = '';
+    if (plus2a) {
+      romLabel = `ROM Page ${romNum}`;
+    } else {
+      romLabel = romNum === 0 ? '128K Editor ROM' : '48K BASIC ROM';
+    }
+
+    const screenBank = (mem.port7FFD & 0x08) ? 7 : 5;
+    const isScreenPage = (bank: number) => bank === screenBank;
+
+    lines.push(
+      region('C000-FFFF', `RAM Bank ${mem.currentBank}${isScreenPage(mem.currentBank) ? ' (Screen)' : ''}`),
+      region('8000-BFFF', `RAM Bank 2`),
+      region('4000-7FFF', `RAM Bank 5${isScreenPage(5) ? ' (Screen)' : ''}`),
+      region('0000-3FFF', romLabel),
+    );
+  }
+
+  // Port values and status
   let portLine = `${n}7FFD${e} ${hex8(mem.port7FFD)}`;
   if (plus2a) portLine += `  ${n}1FFD${e} ${hex8(mem.port1FFD)}`;
-  const lines = [portLine];
+  portLine += `  ${n}Lock${e} ${mem.pagingLocked ? 'Y' : 'N'}`;
 
-  let romLabel: string;
-  if (plus2a) {
-    romLabel = `(page ${mem.currentROM})`;
-  } else {
-    romLabel = mem.currentROM === 0 ? '(128K editor)' : '(48K BASIC)';
-  }
-
-  lines.push(
-    `${n}ROM${e}   ${mem.currentROM}  ${romLabel}  ${n}Bank${e} ${mem.currentBank} ${n}at${e} C000-FFFF`,
-    `${n}Screen${e} ${scr}  ${n}Lock${e} ${mem.pagingLocked ? 'Yes' : 'No'}`,
-  );
-
-  if (plus2a && mem.specialPaging) {
-    const mode = (mem.port1FFD >> 1) & 3;
-    lines.push(`${n}Special${e} mode ${mode}`);
-  }
+  lines.push('', portLine);
 
   return lines.join('\n');
 }
@@ -1010,6 +1070,14 @@ function onFrame(): void {
 
   const a = spectrum.activity;
   const model = currentModel.value;
+
+  // Sync tracing signal if trace auto-stopped (buffer full)
+  if (tracing.value && !spectrum.tracing) {
+    const text = spectrum.stopTrace();
+    tracing.value = false;
+    navigator.clipboard.writeText(text);
+    setStatus(`Trace auto-stopped and copied (${text.split('\n').length.toLocaleString()} lines)`);
+  }
 
   batch(() => {
     ledKbd.value = a.ulaReads > 0;
