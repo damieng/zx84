@@ -199,11 +199,6 @@ export class Spectrum {
   private vramWriteVal = new Uint8Array(8192);
   private vramWriteCount = 0;
   /** Detection/contention monitoring */
-  private _contentionMonitor = false;
-  contentionLog: string[] = [];
-  contentionFloatingBusReads = 0;
-  contentionProbes = 0;
-
   /** Execution trace */
   private _tracing = false;
   private _traceMode: 'full' | 'contention' | 'portio' = 'full';
@@ -366,18 +361,6 @@ export class Spectrum {
       if ((port & 0x01) === 0) {
         this.activity.ulaReads++;
         if (this.ula.tapeActive) this.activity.earReads++;
-
-        // Contention monitor: ULA reads from contended memory suggest contention probing
-        if (this._contentionMonitor && this.isContended(this.cpu.pc)) {
-          this.contentionProbes++;
-          const frameTStates = this.cpu.tStates - this.frameStartTStates;
-          const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
-          this.contentionLog.push(
-            `IN 0x${port.toString(16)} from PC=0x${this.cpu.pc.toString(16)} ` +
-            `fT=${frameTStates} line=${line} (contention probe #${this.contentionProbes})`
-          );
-        }
-
         return this.ula.readPort((port >> 8) & 0xFF);
       }
 
@@ -410,21 +393,7 @@ export class Spectrum {
       }
 
       // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
-      const fbVal = this.floatingBusRead();
-
-      // Contention monitor: floating bus reads are a key Pentagon detection method
-      if (this._contentionMonitor) {
-        this.contentionFloatingBusReads++;
-        const frameTStates = this.cpu.tStates - this.frameStartTStates;
-        const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
-        this.contentionLog.push(
-          `Floating bus IN 0x${port.toString(16)} from PC=0x${this.cpu.pc.toString(16)} ` +
-          `fT=${frameTStates} line=${line} val=0x${fbVal.toString(16)} ` +
-          `(${fbVal === 0xFF ? 'idle/border' : 'VRAM data'}) #${this.contentionFloatingBusReads}`
-        );
-      }
-
-      return fbVal;
+      return this.floatingBusRead();
     };
   }
 
@@ -1029,21 +998,6 @@ export class Spectrum {
   clearScreenGrid(): void {
     this.screenGrid.fill(' ');
     this.screenSkipCount = 0;
-  }
-
-  startContentionMonitor(): void {
-    this.contentionLog.length = 0;
-    this.contentionFloatingBusReads = 0;
-    this.contentionProbes = 0;
-    this._contentionMonitor = true;
-  }
-
-  stopContentionMonitor(): void {
-    this._contentionMonitor = false;
-  }
-
-  get contentionMonitorActive(): boolean {
-    return this._contentionMonitor;
   }
 
   get tracing(): boolean { return this._tracing; }

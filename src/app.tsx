@@ -25,7 +25,7 @@ import { DisassemblyPane } from './components/panes/DisassemblyPane.tsx';
 import { paneOrder } from './store/panes.ts';
 import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling } from './store/settings.ts';
 import {
-  spectrum, cancelAutoType, joyPressForType, initAudio, init, loadFile,
+  spectrum, joyPressForType, initAudio, init, loadFile,
 } from './store/emulator.ts';
 
 // ── Pane registry ───────────────────────────────────────────────────────
@@ -71,8 +71,6 @@ function setDpadHighlight(player: number, dir: string, pressed: boolean): void {
 
 function onKeyDown(e: KeyboardEvent): void {
   if (!spectrum) return;
-  cancelAutoType();
-
   const joyDir = HOST_KEY_TO_JOY[e.code];
   if (joyDir) {
     const joySelectors = [joyP1, joyP2];

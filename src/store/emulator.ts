@@ -73,24 +73,6 @@ export let canvasEl: HTMLCanvasElement | null = null;
 
 // Auto-type state
 type KeySpec = { row: number; bit: number };
-let autoTypeKeys: KeySpec[][] = [];
-let autoTypeFrame = 0;
-
-const AUTO_LOAD_48K: KeySpec[][] = [
-  [{ row: 6, bit: 3 }],
-  [{ row: 7, bit: 1 }, { row: 5, bit: 0 }],
-  [{ row: 7, bit: 1 }, { row: 5, bit: 0 }],
-  [{ row: 6, bit: 0 }],
-];
-
-const AUTO_LOAD_128K: KeySpec[][] = [
-  [{ row: 6, bit: 0 }],
-];
-
-const AUTO_TYPE_INIT_DELAY = 100;
-const AUTO_TYPE_HOLD = 5;
-const AUTO_TYPE_GAP = 5;
-
 // Tape idle tracking
 let tapeIdleFrames = 0;
 let tapeEverRead = false;
@@ -321,7 +303,6 @@ export function stepOut(): void {
 }
 
 export function resetMachine(): void {
-  cancelAutoType();
   floppySound?.reset();
   if (spectrum) {
     spectrum.turbo = false;
@@ -632,9 +613,8 @@ export function applyTape(data: Uint8Array, filename: string): void {
   spectrum.tape.startPlayback();
   tapeIdleFrames = 0;
   tapeEverRead = false;
-  startAutoType(is128kClass(currentModel.value) ? AUTO_LOAD_128K : AUTO_LOAD_48K);
   unpause();
-  setStatus(`Tape loaded — auto-loading ${filename}`);
+  setStatus(`Tape loaded: ${filename}`);
 }
 
 // ── File routing ────────────────────────────────────────────────────────
@@ -771,54 +751,6 @@ export function toggleAutoRewind(): void {
 
 // ── Auto-type ───────────────────────────────────────────────────────────
 
-function startAutoType(sequence: KeySpec[][]): void {
-  cancelAutoType();
-  autoTypeKeys = sequence;
-  autoTypeFrame = -AUTO_TYPE_INIT_DELAY;
-}
-
-export function cancelAutoType(): void {
-  if (autoTypeKeys.length === 0 || !spectrum) return;
-  const f = autoTypeFrame - 1;
-  if (f >= 0) {
-    const cycle = AUTO_TYPE_HOLD + AUTO_TYPE_GAP;
-    const step = Math.floor(f / cycle);
-    const phase = f % cycle;
-    if (step < autoTypeKeys.length && phase < AUTO_TYPE_HOLD) {
-      for (const key of autoTypeKeys[step]) {
-        spectrum.keyboard.setKey(key.row, key.bit, false);
-      }
-    }
-  }
-  autoTypeKeys = [];
-}
-
-function tickAutoType(): void {
-  if (autoTypeKeys.length === 0 || !spectrum) return;
-
-  autoTypeFrame++;
-  if (autoTypeFrame <= 0) return;
-
-  const f = autoTypeFrame - 1;
-  const cycle = AUTO_TYPE_HOLD + AUTO_TYPE_GAP;
-  const step = Math.floor(f / cycle);
-  const phase = f % cycle;
-
-  if (step >= autoTypeKeys.length) {
-    autoTypeKeys = [];
-    return;
-  }
-
-  if (phase === 0) {
-    for (const key of autoTypeKeys[step]) {
-      spectrum.keyboard.setKey(key.row, key.bit, true);
-    }
-  } else if (phase === AUTO_TYPE_HOLD) {
-    for (const key of autoTypeKeys[step]) {
-      spectrum.keyboard.setKey(key.row, key.bit, false);
-    }
-  }
-}
 
 // ── Per-frame bridge ────────────────────────────────────────────────────
 
@@ -1103,7 +1035,6 @@ export function saveFontStore(store: Record<string, string>): void {
 
 function onFrame(): void {
   if (!spectrum) return;
-  tickAutoType();
   updateClockSpeed();
 
   const a = spectrum.activity;
