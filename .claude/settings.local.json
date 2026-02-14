@@ -22,7 +22,14 @@
       "WebFetch(domain:spectrum.8bit.pl)",
       "Bash(gh api:*)",
       "WebFetch(domain:react-icons.github.io)",
-      "WebFetch(domain:react-icons.deno.dev)"
+      "WebFetch(domain:react-icons.deno.dev)",
+      "WebFetch(domain:www.rgcd.co.uk)",
+      "WebFetch(domain:spectrumcomputing.co.uk)",
+      "WebFetch(domain:zxart.ee)",
+      "WebFetch(domain:forums.bannister.org)",
+      "WebFetch(domain:programbytes48k.wordpress.com)",
+      "WebFetch(domain:www.vintageisthenewold.com)",
+      "WebFetch(domain:www.everygamegoing.com)"
     ]
   }
 }

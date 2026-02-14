@@ -189,8 +189,12 @@ export class ULA {
     }
   }
 
-  /** Render one display line (y=0..191) with the given border color. */
-  renderScanline(y: number, memory: Uint8Array, borderColor: number): void {
+  /**
+   * Render one display line (y=0..191) with the given border color.
+   * vramOffset: 0 when memory is full 64K, 0x4000 when memory is a 6912-byte
+   * shadow buffer starting at the equivalent of address 0x4000.
+   */
+  renderScanline(y: number, memory: Uint8Array, borderColor: number, vramOffset = 0): void {
     const screenY = y + this.borderTop;
     const borderRGBA = PALETTE[borderColor];
     const w = this.screenWidth;
@@ -205,13 +209,13 @@ export class ULA {
       this.pixels32[rowStart + x] = borderRGBA;
     }
 
-    // Bitmap address decoding
-    const bitmapAddr = 0x4000 |
+    // Bitmap address decoding (adjusted for shadow buffer offset)
+    const bitmapAddr = (0x4000 |
       ((y & 0xC0) << 5) |
       ((y & 0x07) << 8) |
-      ((y & 0x38) << 2);
+      ((y & 0x38) << 2)) - vramOffset;
 
-    const attrBase = 0x5800 + ((y >> 3) << 5);
+    const attrBase = 0x5800 + ((y >> 3) << 5) - vramOffset;
 
     for (let col = 0; col < 32; col++) {
       const byteVal = memory[bitmapAddr + col];

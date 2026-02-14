@@ -86,6 +86,10 @@ export interface IOActivity {
   fdcAccesses: number;
   /** Number of ULA reads while tape is active (EAR sampling) */
   earReads: number;
+  /** Number of VRAM writes logged for sub-frame rendering this frame */
+  subFrameVramWrites: number;
+  /** Number of border color changes logged for sub-frame rendering this frame */
+  subFrameBorderChanges: number;
 }
 
 /**
@@ -135,7 +139,7 @@ export class Spectrum {
   biosTrap: Plus3DosTrap | null = null;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
@@ -180,14 +184,18 @@ export class Spectrum {
   /** Sub-frame precision rendering: per-scanline rendering for rainbow effects */
   subFrameRendering = false;
 
-  /** Sub-frame state: last rendered display line (-1 = none yet) */
-  private lastRenderedLine = -1;
   /** Sub-frame state: border color changes logged this frame as [frameTState, color] */
   private borderChanges: [number, number][] = [];
   /** Sub-frame state: border color at frame start */
   private frameStartBorderColor = 0;
-  /** Sub-frame state: first beam line of display area */
-  private firstDisplayBeamLine = 0;
+  /** Sub-frame state: VRAM snapshot taken at frame start (6912 bytes: 0x4000-0x5AFF) */
+  private vramShadow = new Uint8Array(6912);
+  /** Sub-frame state: logged VRAM writes — T-states, offsets within shadow, values */
+  private vramWriteTs = new Int32Array(8192);
+  private vramWriteOff = new Uint16Array(8192);
+  private vramWriteVal = new Uint8Array(8192);
+  private vramWriteCount = 0;
+  private subFrameLogCounter = 0;
 
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
@@ -215,19 +223,41 @@ export class Spectrum {
       this.biosTrap = new Plus3DosTrap(this.cpu, this.memory, this.fdc);
     }
 
-    this.installROMProtection();
+    this.installMemoryHooks();
     this.wirePortIO();
   }
 
   /**
-   * Override Z80 write8 to silently discard writes to the ROM region (0x0000-0x3FFF).
-   * On real hardware, ROM is read-only — writes are ignored, not buffered.
+   * Override Z80 read8/write8 to apply per-access ULA contention and
+   * silently discard writes to ROM (0x0000-0x3FFF).
    */
-  private installROMProtection(): void {
+  private installMemoryHooks(): void {
     const memory = this.memory;
+
+    this.cpu.read8 = (addr: number): number => {
+      addr &= 0xFFFF;
+      if (this.isContended(addr)) {
+        this.cpu.tStates += this.contentionDelay();
+      }
+      return this.cpu.memory[addr];
+    };
+
     this.cpu.write8 = (addr: number, val: number): void => {
       addr &= 0xFFFF;
+      if (this.isContended(addr)) {
+        this.cpu.tStates += this.contentionDelay();
+      }
       if (addr < 0x4000 && !memory.specialPaging) return; // ROM — silently discard
+      // Log VRAM writes for sub-frame rendering replay
+      if (this.subFrameRendering && addr >= 0x4000 && addr < 0x5B00) {
+        const i = this.vramWriteCount;
+        if (i < 8192) {
+          this.vramWriteTs[i] = this.cpu.tStates - this.frameStartTStates;
+          this.vramWriteOff[i] = addr - 0x4000;
+          this.vramWriteVal[i] = val & 0xFF;
+          this.vramWriteCount++;
+        }
+      }
       this.cpu.memory[addr] = val & 0xFF;
     };
   }
@@ -528,13 +558,13 @@ export class Spectrum {
     this.frameStartTStates = this.cpu.tStates;
     const frameEnd = this.cpu.tStates + this.timing.tStatesPerFrame;
 
-    // Sub-frame rendering: initialise per-frame state
+    // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;
     if (subFrame) {
-      this.lastRenderedLine = -1;
+      this.vramShadow.set(this.memory.flat.subarray(0x4000, 0x5B00));
+      this.vramWriteCount = 0;
       this.borderChanges.length = 0;
       this.frameStartBorderColor = this.ula.borderColor;
-      this.firstDisplayBeamLine = (this.timing.contentionStart / this.timing.tStatesPerLine) | 0;
       this.ula.advanceFlash();
     }
 
@@ -611,10 +641,6 @@ export class Spectrum {
           this.cpu.iff2 = true;
         }
       } else {
-        // Apply ULA contention delay if fetching from contended memory
-        if (this.isContended(this.cpu.pc)) {
-          this.cpu.tStates += this.contentionDelay();
-        }
         this.cpu.step();
       }
 
@@ -628,9 +654,6 @@ export class Spectrum {
       } else {
         this.ula.tapeActive = false;
       }
-
-      // Sub-frame rendering: catch up scanlines to current beam position
-      if (subFrame) this.renderCatchUp();
 
       // Accumulate beeper duty for audio sample
       this.beeperAccum += this.ula.beeperBit * elapsed;
@@ -667,99 +690,136 @@ export class Spectrum {
       }
     }
 
-    // Sub-frame rendering: render any remaining scanlines + bottom border
-    if (subFrame) this.renderFinalize();
+    // Sub-frame rendering: replay VRAM writes per-scanline and render full frame
+    if (subFrame) this.renderSubFrame();
 
     // Mark that we have a new frame to display
     this.needsDisplay = true;
   }
 
-  /** Sub-frame: render scanlines up to the current beam position. */
-  private renderCatchUp(): void {
-    const frameTStates = this.cpu.tStates - this.frameStartTStates;
+  /**
+   * Sub-frame: render the full frame at frame end by replaying logged VRAM
+   * writes in T-state order.  Each display scanline sees the VRAM state that
+   * the real ULA would have read when the beam reached that line.
+   */
+  private renderSubFrame(): void {
+    const shadow = this.vramShadow;
+    const borderTop = this.ula['borderTop'] as number;
     const tpl = this.timing.tStatesPerLine;
-    const beamLine = (frameTStates / tpl) | 0;
-    const firstDisplay = this.firstDisplayBeamLine;
-    const displayLine = beamLine - firstDisplay;
-    const mem = this.memory.flat;
-    const borderTop = this.ula['borderTop'];
+    const cStart = this.timing.contentionStart;
+    const screenHeight = this.ula.screenHeight;
 
-    // Render top border rows that haven't been rendered yet
-    if (borderTop > 0 && this.lastRenderedLine < -1) {
-      // lastRenderedLine: -1 means no display lines rendered yet but top border not done
-      // We use a secondary approach: track via lastRenderedLine starting at -(borderTop+1)
-    }
+    let writeIdx = 0;
+    const writeCount = this.vramWriteCount;
+    let borderIdx = 0;
+    let currentBorder = this.frameStartBorderColor;
 
-    // Top border: render rows as beam passes through them
-    if (this.lastRenderedLine === -1 && beamLine >= 0) {
-      const topBorderRows = borderTop;
-      if (topBorderRows > 0) {
-        // Determine border color for top border region
-        const borderColor = this.borderColorAtTState(0);
-        for (let row = 0; row < topBorderRows; row++) {
-          this.ula.renderBorderLine(row, borderColor);
+    // Expose stats in activity counters
+    this.activity.subFrameVramWrites = writeCount;
+    this.activity.subFrameBorderChanges = this.borderChanges.length;
+
+    // Periodic diagnostic logging (~once per second)
+    if (++this.subFrameLogCounter >= 50) {
+      this.subFrameLogCounter = 0;
+
+      // Count attribute-area writes and detect duplicates
+      let attrWrites = 0;
+      let attrDupes = 0;
+      let bitmapWrites = 0;
+      const attrSeen = new Uint8Array(768);
+      for (let i = 0; i < writeCount; i++) {
+        const off = this.vramWriteOff[i];
+        if (off >= 0x1800) {
+          attrWrites++;
+          const ai = off - 0x1800;
+          if (attrSeen[ai]) attrDupes++;
+          attrSeen[ai] = 1;
+        } else {
+          bitmapWrites++;
         }
       }
-    }
 
-    // Display lines 0..191
-    if (displayLine < 0) return;
-    const targetLine = Math.min(displayLine, 191);
+      console.log(`[SubFrame] writes: ${writeCount} (bitmap: ${bitmapWrites}, attr: ${attrWrites}, attr dupes: ${attrDupes})`);
 
-    const startLine = this.lastRenderedLine < 0 ? 0 : this.lastRenderedLine + 1;
-    if (startLine > targetLine) return;
-
-    for (let y = startLine; y <= targetLine; y++) {
-      const lineBeamStart = (firstDisplay + y) * tpl;
-      const borderColor = this.borderColorAtTState(lineBeamStart);
-      this.ula.renderScanline(y, mem, borderColor);
-    }
-
-    this.lastRenderedLine = targetLine;
-  }
-
-  /** Sub-frame: render remaining display lines and bottom border. */
-  private renderFinalize(): void {
-    const mem = this.memory.flat;
-    const borderTop = this.ula['borderTop'];
-    const firstDisplay = this.firstDisplayBeamLine;
-    const tpl = this.timing.tStatesPerLine;
-
-    // If top border wasn't rendered yet, do it now
-    if (this.lastRenderedLine === -1 && borderTop > 0) {
-      const borderColor = this.borderColorAtTState(0);
-      for (let row = 0; row < borderTop; row++) {
-        this.ula.renderBorderLine(row, borderColor);
+      // Per-row timing: show which display lines each row's attrs are written at
+      const rowTimings: string[] = [];
+      for (let row = 0; row < 24; row++) {
+        const rowAttrStart = 0x1800 + row * 32;
+        const rowAttrEnd = rowAttrStart + 32;
+        let firstLine = 999, lastLine = -1, count = 0;
+        for (let i = 0; i < writeCount; i++) {
+          const off = this.vramWriteOff[i];
+          if (off >= rowAttrStart && off < rowAttrEnd) {
+            count++;
+            const line = ((this.vramWriteTs[i] - cStart) / tpl) | 0;
+            if (line < firstLine) firstLine = line;
+            if (line > lastLine) lastLine = line;
+          }
+        }
+        if (count > 0) {
+          const scanStart = row * 8;
+          const scanEnd = scanStart + 7;
+          rowTimings.push(`  r${row}(scan ${scanStart}-${scanEnd}): ${count} writes, lines ${firstLine}-${lastLine}`);
+        }
       }
+      if (rowTimings.length > 0) {
+        console.log(`  Per-row attr write timing vs scan period:`);
+        rowTimings.forEach(s => console.log(s));
+      }
+
+      // Show snapshot attr values per row (col 16) to see if rainbow is already in VRAM
+      const snapshotColors: string[] = [];
+      for (let row = 0; row < 24; row++) {
+        const v = this.vramShadow[0x1800 + row * 32 + 16];
+        snapshotColors.push(`0x${v.toString(16).padStart(2, '0')}`);
+      }
+      console.log(`  Snapshot attrs (col 16): ${snapshotColors.join(' ')}`);
+
+      // Show live VRAM attr values per row (col 16) for comparison
+      const liveColors: string[] = [];
+      for (let row = 0; row < 24; row++) {
+        const v = this.memory.flat[0x5800 + row * 32 + 16];
+        liveColors.push(`0x${v.toString(16).padStart(2, '0')}`);
+      }
+      console.log(`  Live attrs    (col 16): ${liveColors.join(' ')}`);
     }
 
-    // Render remaining display lines
-    const startLine = this.lastRenderedLine < 0 ? 0 : this.lastRenderedLine + 1;
-    for (let y = startLine; y <= 191; y++) {
-      const lineBeamStart = (firstDisplay + y) * tpl;
-      const borderColor = this.borderColorAtTState(lineBeamStart);
-      this.ula.renderScanline(y, mem, borderColor);
+    // Top border — each row gets its own border color
+    for (let r = 0; r < borderTop; r++) {
+      const rowTState = Math.max(0, cStart - (borderTop - r) * tpl);
+      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= rowTState) {
+        currentBorder = this.borderChanges[borderIdx][1];
+        borderIdx++;
+      }
+      this.ula.renderBorderLine(r, currentBorder);
+    }
+
+    // Display lines 0..191 — replay VRAM writes up to each line's scan time
+    for (let y = 0; y < 192; y++) {
+      const lineTState = cStart + y * tpl;
+      // Apply all VRAM writes that happened before this line was scanned
+      while (writeIdx < writeCount && this.vramWriteTs[writeIdx] < lineTState) {
+        shadow[this.vramWriteOff[writeIdx]] = this.vramWriteVal[writeIdx];
+        writeIdx++;
+      }
+      // Advance border color
+      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= lineTState) {
+        currentBorder = this.borderChanges[borderIdx][1];
+        borderIdx++;
+      }
+      this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
     }
 
     // Bottom border
     const bottomStart = borderTop + 192;
-    const screenHeight = this.ula.screenHeight;
-    if (bottomStart < screenHeight) {
-      const lastBorderColor = this.ula.borderColor;
-      for (let row = bottomStart; row < screenHeight; row++) {
-        this.ula.renderBorderLine(row, lastBorderColor);
+    for (let r = bottomStart; r < screenHeight; r++) {
+      const rowTState = cStart + (192 + r - bottomStart) * tpl;
+      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= rowTState) {
+        currentBorder = this.borderChanges[borderIdx][1];
+        borderIdx++;
       }
+      this.ula.renderBorderLine(r, currentBorder);
     }
-  }
-
-  /** Sub-frame: find the border color active at a given frame T-state. */
-  private borderColorAtTState(tState: number): number {
-    let color = this.frameStartBorderColor;
-    for (let i = 0; i < this.borderChanges.length; i++) {
-      if (this.borderChanges[i][0] > tState) break;
-      color = this.borderChanges[i][1];
-    }
-    return color;
   }
 
   loadTAP(data: Uint8Array): void {

@@ -140,7 +140,7 @@ body {
   right: 0;
   top: -6px;
   bottom: -6px;
-  width: 115px;
+  width: 120px;
   background: linear-gradient(
     135deg,
     #000 8px, #000 15px,
@@ -498,6 +498,9 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  height: 100%;
+  text-align: center;
   user-select: none;
   -webkit-user-select: none;
 }
