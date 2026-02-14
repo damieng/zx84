@@ -195,7 +195,11 @@ export class Spectrum {
   private vramWriteOff = new Uint16Array(8192);
   private vramWriteVal = new Uint8Array(8192);
   private vramWriteCount = 0;
-  private subFrameLogCounter = 0;
+  /** Detection/contention monitoring */
+  private _contentionMonitor = false;
+  contentionLog: string[] = [];
+  contentionFloatingBusReads = 0;
+  contentionProbes = 0;
 
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
@@ -338,6 +342,18 @@ export class Spectrum {
       if ((port & 0x01) === 0) {
         this.activity.ulaReads++;
         if (this.ula.tapeActive) this.activity.earReads++;
+
+        // Contention monitor: ULA reads from contended memory suggest contention probing
+        if (this._contentionMonitor && this.isContended(this.cpu.pc)) {
+          this.contentionProbes++;
+          const frameTStates = this.cpu.tStates - this.frameStartTStates;
+          const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
+          this.contentionLog.push(
+            `IN 0x${port.toString(16)} from PC=0x${this.cpu.pc.toString(16)} ` +
+            `fT=${frameTStates} line=${line} (contention probe #${this.contentionProbes})`
+          );
+        }
+
         return this.ula.readPort((port >> 8) & 0xFF);
       }
 
@@ -370,7 +386,21 @@ export class Spectrum {
       }
 
       // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
-      return this.floatingBusRead();
+      const fbVal = this.floatingBusRead();
+
+      // Contention monitor: floating bus reads are a key Pentagon detection method
+      if (this._contentionMonitor) {
+        this.contentionFloatingBusReads++;
+        const frameTStates = this.cpu.tStates - this.frameStartTStates;
+        const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
+        this.contentionLog.push(
+          `Floating bus IN 0x${port.toString(16)} from PC=0x${this.cpu.pc.toString(16)} ` +
+          `fT=${frameTStates} line=${line} val=0x${fbVal.toString(16)} ` +
+          `(${fbVal === 0xFF ? 'idle/border' : 'VRAM data'}) #${this.contentionFloatingBusReads}`
+        );
+      }
+
+      return fbVal;
     };
   }
 
@@ -770,72 +800,6 @@ export class Spectrum {
     this.activity.subFrameVramWrites = writeCount;
     this.activity.subFrameBorderChanges = this.borderChanges.length;
 
-    // Periodic diagnostic logging (~once per second)
-    if (++this.subFrameLogCounter >= 50) {
-      this.subFrameLogCounter = 0;
-
-      // Count attribute-area writes and detect duplicates
-      let attrWrites = 0;
-      let attrDupes = 0;
-      let bitmapWrites = 0;
-      const attrSeen = new Uint8Array(768);
-      for (let i = 0; i < writeCount; i++) {
-        const off = this.vramWriteOff[i];
-        if (off >= 0x1800) {
-          attrWrites++;
-          const ai = off - 0x1800;
-          if (attrSeen[ai]) attrDupes++;
-          attrSeen[ai] = 1;
-        } else {
-          bitmapWrites++;
-        }
-      }
-
-      console.log(`[SubFrame] writes: ${writeCount} (bitmap: ${bitmapWrites}, attr: ${attrWrites}, attr dupes: ${attrDupes})`);
-
-      // Per-row timing: show which display lines each row's attrs are written at
-      const rowTimings: string[] = [];
-      for (let row = 0; row < 24; row++) {
-        const rowAttrStart = 0x1800 + row * 32;
-        const rowAttrEnd = rowAttrStart + 32;
-        let firstLine = 999, lastLine = -1, count = 0;
-        for (let i = 0; i < writeCount; i++) {
-          const off = this.vramWriteOff[i];
-          if (off >= rowAttrStart && off < rowAttrEnd) {
-            count++;
-            const line = ((this.vramWriteTs[i] - cStart) / tpl) | 0;
-            if (line < firstLine) firstLine = line;
-            if (line > lastLine) lastLine = line;
-          }
-        }
-        if (count > 0) {
-          const scanStart = row * 8;
-          const scanEnd = scanStart + 7;
-          rowTimings.push(`  r${row}(scan ${scanStart}-${scanEnd}): ${count} writes, lines ${firstLine}-${lastLine}`);
-        }
-      }
-      if (rowTimings.length > 0) {
-        console.log(`  Per-row attr write timing vs scan period:`);
-        rowTimings.forEach(s => console.log(s));
-      }
-
-      // Show snapshot attr values per row (col 16) to see if rainbow is already in VRAM
-      const snapshotColors: string[] = [];
-      for (let row = 0; row < 24; row++) {
-        const v = this.vramShadow[0x1800 + row * 32 + 16];
-        snapshotColors.push(`0x${v.toString(16).padStart(2, '0')}`);
-      }
-      console.log(`  Snapshot attrs (col 16): ${snapshotColors.join(' ')}`);
-
-      // Show live VRAM attr values per row (col 16) for comparison
-      const liveColors: string[] = [];
-      for (let row = 0; row < 24; row++) {
-        const v = this.memory.flat[0x5800 + row * 32 + 16];
-        liveColors.push(`0x${v.toString(16).padStart(2, '0')}`);
-      }
-      console.log(`  Live attrs    (col 16): ${liveColors.join(' ')}`);
-    }
-
     // Top border — each row gets its own border color
     for (let r = 0; r < borderTop; r++) {
       const rowTState = Math.max(0, cStart - (borderTop - r) * tpl);
@@ -1016,6 +980,21 @@ export class Spectrum {
   clearScreenGrid(): void {
     this.screenGrid.fill(' ');
     this.screenSkipCount = 0;
+  }
+
+  startContentionMonitor(): void {
+    this.contentionLog.length = 0;
+    this.contentionFloatingBusReads = 0;
+    this.contentionProbes = 0;
+    this._contentionMonitor = true;
+  }
+
+  stopContentionMonitor(): void {
+    this._contentionMonitor = false;
+  }
+
+  get contentionMonitorActive(): boolean {
+    return this._contentionMonitor;
   }
 
   /**

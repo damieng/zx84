@@ -1,12 +1,14 @@
 import { Pane } from '../Pane.tsx';
+import { HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight, HiXMark } from 'react-icons/hi2';
 import { joyP1, joyP2, joyMapP1, joyMapP2, persistSetting } from '../../store/settings.ts';
 import { joyPressForType } from '../../store/emulator.ts';
 
 function DpadButton({ dir, playerIdx }: { dir: string; playerIdx: number }) {
   const selectors = [joyP1, joyP2];
-  const labels: Record<string, string> = {
-    up: '\u25B2', down: '\u25BC', left: '\u25C4', right: '\u25BA', fire: '\u25CF',
+  const icons: Record<string, any> = {
+    up: HiChevronUp, down: HiChevronDown, left: HiChevronLeft, right: HiChevronRight, fire: HiXMark,
   };
+  const Icon = icons[dir];
 
   const onPress = (e: Event) => {
     e.preventDefault();
@@ -33,7 +35,7 @@ function DpadButton({ dir, playerIdx }: { dir: string; playerIdx: number }) {
       onTouchStart={onPress}
       onTouchEnd={onRelease}
       onTouchCancel={onLeave}
-    >{labels[dir]}</div>
+    ><Icon /></div>
   );
 }
 

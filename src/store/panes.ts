@@ -27,6 +27,8 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'disk-info-panel', sidebar: 'right' },
   { id: 'drive-panel', sidebar: 'right' },
   { id: 'tape-panel', sidebar: 'right' },
+  { id: 'developer-panel', sidebar: 'right' },
+  { id: 'disasm-panel', sidebar: 'right' },
 ];
 
 function loadPaneOrder(): PanePosition[] {

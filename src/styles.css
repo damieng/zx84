@@ -140,15 +140,15 @@ body {
   right: 0;
   top: -6px;
   bottom: -6px;
-  width: 120px;
+  width: 125px;
   background: linear-gradient(
     135deg,
-    #000 8px, #000 15px,
-    #f00 15px, #f00 30px,
-    #ff0 30px, #ff0 45px,
-    #0f0 45px, #0f0 60px,
-    #0ff 60px, #0ff 75px,
-    #000 75px, #000 83px
+    #000 13px, #000 20px,
+    #f00 20px, #f00 35px,
+    #ff0 35px, #ff0 50px,
+    #0f0 50px, #0f0 65px,
+    #0ff 65px, #0ff 80px,
+    #000 80px, #000 88px
   );
 }
 
@@ -718,8 +718,6 @@ input[type="range"]::-moz-range-thumb {
 #tape-blocks {
   max-height: 400px;
   overflow-y: auto;
-  border: 1px solid #ccc;
-  border-radius: 4px;
   font-size: 0.8rem;
 }
 
@@ -805,6 +803,95 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .zx-tooltip.visible { opacity: 1; }
+
+/* Developer pane */
+.dev-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dev-controls button {
+  padding: 4px 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.dev-controls button:hover { background: #ddd; }
+.dev-controls button.active {
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
+}
+
+.dev-stats {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.dev-log {
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 0.65rem;
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #111;
+  color: #0f0;
+  padding: 4px;
+  border-radius: 2px;
+}
+
+/* Disassembly pane */
+.disasm-toolbar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.disasm-toolbar button {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.disasm-toolbar button:hover { background: #ddd; }
+.disasm-toolbar button.active {
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
+}
+
+.disasm-output {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.d-line {
+  padding: 2px 6px;
+  border-left: 3px solid transparent;
+  white-space: pre;
+}
+
+.d-line.d-cur {
+  background: #f0f0fe;
+  border-left-color: #44e;
+}
+
+.d-off { color: #999; }
+.d-hex { color: #aaa; }
+.d-val { color: #22c; }
+.d-adr { color: #808; }
+.d-port { color: #c22; }
 
 /* Section-label inline controls (selects etc.) */
 .section-label button,

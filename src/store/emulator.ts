@@ -12,6 +12,7 @@ import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
 import { showFilePicker } from '../ui/zip-picker.ts';
+import { disassemble, formatDisasmHtml } from '../z80-disasm.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
@@ -33,6 +34,7 @@ export const diskInfoHtml = signal('');
 export const driveHtml = signal('');
 export const trapLogHtml = signal('');
 export const showTrapLog = signal(false);
+export const disasmText = signal('');
 
 // LED states
 export const ledKbd = signal(false);
@@ -261,6 +263,42 @@ export function togglePause(): void {
     updateRegsOnce();
   }
   emulationPaused.value = !emulationPaused.value;
+}
+
+export function stepInto(): void {
+  if (!spectrum) return;
+  if (!emulationPaused.value) {
+    spectrum.stop();
+    emulationPaused.value = true;
+  }
+  spectrum.cpu.step();
+  updateRegsOnce();
+}
+
+export function stepOver(): void {
+  if (!spectrum) return;
+  if (!emulationPaused.value) {
+    spectrum.stop();
+    emulationPaused.value = true;
+  }
+  const cpu = spectrum.cpu;
+  const op = cpu.memory[cpu.pc];
+  // CALL nn / CALL cc,nn / RST: step until SP returns to current level
+  const isCall = op === 0xCD ||                                           // CALL nn
+    (op & 0xC7) === 0xC4 ||                                              // CALL cc,nn
+    (op & 0xC7) === 0xC7 ||                                              // RST
+    (op === 0xED && ((cpu.memory[(cpu.pc + 1) & 0xFFFF] & 0xC7) === 0xB0)); // block repeat (LDIR etc)
+  if (!isCall) {
+    cpu.step();
+  } else {
+    const targetSP = cpu.sp;
+    const limit = cpu.tStates + 5_000_000; // safety: max ~1.4 seconds
+    cpu.step(); // execute the CALL/RST
+    while (cpu.sp < targetSP && cpu.tStates < limit) {
+      cpu.step();
+    }
+  }
+  updateRegsOnce();
 }
 
 export function resetMachine(): void {
@@ -868,6 +906,9 @@ function updateRegsOnce(): void {
   batch(() => {
     regsHtml.value = renderRegs(spectrum!.cpu);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
+    const cpu = spectrum!.cpu;
+    const dLines = disassemble(cpu.memory, cpu.pc, 24);
+    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc);
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();
     }
@@ -1015,6 +1056,11 @@ function onFrame(): void {
     // Registers + system state
     regsHtml.value = renderRegs(spectrum!.cpu);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
+
+    // Disassembly at PC
+    const cpu = spectrum!.cpu;
+    const dLines = disassemble(cpu.memory, cpu.pc, 24);
+    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc);
 
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();
