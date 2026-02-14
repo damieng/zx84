@@ -19,7 +19,8 @@
       "WebFetch(domain:skoolkid.github.io)",
       "WebFetch(domain:www.matthew-wilson.net)",
       "WebFetch(domain:www.tablix.org)",
-      "WebFetch(domain:spectrum.8bit.pl)"
+      "WebFetch(domain:spectrum.8bit.pl)",
+      "Bash(gh api:*)"
     ]
   }
 }

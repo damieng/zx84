@@ -60,26 +60,47 @@ interface ROMEntry {
 
 const romCache: Record<string, ROMEntry> = {};
 
-/** +2A and +3 share the same 64KB ROM, so alias them to one key. */
-function romKey(model: SpectrumModel): string {
-  return model === '+3' ? '+2a' : model;
-}
-
 async function persistROM(model: SpectrumModel, data: Uint8Array, label: string): Promise<void> {
-  const key = romKey(model);
-  romCache[key] = { data, label };
-  await dbSave(`rom-${key}`, data);
-  try { localStorage.setItem(`zx84-rom-label-${key}`, label); } catch { /* */ }
+  romCache[model] = { data, label };
+  await dbSave(`rom-${model}`, data);
+  try { localStorage.setItem(`zx84-rom-label-${model}`, label); } catch { /* */ }
 }
 
 async function restoreROM(model: SpectrumModel): Promise<ROMEntry | null> {
-  const key = romKey(model);
-  if (romCache[key]) return romCache[key];
-  const data = await dbLoad(`rom-${key}`);
+  if (romCache[model]) return romCache[model];
+  const data = await dbLoad(`rom-${model}`);
   if (!data) return null;
-  const label = localStorage.getItem(`zx84-rom-label-${key}`) || 'saved ROM';
-  romCache[key] = { data, label };
-  return romCache[key];
+  const label = localStorage.getItem(`zx84-rom-label-${model}`) || 'saved ROM';
+  romCache[model] = { data, label };
+  return romCache[model];
+}
+
+// ── Default ROM downloads ─────────────────────────────────────────────────
+
+const DEFAULT_ROM_URLS: Record<SpectrumModel, string> = {
+  '48k':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum16-48/spec48.rom',
+  '128k': 'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/128/spec128uk.rom',
+  '+2':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/plus2/plus2uk.rom',
+  '+2a':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus2a/plus2a.rom',
+  '+3':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus3/plus3.rom',
+};
+
+async function fetchDefaultROM(model: SpectrumModel): Promise<ROMEntry | null> {
+  const url = DEFAULT_ROM_URLS[model];
+  if (!url) return null;
+  setStatus(`Downloading ${model.toUpperCase()} ROM…`);
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = new Uint8Array(await resp.arrayBuffer());
+    const name = url.split('/').pop()!;
+    await persistROM(model, data, name);
+    setStatus(`${model.toUpperCase()} ROM loaded`);
+    return { data, label: name };
+  } catch (err) {
+    setStatus(`Failed to download ROM: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 function saveModel(model: SpectrumModel): void {
@@ -754,19 +775,20 @@ modelSelect.addEventListener('change', async () => {
   currentModel = modelSelect.value as SpectrumModel;
   saveModel(currentModel);
 
-  // Try to load saved ROM for this model
-  const entry = await restoreROM(currentModel);
+  // Try saved ROM first, then download default
+  let entry = await restoreROM(currentModel);
+  if (!entry) entry = await fetchDefaultROM(currentModel);
+
   if (entry) {
     romData = entry.data;
     setRomStatus('');
   } else {
     romData = null;
     setRomStatus('');
-    setStatus(`No ROM saved for ${currentModel.toUpperCase()} — load one`);
   }
 
   createMachine();
-  modelSelect.blur(); // release focus so keys go to the emulator, not the dropdown
+  modelSelect.blur();
 });
 
 // ── Disk mode selector ──────────────────────────────────────────────────────
@@ -1286,8 +1308,10 @@ cpuResetBtn.addEventListener('click', () => {
 
 const joyP1 = document.getElementById('joy-p1') as HTMLSelectElement;
 const joyP2 = document.getElementById('joy-p2') as HTMLSelectElement;
-const captureCursor = document.getElementById('capture-cursor') as HTMLInputElement;
+const joyMapP1 = document.getElementById('joy-map-p1') as HTMLSelectElement;
+const joyMapP2 = document.getElementById('joy-map-p2') as HTMLSelectElement;
 const joySelectors = [joyP1, joyP2];
+const joyMapSelectors = [joyMapP1, joyMapP2];
 
 // Kempston bits: 0=right, 1=left, 2=down, 3=up, 4=fire
 const KEMPSTON_BITS: Record<string, number> = {
@@ -1303,7 +1327,7 @@ const CURSOR_KEYS: Record<string, { row: number; bit: number }> = {
   fire:  { row: 4, bit: 0 }, // 0
 };
 
-// Sinclair IF2 (port 2, left joystick): 1=left, 2=right, 3=down, 4=up, 5=fire
+// Sinclair Port 2: 1=left, 2=right, 3=down, 4=up, 5=fire
 const SINCLAIR2_KEYS: Record<string, { row: number; bit: number }> = {
   left:  { row: 3, bit: 0 }, // 1
   right: { row: 3, bit: 1 }, // 2
@@ -1312,7 +1336,7 @@ const SINCLAIR2_KEYS: Record<string, { row: number; bit: number }> = {
   fire:  { row: 3, bit: 4 }, // 5
 };
 
-// Sinclair 1 (right joystick): 6=left, 7=right, 8=down, 9=up, 0=fire
+// Sinclair Port 1: 6=left, 7=right, 8=down, 9=up, 0=fire
 const SINCLAIR1_KEYS: Record<string, { row: number; bit: number }> = {
   left:  { row: 4, bit: 4 }, // 6
   right: { row: 4, bit: 3 }, // 7
@@ -1380,9 +1404,83 @@ document.querySelectorAll('.joy-dpad').forEach(dpad => {
   });
 });
 
-captureCursor.addEventListener('change', () => {
-  try { localStorage.setItem('zx84-capture-cursor', captureCursor.checked ? '1' : '0'); } catch { /* */ }
+// Persist joystick type + mapping selections
+joyP1.addEventListener('change', () => {
+  try { localStorage.setItem('zx84-joy-p1', joyP1.value); } catch { /* */ }
 });
+joyP2.addEventListener('change', () => {
+  try { localStorage.setItem('zx84-joy-p2', joyP2.value); } catch { /* */ }
+});
+joyMapP1.addEventListener('change', () => {
+  try { localStorage.setItem('zx84-joy-map-p1', joyMapP1.value); } catch { /* */ }
+});
+joyMapP2.addEventListener('change', () => {
+  try { localStorage.setItem('zx84-joy-map-p2', joyMapP2.value); } catch { /* */ }
+});
+
+// ── Gamepad polling ─────────────────────────────────────────────────────────
+
+const GAMEPAD_DEADZONE = 0.4;
+const gamepadPrevState: Array<Record<string, boolean>> = [{}, {}];
+
+function pollGamepads(): void {
+  if (!spectrum) return;
+  const gamepads = navigator.getGamepads();
+  for (let p = 0; p < 2; p++) {
+    if (joyMapSelectors[p].value !== 'gamepad') continue;
+    const gp = gamepads[p] ?? null;
+    const prev = gamepadPrevState[p];
+    const mode = joySelectors[p].value;
+    if (!gp || mode === 'none') {
+      // Release all if gamepad disconnected
+      for (const dir of ['up', 'down', 'left', 'right', 'fire']) {
+        if (prev[dir]) {
+          joyPressForType(dir, false, mode);
+          setDpadHighlight(p, dir, false);
+          prev[dir] = false;
+        }
+      }
+      continue;
+    }
+
+    const axisX = gp.axes[0] ?? 0;
+    const axisY = gp.axes[1] ?? 0;
+    const dirs: Record<string, boolean> = {
+      left: axisX < -GAMEPAD_DEADZONE,
+      right: axisX > GAMEPAD_DEADZONE,
+      up: axisY < -GAMEPAD_DEADZONE,
+      down: axisY > GAMEPAD_DEADZONE,
+      fire: gp.buttons[0]?.pressed ?? false,
+    };
+
+    for (const dir of ['up', 'down', 'left', 'right', 'fire'] as const) {
+      if (dirs[dir] !== (prev[dir] ?? false)) {
+        joyPressForType(dir, dirs[dir], mode);
+        setDpadHighlight(p, dir, dirs[dir]);
+        prev[dir] = dirs[dir];
+      }
+    }
+  }
+}
+
+let gamepadRafId = 0;
+function gamepadLoop(): void {
+  pollGamepads();
+  gamepadRafId = requestAnimationFrame(gamepadLoop);
+}
+
+function updateGamepadPolling(): void {
+  const needed = joyMapP1.value === 'gamepad' || joyMapP2.value === 'gamepad';
+  if (needed && !gamepadRafId) {
+    gamepadRafId = requestAnimationFrame(gamepadLoop);
+  } else if (!needed && gamepadRafId) {
+    cancelAnimationFrame(gamepadRafId);
+    gamepadRafId = 0;
+  }
+}
+
+joyMapP1.addEventListener('change', updateGamepadPolling);
+joyMapP2.addEventListener('change', updateGamepadPolling);
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
@@ -1466,18 +1564,30 @@ ledRst16.addEventListener('click', () => {
 
 const HOST_KEY_TO_JOY: Record<string, string> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
-  AltRight: 'fire',
+  AltRight: 'fire', Space: 'fire',
 };
+
+function setDpadHighlight(player: number, dir: string, pressed: boolean): void {
+  const dpad = document.querySelector(`.joy-dpad[data-player="${player + 1}"]`);
+  const btn = dpad?.querySelector(`[data-dir="${dir}"]`);
+  btn?.classList.toggle('pressed', pressed);
+}
 
 function onKeyDown(e: KeyboardEvent): void {
   if (!spectrum) return;
   cancelAutoType();
 
   const joyDir = HOST_KEY_TO_JOY[e.code];
-  if (joyDir && captureCursor.checked && joyP1.value !== 'none') {
-    joyPressForType(joyDir, true, joyP1.value);
-    e.preventDefault();
-    return;
+  if (joyDir) {
+    let handled = false;
+    for (let p = 0; p < 2; p++) {
+      if (joyMapSelectors[p].value === 'keys' && joySelectors[p].value !== 'none') {
+        joyPressForType(joyDir, true, joySelectors[p].value);
+        setDpadHighlight(p, joyDir, true);
+        handled = true;
+      }
+    }
+    if (handled) { e.preventDefault(); return; }
   }
 
   if (spectrum.keyboard.handleKeyEvent(e.code, true)) {
@@ -1489,10 +1599,16 @@ function onKeyUp(e: KeyboardEvent): void {
   if (!spectrum) return;
 
   const joyDir = HOST_KEY_TO_JOY[e.code];
-  if (joyDir && captureCursor.checked && joyP1.value !== 'none') {
-    joyPressForType(joyDir, false, joyP1.value);
-    e.preventDefault();
-    return;
+  if (joyDir) {
+    let handled = false;
+    for (let p = 0; p < 2; p++) {
+      if (joyMapSelectors[p].value === 'keys' && joySelectors[p].value !== 'none') {
+        joyPressForType(joyDir, false, joySelectors[p].value);
+        setDpadHighlight(p, joyDir, false);
+        handled = true;
+      }
+    }
+    if (handled) { e.preventDefault(); return; }
   }
 
   if (spectrum.keyboard.handleKeyEvent(e.code, false)) {
@@ -1553,8 +1669,16 @@ async function init(): Promise<void> {
   populateFontSelect();
   renderFontPreview();
 
-  const savedCaptureCursor = getSaved('capture-cursor', '0');
-  captureCursor.checked = savedCaptureCursor === '1';
+  // Restore joystick type + mapping
+  const savedJoyP1 = getSaved('joy-p1', 'kempston');
+  joyP1.value = savedJoyP1;
+  const savedJoyP2 = getSaved('joy-p2', 'sinclair2');
+  joyP2.value = savedJoyP2;
+  const savedJoyMapP1 = getSaved('joy-map-p1', 'none');
+  joyMapP1.value = savedJoyMapP1;
+  const savedJoyMapP2 = getSaved('joy-map-p2', 'none');
+  joyMapP2.value = savedJoyMapP2;
+  updateGamepadPolling();
 
   const savedModel = loadSavedModel();
   if (savedModel) {
@@ -1562,11 +1686,12 @@ async function init(): Promise<void> {
     modelSelect.value = savedModel;
   }
 
-  const entry = await restoreROM(currentModel);
+  let entry = await restoreROM(currentModel);
+  if (!entry) entry = await fetchDefaultROM(currentModel);
+
   if (entry) {
     romData = entry.data;
     setRomStatus('');
-    setStatus('Restored ROM from last session');
     createMachine();
 
     // Restore last loaded file (SNA/TAP/TZX/DSK/etc.)
@@ -1574,8 +1699,6 @@ async function init(): Promise<void> {
     if (last) {
       await loadFile(last.data, last.name);
     }
-  } else {
-    setStatus('Load a ROM to start');
   }
 }
 
@@ -1600,6 +1723,7 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     floppySound?.destroy();
     floppySound = null;
+    if (gamepadRafId) { cancelAnimationFrame(gamepadRafId); gamepadRafId = 0; }
     if (spectrum) {
       spectrum.destroy();
       spectrum = null;

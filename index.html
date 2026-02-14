@@ -12,18 +12,21 @@
       <h1><span class="logo">ZX<span class="logo-num">84</span></span><span class="logo-stripe"></span></h1>
     </div>
 
-    <div id="model-row">
-      <select id="model">
-        <option value="48k">ZX Spectrum 48K</option>
-        <option value="128k">ZX Spectrum 128K</option>
-        <option value="+2">ZX Spectrum +2 (Grey)</option>
-        <option value="+2a">ZX Spectrum +2A</option>
-        <option value="+3">ZX Spectrum +3</option>
-      </select>
-      <button id="rom-btn" title="Load ROM"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="8" height="12" rx="1"/><line x1="1" y1="5" x2="4" y2="5"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="1" y1="11" x2="4" y2="11"/><line x1="12" y1="5" x2="16" y2="5"/><line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="11" x2="16" y2="11"/></svg></button>
-      <input type="file" id="rom-input" accept=".rom,.bin" multiple>
+    <div id="hardware-panel" class="pane">
+      <div class="section-label">Hardware</div>
+      <div id="model-row">
+        <select id="model">
+          <option value="48k">ZX Spectrum 48K</option>
+          <option value="128k">ZX Spectrum 128K</option>
+          <option value="+2">ZX Spectrum +2 (Grey)</option>
+          <option value="+2a">ZX Spectrum +2A (Black)</option>
+          <option value="+3">ZX Spectrum +3</option>
+        </select>
+        <button id="rom-btn" title="Load ROM"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="8" height="12" rx="1"/><line x1="1" y1="5" x2="4" y2="5"/><line x1="1" y1="8" x2="4" y2="8"/><line x1="1" y1="11" x2="4" y2="11"/><line x1="12" y1="5" x2="16" y2="5"/><line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="11" x2="16" y2="11"/></svg></button>
+        <input type="file" id="rom-input" accept=".rom,.bin" multiple>
+      </div>
+      <span class="rom-status" id="rom-status"></span>
     </div>
-    <span class="rom-status" id="rom-status"></span>
 
     <div id="snapshot-panel" class="pane">
       <div class="section-label">Load / Save</div>
@@ -42,9 +45,16 @@
             <select id="joy-p1">
               <option value="kempston" selected>Kempston</option>
               <option value="cursor">Cursor</option>
-              <option value="sinclair2">IF2</option>
-              <option value="sinclair1">Sinclair 1</option>
+              <option value="sinclair1">Sinclair Port 1</option>
+              <option value="sinclair2">Sinclair Port 2</option>
               <option value="none">None</option>
+            </select>
+          </label>
+          <label>Map
+            <select id="joy-map-p1">
+              <option value="none" selected>No mapping</option>
+              <option value="keys">Cursor keys</option>
+              <option value="gamepad">Gamepad</option>
             </select>
           </label>
           <div class="joy-dpad" data-player="1">
@@ -52,7 +62,7 @@
             <div class="joy-btn" data-dir="up">&#9650;</div>
             <div class="joy-spacer"></div>
             <div class="joy-btn" data-dir="left">&#9664;</div>
-            <div class="joy-btn joy-fire" data-dir="fire">FIRE</div>
+            <div class="joy-btn joy-fire" data-dir="fire">&#x25CF;</div>
             <div class="joy-btn" data-dir="right">&#9654;</div>
             <div class="joy-spacer"></div>
             <div class="joy-btn" data-dir="down">&#9660;</div>
@@ -64,9 +74,16 @@
             <select id="joy-p2">
               <option value="kempston">Kempston</option>
               <option value="cursor">Cursor</option>
-              <option value="sinclair2" selected>IF2</option>
-              <option value="sinclair1">Sinclair 1</option>
+              <option value="sinclair1">Sinclair Port 1</option>
+              <option value="sinclair2" selected>Sinclair Port 2</option>
               <option value="none">None</option>
+            </select>
+          </label>
+          <label>Map
+            <select id="joy-map-p2">
+              <option value="none" selected>No mapping</option>
+              <option value="keys">Cursor keys</option>
+              <option value="gamepad">Gamepad</option>
             </select>
           </label>
           <div class="joy-dpad" data-player="2">
@@ -74,7 +91,7 @@
             <div class="joy-btn" data-dir="up">&#9650;</div>
             <div class="joy-spacer"></div>
             <div class="joy-btn" data-dir="left">&#9664;</div>
-            <div class="joy-btn joy-fire" data-dir="fire">FIRE</div>
+            <div class="joy-btn joy-fire" data-dir="fire">&#x25CF;</div>
             <div class="joy-btn" data-dir="right">&#9654;</div>
             <div class="joy-spacer"></div>
             <div class="joy-btn" data-dir="down">&#9660;</div>
@@ -82,7 +99,6 @@
           </div>
         </div>
       </div>
-      <label id="capture-cursor-row"><input type="checkbox" id="capture-cursor"> Capture cursor keys</label>
     </div>
 
     <div id="sound-panel" class="pane">
@@ -184,7 +200,7 @@
         <div class="led" id="led-load" data-kind="load"><span class="led-dot"></span>LOAD</div>
         <div class="led" id="led-rst16" data-kind="rst16" style="cursor:pointer" title="Toggle transcribe overlay"><span class="led-dot"></span>RST16</div>
         <div class="led" id="led-beep" data-kind="beep"><span class="led-dot"></span>BEEP</div>
-        <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY</div>
+        <div class="led" id="led-ay" data-kind="ay"><span class="led-dot"></span>AY-3</div>
         <div class="led" id="led-dsk" data-kind="dsk"><span class="led-dot"></span>DISK</div>
       </div>
     </div>
