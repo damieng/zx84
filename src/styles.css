@@ -375,6 +375,13 @@ canvas {
   min-width: 0;
 }
 
+.slider-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 0.8rem;
+}
+
 .slider-row .slider-value {
   width: 24px;
   text-align: right;

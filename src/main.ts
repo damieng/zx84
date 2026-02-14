@@ -145,6 +145,7 @@ const transcribeOverlay = document.getElementById('transcribe-overlay') as HTMLP
 const scaleSelect = document.getElementById('scale') as HTMLSelectElement;
 const volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
 const volumeValue = document.getElementById('volume-value') as HTMLSpanElement;
+const ayStereSelect = document.getElementById('ay-stereo-select') as HTMLSelectElement;
 const brightnessSlider = document.getElementById('brightness-slider') as HTMLInputElement;
 const brightnessValue = document.getElementById('brightness-value') as HTMLSpanElement;
 const contrastSlider = document.getElementById('contrast-slider') as HTMLInputElement;
@@ -517,6 +518,10 @@ function createMachine(): void {
     spectrum.start();
   }
 
+  // Apply saved AY stereo mode
+  const savedAyStereo = getSaved('ay-stereo', 'ABC') as 'MONO' | 'ABC' | 'BCA' | 'CBA';
+  spectrum.ay.setStereoMode(savedAyStereo);
+
   // Apply saved disk mode for +3
   if (isPlus3(currentModel)) {
     const savedDiskMode = getSaved('disk-mode', 'fdc');
@@ -787,6 +792,12 @@ volumeSlider.addEventListener('input', () => {
   volumeValue.textContent = String(v);
   if (spectrum) spectrum['audio'].setVolume(v / 100);
   try { localStorage.setItem('zx84-volume', String(v)); } catch { /* */ }
+});
+
+ayStereSelect.addEventListener('change', () => {
+  const mode = ayStereSelect.value as 'MONO' | 'ABC' | 'BCA' | 'CBA';
+  if (spectrum) spectrum.ay.setStereoMode(mode);
+  try { localStorage.setItem('zx84-ay-stereo', mode); } catch { /* */ }
 });
 
 smoothingSlider.addEventListener('input', () => {
@@ -1509,6 +1520,9 @@ async function init(): Promise<void> {
   const savedVolume = getSaved('volume', '70');
   volumeSlider.value = savedVolume;
   volumeValue.textContent = savedVolume;
+
+  const savedAyStereo = getSaved('ay-stereo', 'ABC') as 'MONO' | 'ABC' | 'BCA' | 'CBA';
+  ayStereSelect.value = savedAyStereo;
 
   const savedSmoothing = getSaved('smoothing', '0');
   smoothingSlider.value = savedSmoothing;
