@@ -30,7 +30,8 @@
       "WebFetch(domain:programbytes48k.wordpress.com)",
       "WebFetch(domain:www.vintageisthenewold.com)",
       "WebFetch(domain:www.everygamegoing.com)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(npx tsx:*)"
     ]
   }
 }

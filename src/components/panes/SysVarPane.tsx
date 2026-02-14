@@ -3,7 +3,7 @@ import { sysvarHtml } from '../../store/emulator.ts';
 
 export function SysVarPane() {
   return (
-    <Pane id="sysvar-panel" label="System" mono>
+    <Pane id="sysvar-panel" label="System Variables" mono>
       <pre id="sysvar-output" dangerouslySetInnerHTML={{ __html: sysvarHtml.value }} />
     </Pane>
   );

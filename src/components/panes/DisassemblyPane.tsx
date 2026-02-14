@@ -76,20 +76,21 @@ export function DisassemblyPane() {
           class={paused ? 'active' : ''}
           onClick={togglePause}
         >{paused ? <HiPlay /> : <HiPause />}</button>
-        {paused && <>
-          <button
-            title="Step Into (execute one instruction)"
-            onClick={stepInto}
-          ><HiArrowDownRight /></button>
-          <button
-            title="Step Over (execute, stepping over CALLs)"
-            onClick={stepOver}
-          ><HiArrowTrendingDown /></button>
-          <button
-            title="Step Out (run until RET)"
-            onClick={stepOut}
-          ><HiArrowUpRight /></button>
-        </>}
+        <button
+          title="Step Into (execute one instruction)"
+          onClick={stepInto}
+          disabled={!paused}
+        ><HiArrowDownRight /></button>
+        <button
+          title="Step Over (execute, stepping over CALLs)"
+          onClick={stepOver}
+          disabled={!paused}
+        ><HiArrowTrendingDown /></button>
+        <button
+          title="Step Out (run until RET)"
+          onClick={stepOut}
+          disabled={!paused}
+        ><HiArrowUpRight /></button>
         {isTracing ? (
           <button
             class="active"
