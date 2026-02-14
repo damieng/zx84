@@ -2,15 +2,16 @@ import { useRef, useEffect } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
 import {
   HiPlay, HiPause,
-  HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight, HiClipboardDocument,
+  HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
 } from 'react-icons/hi2';
 import {
   disasmText, tracing, emulationPaused,
   stepInto, stepOver, stepOut,
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
-  type TraceMode,
 } from '../../store/emulator.ts';
+
+type TraceOrCopy = 'full' | 'contention' | 'portio' | 'loopanalysis';
 
 /** Find the data-addr from a click target inside .disasm-output */
 function addrFromEvent(e: MouseEvent): number | null {
@@ -89,9 +90,6 @@ export function DisassemblyPane() {
             onClick={stepOut}
           ><HiArrowUpRight /></button>
         </>}
-        <button title="Copy CPU state + disassembly to clipboard" onClick={copyCpuState}>
-          <HiClipboardDocument />
-        </button>
         {isTracing ? (
           <button
             class="active"
@@ -103,8 +101,12 @@ export function DisassemblyPane() {
             title="Start tracing (copies to clipboard on stop)"
             onChange={(e) => {
               const sel = e.currentTarget;
-              const mode = sel.value as TraceMode;
-              if (mode) startTrace(mode);
+              const mode = sel.value as TraceOrCopy;
+              if (mode === 'loopanalysis') {
+                copyCpuState();
+              } else if (mode) {
+                startTrace(mode);
+              }
               sel.selectedIndex = 0;
             }}
           >
@@ -112,6 +114,7 @@ export function DisassemblyPane() {
             <option value="full">Full</option>
             <option value="contention">Contention</option>
             <option value="portio">Port IO</option>
+            <option value="loopanalysis">Loop</option>
           </select>
         )}
       </div>

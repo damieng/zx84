@@ -20,7 +20,6 @@ import { BanksPane } from './components/panes/BanksPane.tsx';
 import { DiskInfoPane } from './components/panes/DiskInfoPane.tsx';
 import { DrivePane } from './components/panes/DrivePane.tsx';
 import { TapePane } from './components/panes/TapePane.tsx';
-import { DeveloperPane } from './components/panes/DeveloperPane.tsx';
 import { DisassemblyPane } from './components/panes/DisassemblyPane.tsx';
 
 import { paneOrder } from './store/panes.ts';
@@ -44,7 +43,6 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
   'disk-info-panel': DiskInfoPane,
   'drive-panel': DrivePane,
   'tape-panel': TapePane,
-  'developer-panel': DeveloperPane,
   'disasm-panel': DisassemblyPane,
 };
 
