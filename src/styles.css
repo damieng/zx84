@@ -731,6 +731,9 @@ input[type="range"]::-moz-range-thumb {
 .tape-block:hover { background: #eef; }
 
 .tape-block.played { color: #aaa; }
+.tape-block.control { color: #888; font-style: italic; }
+.tape-block.control.played { color: #bbb; }
+.tape-block.control.current { color: #88a; }
 
 .tape-block.current {
   background: #f0f0fe;

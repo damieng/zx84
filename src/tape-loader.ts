@@ -17,7 +17,7 @@ export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
   let dest = cpu.ix;
   let count = cpu.de;
 
-  const block = tape.nextBlock();
+  const block = tape.nextDataBlock();
 
   if (!block || block.flag !== expectedFlag) {
     // No block or flag mismatch — signal failure

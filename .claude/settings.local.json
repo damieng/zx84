@@ -37,7 +37,24 @@
       "WebFetch(domain:www.spectaculator.com)",
       "Bash(git stash:*)",
       "WebFetch(domain:rk.nvg.ntnu.no)",
-      "Bash(dd:*)"
+      "Bash(dd:*)",
+      "Bash(run 50)",
+      "Bash(key j 3)",
+      "Bash(key shift:*)",
+      "Bash(key p 3)",
+      "Bash(key enter 3)",
+      "Bash(run 200)",
+      "Bash(bp:*)",
+      "Bash(cont)",
+      "Bash(regs)",
+      "Bash(dis:*)",
+      "Bash(q)",
+      "Bash(SCRIPT)",
+      "Bash(run:*)",
+      "Bash(key enter 5)",
+      "Bash(run 500)",
+      "Bash(mem:*)",
+      "Bash(cont:*)"
     ]
   }
 }

@@ -179,6 +179,7 @@ export class Spectrum {
     this.display = canvas ? new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT) : null;
     this.audio = new Audio();
     this.tape = new TapeDeck();
+    this.tape.is48K = model === '48k';
     this.fdc = new UPD765A();
     this.contention = new Contention(model, this.memory);
     this.screenText = new ScreenText();

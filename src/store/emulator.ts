@@ -18,7 +18,7 @@ import { disassemble, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
-import type { TAPBlock } from '../formats/tap.ts';
+import type { TapeBlock } from '../formats/tap.ts';
 
 // ── State ───────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ export const clockSpeedText = signal('MHz');
 
 // Tape signals
 export const tapeLoaded = signal(false);
-export const tapeBlocks = signal<TAPBlock[]>([]);
+export const tapeBlocks = signal<TapeBlock[]>([]);
 export const tapePosition = signal(0);
 export const tapePaused = signal(true);
 export const tapePlaying = signal(false);

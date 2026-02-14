@@ -6,7 +6,7 @@ import {
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
 } from '../../store/emulator.ts';
 import { tapeAutoRewind } from '../../store/settings.ts';
-import type { TAPBlock } from '../../formats/tap.ts';
+import type { TapeBlock, DataBlock } from '../../formats/tap.ts';
 
 const HEADER_TYPES: Record<number, string> = {
   0: 'Program',
@@ -15,80 +15,110 @@ const HEADER_TYPES: Record<number, string> = {
   3: 'Bytes',
 };
 
-function tzxTag(block: TAPBlock): string {
-  if (!block.tzx) return '';
-  const t = block.tzx.type;
-  if (t === 'standard') return ' [STD]';
-  if (t === 'turbo') return ' [TURBO]';
-  if (t === 'pure-data') return ' [PURE]';
+function sourceTag(block: DataBlock): string {
+  if (block.source === 'standard') return ' [STD]';
+  if (block.source === 'turbo') return ' [TURBO]';
+  if (block.source === 'pure-data') return ' [PURE]';
   return '';
 }
 
-function tzxTimingDetail(block: TAPBlock): string {
-  if (!block.tzx) return '';
-  const m = block.tzx;
-  const parts: string[] = [`pause=${m.pause}ms`];
-  if (m.pilotPulse !== undefined) parts.push(`pilot=${m.pilotPulse}T x${m.pilotCount}`);
-  if (m.syncPulse1 !== undefined) parts.push(`sync=${m.syncPulse1}/${m.syncPulse2}T`);
-  if (m.bit0Pulse !== undefined) parts.push(`bit=${m.bit0Pulse}/${m.bit1Pulse}T`);
-  if (m.usedBits !== undefined && m.usedBits !== 8) parts.push(`used=${m.usedBits}bits`);
+function dataTimingDetail(block: DataBlock): string {
+  const parts: string[] = [`pause=${block.pause}ms`];
+  if (block.pilotCount > 0) parts.push(`pilot=${block.pilotPulse}T x${block.pilotCount}`);
+  if (block.syncPulse1 > 0) parts.push(`sync=${block.syncPulse1}/${block.syncPulse2}T`);
+  parts.push(`bit=${block.bit0Pulse}/${block.bit1Pulse}T`);
+  if (block.usedBits !== 8) parts.push(`used=${block.usedBits}bits`);
   return parts.join(' ');
 }
 
-function parseTapeBlockMeta(block: TAPBlock, index: number, blocks: TAPBlock[]): { line: string; detail: string; hidden: boolean } {
-  const tag = tzxTag(block);
-  const timing = tzxTimingDetail(block);
+function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]): { line: string; detail: string; hidden: boolean; control: boolean } {
+  switch (block.kind) {
+    case 'data': {
+      const tag = sourceTag(block);
+      const timing = block.source !== 'tap' ? dataTimingDetail(block) : '';
 
-  if (block.flag === 0x00 && block.data.length >= 15) {
-    const typeId = block.data[0];
-    const typeName = HEADER_TYPES[typeId] ?? `Type ${typeId}`;
-    let filename = '';
-    for (let i = 1; i <= 10; i++) filename += String.fromCharCode(block.data[i]);
-    const dataLen = block.data[11] | (block.data[12] << 8);
-    const param1 = block.data[13] | (block.data[14] << 8);
+      if (block.source !== 'pure-data' && block.flag === 0x00 && block.data.length >= 15) {
+        const typeId = block.data[0];
+        const typeName = HEADER_TYPES[typeId] ?? `Type ${typeId}`;
+        let filename = '';
+        for (let i = 1; i <= 10; i++) filename += String.fromCharCode(block.data[i]);
+        const dataLen = block.data[11] | (block.data[12] << 8);
+        const param1 = block.data[13] | (block.data[14] << 8);
 
-    // Check if next block is matching data
-    const nextBlock = blocks[index + 1];
-    const hasMatchingData = nextBlock && nextBlock.flag === 0xFF && nextBlock.data.length === dataLen;
+        // Check if next block is matching data
+        const nextBlock = blocks[index + 1];
+        const hasMatchingData = nextBlock && nextBlock.kind === 'data' && nextBlock.flag === 0xFF && nextBlock.data.length === dataLen;
 
-    // Determine display type
-    let displayType = typeName;
-    if (hasMatchingData) {
-      if (typeId === 0) {
-        displayType = 'PROGRAM';
-      } else if (typeId === 3) {
-        if (dataLen === 6912 && param1 === 16384) {
-          displayType = 'SCREEN$';
-        } else {
-          displayType = 'CODE';
+        let displayType = typeName;
+        if (hasMatchingData) {
+          if (typeId === 0) displayType = 'PROGRAM';
+          else if (typeId === 3) {
+            displayType = (dataLen === 6912 && param1 === 16384) ? 'SCREEN$' : 'CODE';
+          }
+        }
+
+        const line = hasMatchingData
+          ? `${index}: ${displayType} "${filename.trimEnd()}"${tag}`
+          : `${index}: Header "${filename.trimEnd()}"${tag}`;
+        let detail = `${typeName} ${dataLen} bytes`;
+        if (typeId === 0 && param1 < 10000) detail += ` LINE ${param1}`;
+        else if (typeId === 3) detail += ` @ ${param1}`;
+        if (timing) detail += `\n${timing}`;
+        return { line, detail, hidden: false, control: false };
+      }
+
+      // Check if this is a data block following a matching header
+      const prevBlock = blocks[index - 1];
+      if (prevBlock && prevBlock.kind === 'data' && prevBlock.flag === 0x00 && prevBlock.data.length >= 15) {
+        const headerDataLen = prevBlock.data[11] | (prevBlock.data[12] << 8);
+        if (block.data.length === headerDataLen) {
+          return { line: '', detail: '', hidden: true, control: false };
         }
       }
+
+      const size = block.data.length;
+      let detail = '';
+      if (timing) detail = timing;
+      return { line: `${index}: Data ${size} bytes${tag}`, detail, hidden: false, control: false };
     }
 
-    const line = hasMatchingData
-      ? `${index}: ${displayType} "${filename.trimEnd()}"${tag}`
-      : `${index}: Header "${filename.trimEnd()}"${tag}`;
-    let detail = `${typeName} ${dataLen} bytes`;
-    if (typeId === 0 && param1 < 10000) detail += ` LINE ${param1}`;
-    else if (typeId === 3) detail += ` @ ${param1}`;
-    if (timing) detail += `\n${timing}`;
-    return { line, detail, hidden: false };
-  }
+    case 'tone':
+      return { line: `${index}: Pure Tone`, detail: `${block.pulseLen}T × ${block.count} pulses`, hidden: false, control: true };
 
-  // Check if this is a data block following a matching header
-  const prevBlock = blocks[index - 1];
-  if (prevBlock && prevBlock.flag === 0x00 && prevBlock.data.length >= 15) {
-    const headerDataLen = prevBlock.data[11] | (prevBlock.data[12] << 8);
-    if (block.data.length === headerDataLen) {
-      // Hide this data block - it's merged with the header
-      return { line: '', detail: '', hidden: true };
-    }
-  }
+    case 'pulses':
+      return { line: `${index}: Pulse Sequence`, detail: `${block.lengths.length} pulses`, hidden: false, control: true };
 
-  const size = block.data.length;
-  let detail = '';
-  if (timing) detail = timing;
-  return { line: `${index}: Data ${size} bytes${tag}`, detail, hidden: false };
+    case 'direct':
+      return { line: `${index}: Direct Recording`, detail: `${block.tStatesPerSample}T/sample, ${block.data.length} bytes, pause=${block.pause}ms`, hidden: false, control: true };
+
+    case 'pause':
+      return {
+        line: block.duration === 0 ? `${index}: Stop the tape` : `${index}: Pause ${block.duration}ms`,
+        detail: '', hidden: false, control: true,
+      };
+
+    case 'set-level':
+      return { line: `${index}: Set Level ${block.level}`, detail: '', hidden: false, control: true };
+
+    case 'stop-if-48k':
+      return { line: `${index}: Stop if 48K`, detail: '', hidden: false, control: true };
+
+    case 'group-start':
+      return { line: `${index}: ▸ ${block.name}`, detail: '', hidden: false, control: true };
+
+    case 'group-end':
+      return { line: '', detail: '', hidden: true, control: true };
+
+    case 'text':
+      return { line: `${index}: ${block.text}`, detail: '', hidden: false, control: true };
+
+    case 'archive-info':
+      return {
+        line: `${index}: Archive Info`,
+        detail: block.entries.map(e => e.text).join(', '),
+        hidden: false, control: true,
+      };
+  }
 }
 
 export function TapePane() {
@@ -129,7 +159,7 @@ export function TapePane() {
           blocks.map((block, i) => {
             const meta = parseTapeBlockMeta(block, i, blocks);
             if (meta.hidden) return null;
-            const className = `tape-block${i < pos ? ' played' : ''}${i === pos ? ' current' : ''}`;
+            const className = `tape-block${i < pos ? ' played' : ''}${i === pos ? ' current' : ''}${meta.control ? ' control' : ''}`;
             return (
               <div key={i} class={className} onClick={() => tapeSetPosition(i)}>
                 {meta.line}

@@ -1296,6 +1296,7 @@ export class Z80 {
         this.tStates += 11;
       } else {
         this.h = savedH; this.l = savedL;
+        this.tStates += 4; // DD prefix M1 cycle
         this.executeMain(op);
       }
     } else if (x === 0 && (z === 4 || z === 5) && y === 6) {
@@ -1313,15 +1314,17 @@ export class Z80 {
       this.write8(addr, n);
       this.tStates += 19;
     } else if (ddfdUsesHL(op)) {
+      this.tStates += 4; // DD prefix M1 cycle
       this.executeMain(op);
       this.ix = (this.h << 8) | this.l;
       this.h = savedH;
       this.l = savedL;
       return;
     } else {
-      // Opcode doesn't reference H/L/HL — DD prefix ignored
+      // Opcode doesn't reference H/L/HL — DD prefix ignored, but still costs 4T
       this.h = savedH;
       this.l = savedL;
+      this.tStates += 4; // DD prefix M1 cycle
       this.executeMain(op);
       return;
     }
@@ -1387,6 +1390,7 @@ export class Z80 {
         this.tStates += 11;
       } else {
         this.h = savedH; this.l = savedL;
+        this.tStates += 4; // FD prefix M1 cycle
         this.executeMain(op);
       }
     } else if (x === 0 && (z === 4 || z === 5) && y === 6) {
@@ -1404,15 +1408,17 @@ export class Z80 {
       this.write8(addr, n);
       this.tStates += 19;
     } else if (ddfdUsesHL(op)) {
+      this.tStates += 4; // FD prefix M1 cycle
       this.executeMain(op);
       this.iy = (this.h << 8) | this.l;
       this.h = savedH;
       this.l = savedL;
       return;
     } else {
-      // Opcode doesn't reference H/L/HL — FD prefix ignored
+      // Opcode doesn't reference H/L/HL — FD prefix ignored, but still costs 4T
       this.h = savedH;
       this.l = savedL;
+      this.tStates += 4; // FD prefix M1 cycle
       this.executeMain(op);
       return;
     }

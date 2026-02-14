@@ -5,33 +5,42 @@
  * little-endian length. Each block's first byte is the flag byte and the last
  * byte is an XOR checksum. The payload is everything between flag and checksum.
  *
- * The playback engine converts blocks to pulse sequences (pilot, sync, data)
- * and feeds the EAR bit based on T-state timing. This allows both standard ROM
- * loading and custom loaders that read the EAR port directly.
+ * The playback engine converts blocks to pulse sequences (pilot, sync, data,
+ * tone, pulses, direct) and feeds the EAR bit based on T-state timing. This
+ * allows both standard ROM loading and custom loaders that read the EAR port
+ * directly.
  */
 
-export type TZXBlockType = 'standard' | 'turbo' | 'pure-data';
+// ── TapeBlock discriminated union ─────────────────────────────────────────
 
-export interface TZXBlockMeta {
-  type: TZXBlockType;
-  pause: number;
-  pilotPulse?: number;
-  syncPulse1?: number;
-  syncPulse2?: number;
-  bit0Pulse?: number;
-  bit1Pulse?: number;
-  pilotCount?: number;
-  usedBits?: number;
-}
-
-export interface TAPBlock {
-  /** Flag byte (0x00 = header, 0xFF = data) */
+export interface DataBlock {
+  kind: 'data';
   flag: number;
-  /** Payload data (excludes flag and checksum bytes) */
   data: Uint8Array;
-  /** TZX block metadata (only present for blocks loaded from TZX files) */
-  tzx?: TZXBlockMeta;
+  pause: number;              // ms
+  pilotPulse: number;         // T-states (0 for pure-data)
+  syncPulse1: number;
+  syncPulse2: number;
+  bit0Pulse: number;
+  bit1Pulse: number;
+  pilotCount: number;         // 0 = skip pilot/sync (pure-data)
+  usedBits: number;           // last byte
+  source: 'tap' | 'standard' | 'turbo' | 'pure-data';
 }
+
+export interface ToneBlock     { kind: 'tone'; pulseLen: number; count: number; }
+export interface PulsesBlock   { kind: 'pulses'; lengths: number[]; }
+export interface PauseBlock    { kind: 'pause'; duration: number; }  // 0 = stop tape
+export interface DirectBlock   { kind: 'direct'; tStatesPerSample: number; pause: number; usedBits: number; data: Uint8Array; }
+export interface SetLevelBlock { kind: 'set-level'; level: number; }
+export interface StopIf48KBlock { kind: 'stop-if-48k'; }
+export interface GroupStartBlock { kind: 'group-start'; name: string; }
+export interface GroupEndBlock { kind: 'group-end'; }
+export interface TextBlock     { kind: 'text'; text: string; }
+export interface ArchiveInfoBlock { kind: 'archive-info'; entries: { id: number; text: string }[]; }
+
+export type TapeBlock = DataBlock | ToneBlock | PulsesBlock | PauseBlock | DirectBlock
+  | SetLevelBlock | StopIf48KBlock | GroupStartBlock | GroupEndBlock | TextBlock | ArchiveInfoBlock;
 
 // ── Standard Spectrum tape timing (T-states per half-cycle) ──────────────
 
@@ -52,12 +61,18 @@ const enum TapePhase {
   SYNC2,
   DATA,
   PAUSE,
+  TONE,
+  PULSES,
+  DIRECT,
 }
 
 export class TapeDeck {
-  blocks: TAPBlock[] = [];
+  blocks: TapeBlock[] = [];
   position = 0;
   paused = false;
+
+  /** Whether the machine is a 48K model (used by stop-if-48k blocks) */
+  is48K = false;
 
   // ── Playback engine state ──────────────────────────────────────────────
 
@@ -79,7 +94,7 @@ export class TapeDeck {
   /** T-states accumulated within the current pulse */
   private tInPulse = 0;
 
-  /** Reconstructed raw block data (flag + payload + checksum) */
+  /** Reconstructed raw block data (flag + payload + checksum) for data blocks */
   private rawData: Uint8Array | null = null;
 
   /** Data phase position */
@@ -93,12 +108,27 @@ export class TapeDeck {
   /** Pause remaining in T-states */
   private pauseRemaining = 0;
 
-  /** Per-block timing (from TZX metadata or standard defaults) */
+  /** Per-block timing (from DataBlock) */
   private bPilot = PILOT_PULSE;
   private bSync1 = SYNC_1;
   private bSync2 = SYNC_2;
   private bBit0 = BIT_0;
   private bBit1 = BIT_1;
+
+  /** Tone block: pulses remaining */
+  private toneRemaining = 0;
+
+  /** Pulses block: current index into lengths array */
+  private pulsesIdx = 0;
+  private pulsesLengths: number[] = [];
+
+  /** Direct block state */
+  private directData: Uint8Array | null = null;
+  private directTStatesPerSample = 0;
+  private directByteIdx = 0;
+  private directBitIdx = 0;
+  private directUsedBitsLast = 8;
+  private directPauseMs = 0;
 
   // ── TAP parser ─────────────────────────────────────────────────────────
 
@@ -120,15 +150,51 @@ export class TapeDeck {
       // Payload is everything between flag and checksum
       const data = fileData.slice(offset + 1, offset + blockLen - 1);
 
-      this.blocks.push({ flag, data });
+      this.blocks.push({
+        kind: 'data',
+        flag,
+        data,
+        pause: PAUSE_DEFAULT_MS,
+        pilotPulse: PILOT_PULSE,
+        syncPulse1: SYNC_1,
+        syncPulse2: SYNC_2,
+        bit0Pulse: BIT_0,
+        bit1Pulse: BIT_1,
+        pilotCount: flag === 0x00 ? PILOT_HEADER : PILOT_DATA,
+        usedBits: 8,
+        source: 'tap',
+      });
       offset += blockLen;
     }
   }
 
-  /** Return the current block and advance, or null if finished */
-  nextBlock(): TAPBlock | null {
-    if (this.position >= this.blocks.length) return null;
-    return this.blocks[this.position++];
+  /**
+   * Return the next data block and advance past it, or null if finished.
+   * Skips non-data blocks, handling pause-0 and stop-if-48k stops.
+   * Used by the ROM trap in spectrum.ts.
+   */
+  nextDataBlock(): DataBlock | null {
+    while (this.position < this.blocks.length) {
+      const block = this.blocks[this.position];
+      if (block.kind === 'data') {
+        this.position++;
+        return block;
+      }
+      // Handle stop conditions
+      if (block.kind === 'pause' && block.duration === 0) {
+        this.paused = true;
+        this.position++;
+        return null;
+      }
+      if (block.kind === 'stop-if-48k' && this.is48K) {
+        this.paused = true;
+        this.position++;
+        return null;
+      }
+      // Skip non-data blocks
+      this.position++;
+    }
+    return null;
   }
 
   /** Reset playback to the beginning */
@@ -162,6 +228,7 @@ export class TapeDeck {
     this.phase = TapePhase.IDLE;
     this.earBit = 0;
     this.rawData = null;
+    this.directData = null;
   }
 
   /**
@@ -173,7 +240,7 @@ export class TapeDeck {
       this.playing = true;
       this.earBit = 0;
     }
-    // position was already advanced by nextBlock()
+    // position was already advanced by nextDataBlock()
     this.beginBlock(this.position);
   }
 
@@ -192,10 +259,16 @@ export class TapeDeck {
       return;
     }
 
+    if (this.phase === TapePhase.DIRECT) {
+      this.advanceDirect(tStates);
+      return;
+    }
+
     this.tInPulse += tStates;
     while (this.tInPulse >= this.pulseLen &&
            (this.phase as number) !== TapePhase.IDLE &&
-           (this.phase as number) !== TapePhase.PAUSE) {
+           (this.phase as number) !== TapePhase.PAUSE &&
+           (this.phase as number) !== TapePhase.DIRECT) {
       this.tInPulse -= this.pulseLen;
       this.earBit ^= 1;
       this.advancePulse();
@@ -209,26 +282,93 @@ export class TapeDeck {
       this.phase = TapePhase.IDLE;
       this.playing = false;
       this.rawData = null;
+      this.directData = null;
       return;
     }
 
     this.playbackIdx = idx;
     const block = this.blocks[idx];
-    this.rawData = this.buildRawData(block);
     this.tInPulse = 0;
 
-    // Get timing from TZX metadata or use standard defaults
-    const tzx = block.tzx;
-    this.bPilot = tzx?.pilotPulse ?? PILOT_PULSE;
-    this.bSync1 = tzx?.syncPulse1 ?? SYNC_1;
-    this.bSync2 = tzx?.syncPulse2 ?? SYNC_2;
-    this.bBit0 = tzx?.bit0Pulse ?? BIT_0;
-    this.bBit1 = tzx?.bit1Pulse ?? BIT_1;
-    this.usedBitsLast = tzx?.usedBits ?? 8;
-    const pauseMs = tzx?.pause ?? PAUSE_DEFAULT_MS;
-    this.pauseRemaining = Math.round(pauseMs * Z80_CLOCK / 1000);
+    switch (block.kind) {
+      case 'data':
+        this.beginDataBlock(block);
+        break;
 
-    if (tzx?.type === 'pure-data') {
+      case 'tone':
+        this.phase = TapePhase.TONE;
+        this.toneRemaining = block.count;
+        this.pulseLen = block.pulseLen;
+        break;
+
+      case 'pulses':
+        if (block.lengths.length === 0) {
+          this.beginBlock(idx + 1);
+          return;
+        }
+        this.phase = TapePhase.PULSES;
+        this.pulsesLengths = block.lengths;
+        this.pulsesIdx = 0;
+        this.pulseLen = block.lengths[0];
+        break;
+
+      case 'pause':
+        if (block.duration === 0) {
+          this.paused = true;
+          this.position = idx + 1;
+          this.phase = TapePhase.IDLE;
+          return;
+        }
+        this.position = idx + 1;
+        this.phase = TapePhase.PAUSE;
+        this.earBit = 0;
+        this.pauseRemaining = Math.round(block.duration * Z80_CLOCK / 1000);
+        break;
+
+      case 'direct':
+        this.beginDirectBlock(block);
+        break;
+
+      case 'set-level':
+        this.earBit = block.level;
+        this.position = idx + 1;
+        this.beginBlock(idx + 1);
+        return;
+
+      case 'stop-if-48k':
+        this.position = idx + 1;
+        if (this.is48K) {
+          this.paused = true;
+          this.phase = TapePhase.IDLE;
+          return;
+        }
+        this.beginBlock(idx + 1);
+        return;
+
+      // Cosmetic blocks — skip immediately
+      case 'group-start':
+      case 'group-end':
+      case 'text':
+      case 'archive-info':
+        this.position = idx + 1;
+        this.beginBlock(idx + 1);
+        return;
+    }
+  }
+
+  private beginDataBlock(block: DataBlock): void {
+    // Pure data blocks store raw bytes directly (not TAP flag+payload+checksum format)
+    this.rawData = block.source === 'pure-data' ? block.data : this.buildRawData(block);
+
+    this.bPilot = block.pilotPulse;
+    this.bSync1 = block.syncPulse1;
+    this.bSync2 = block.syncPulse2;
+    this.bBit0 = block.bit0Pulse;
+    this.bBit1 = block.bit1Pulse;
+    this.usedBitsLast = block.usedBits;
+    this.pauseRemaining = Math.round(block.pause * Z80_CLOCK / 1000);
+
+    if (block.pilotCount === 0) {
       // Pure data blocks: no pilot or sync, straight to data
       this.phase = TapePhase.DATA;
       this.byteIdx = 0;
@@ -238,12 +378,68 @@ export class TapeDeck {
     } else {
       // Standard / turbo: pilot → sync → data
       this.phase = TapePhase.PILOT;
-      if (tzx?.pilotCount !== undefined) {
-        this.pilotRemaining = tzx.pilotCount;
-      } else {
-        this.pilotRemaining = (block.flag === 0x00) ? PILOT_HEADER : PILOT_DATA;
-      }
+      this.pilotRemaining = block.pilotCount;
       this.pulseLen = this.bPilot;
+    }
+  }
+
+  private beginDirectBlock(block: DirectBlock): void {
+    this.phase = TapePhase.DIRECT;
+    this.directData = block.data;
+    this.directTStatesPerSample = block.tStatesPerSample;
+    this.directByteIdx = 0;
+    this.directBitIdx = 7;
+    this.directUsedBitsLast = block.usedBits;
+    this.directPauseMs = block.pause;
+    this.tInPulse = 0;
+    // Set initial EAR from first bit
+    if (block.data.length > 0) {
+      this.earBit = (block.data[0] >> 7) & 1;
+    }
+  }
+
+  private advanceDirect(tStates: number): void {
+    this.tInPulse += tStates;
+    while (this.tInPulse >= this.directTStatesPerSample) {
+      this.tInPulse -= this.directTStatesPerSample;
+
+      this.directBitIdx--;
+
+      // Check if we've finished the last used bit of the last byte
+      const isLastByte = this.directByteIdx === this.directData!.length - 1;
+      if (isLastByte && this.directBitIdx < (8 - this.directUsedBitsLast)) {
+        // End of direct block — enter pause
+        this.position = this.playbackIdx + 1;
+        if (this.directPauseMs > 0) {
+          this.phase = TapePhase.PAUSE;
+          this.earBit = 0;
+          this.pauseRemaining = Math.round(this.directPauseMs * Z80_CLOCK / 1000);
+        } else {
+          this.beginBlock(this.playbackIdx + 1);
+        }
+        this.directData = null;
+        return;
+      }
+
+      if (this.directBitIdx < 0) {
+        this.directByteIdx++;
+        this.directBitIdx = 7;
+        if (this.directByteIdx >= this.directData!.length) {
+          this.position = this.playbackIdx + 1;
+          if (this.directPauseMs > 0) {
+            this.phase = TapePhase.PAUSE;
+            this.earBit = 0;
+            this.pauseRemaining = Math.round(this.directPauseMs * Z80_CLOCK / 1000);
+          } else {
+            this.beginBlock(this.playbackIdx + 1);
+          }
+          this.directData = null;
+          return;
+        }
+      }
+
+      // Set EAR absolutely (not toggle)
+      this.earBit = (this.directData![this.directByteIdx] >> this.directBitIdx) & 1;
     }
   }
 
@@ -297,6 +493,24 @@ export class TapeDeck {
         }
         // else pulseLen stays same (second half-cycle of same bit)
         break;
+
+      case TapePhase.TONE:
+        this.toneRemaining--;
+        if (this.toneRemaining <= 0) {
+          this.position = this.playbackIdx + 1;
+          this.beginBlock(this.playbackIdx + 1);
+        }
+        break;
+
+      case TapePhase.PULSES:
+        this.pulsesIdx++;
+        if (this.pulsesIdx >= this.pulsesLengths.length) {
+          this.position = this.playbackIdx + 1;
+          this.beginBlock(this.playbackIdx + 1);
+        } else {
+          this.pulseLen = this.pulsesLengths[this.pulsesIdx];
+        }
+        break;
     }
   }
 
@@ -314,7 +528,7 @@ export class TapeDeck {
   }
 
   /** Reconstruct raw block bytes: flag + payload + XOR checksum */
-  private buildRawData(block: TAPBlock): Uint8Array {
+  private buildRawData(block: DataBlock): Uint8Array {
     const raw = new Uint8Array(block.data.length + 2);
     raw[0] = block.flag;
     raw.set(block.data, 1);
