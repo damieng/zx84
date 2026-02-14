@@ -22,3 +22,5 @@ npm-debug.log*
 # ROM files (copyrighted, must not be distributed)
 *.rom
 *.bin
+
+test/
