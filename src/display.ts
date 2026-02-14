@@ -1,8 +1,12 @@
 /**
- * WebGL display renderer.
- * Renders a pixel buffer as a textured fullscreen quad with nearest-neighbor filtering.
- * Supports integer scaling (1x/2x/3x/4x) and parameterized CRT-style effects:
- *   smoothing, curvature, scanlines, dotmask.
+ * WebGL display renderer — two-pass pipeline.
+ *
+ * Pass 1 (upscale): Renders the emulator pixel buffer to an FBO at display
+ *   resolution with nearest-neighbor (or user-controlled smoothing).
+ *
+ * Pass 2 (CRT): Samples the upscaled FBO with barrel distortion (LINEAR
+ *   filtering for smooth curves), then applies scanlines, dot mask,
+ *   brightness/contrast, and vignette.
  */
 
 const VERT_SRC = `
@@ -15,31 +19,21 @@ const VERT_SRC = `
   }
 `;
 
-const FRAG_DISPLAY = `
+// ── Pass 1: upscale with optional smoothing ──
+const FRAG_UPSCALE = `
   precision mediump float;
   varying vec2 v_uv;
   uniform sampler2D u_tex;
-  uniform vec2 u_resolution;
   uniform vec2 u_texSize;
   uniform float u_smoothing;   // 0 = nearest, 1 = full bilinear
-  uniform float u_curvature;   // 0 = flat, up to 0.15
-  uniform float u_scanlines;   // 0 = off, 1 = full gap
-  uniform int   u_dotmask;     // 0=none, 1=shadow mask, 2=trinitron
-  uniform float u_brightness;  // -1 to 1, default 0
-  uniform float u_contrast;    // 0 to 2, default 1
 
-  vec2 barrel(vec2 uv, float k) {
-    vec2 c = uv - 0.5;
-    float r2 = dot(c, c);
-    return uv + c * r2 * k;
-  }
-
-  vec4 sampleTex(vec2 uv) {
+  void main() {
     if (u_smoothing <= 0.0) {
-      return texture2D(u_tex, uv);
+      gl_FragColor = texture2D(u_tex, v_uv);
+      return;
     }
     // Manual 4-tap bilinear (texture stays NEAREST)
-    vec2 texel = uv * u_texSize - 0.5;
+    vec2 texel = v_uv * u_texSize - 0.5;
     vec2 f = fract(texel);
     vec2 base = (floor(texel) + 0.5) / u_texSize;
     vec2 step = 1.0 / u_texSize;
@@ -48,8 +42,28 @@ const FRAG_DISPLAY = `
     vec4 bl = texture2D(u_tex, base + vec2(0.0, step.y));
     vec4 br = texture2D(u_tex, base + step);
     vec4 bilinear = mix(mix(tl, tr, f.x), mix(bl, br, f.x), f.y);
-    vec4 nearest = texture2D(u_tex, uv);
-    return mix(nearest, bilinear, u_smoothing);
+    vec4 nearest = texture2D(u_tex, v_uv);
+    gl_FragColor = mix(nearest, bilinear, u_smoothing);
+  }
+`;
+
+// ── Pass 2: CRT effects (curvature, scanlines, dot mask, brightness) ──
+const FRAG_CRT = `
+  precision mediump float;
+  varying vec2 v_uv;
+  uniform sampler2D u_tex;       // upscaled FBO (LINEAR filtering)
+  uniform vec2 u_resolution;
+  uniform vec2 u_texSize;        // original emulator resolution (for scanline scale)
+  uniform float u_curvature;     // 0 = flat, up to 0.15
+  uniform float u_scanlines;     // 0 = off, 1 = full gap
+  uniform int   u_dotmask;       // 0=none, 1-5 = phosphor patterns
+  uniform float u_brightness;    // -1 to 1, default 0
+  uniform float u_contrast;      // 0 to 2, default 1
+
+  vec2 barrel(vec2 uv, float k) {
+    vec2 c = uv - 0.5;
+    float r2 = dot(c, c);
+    return uv + c * r2 * k;
   }
 
   void main() {
@@ -70,7 +84,8 @@ const FRAG_DISPLAY = `
       return;
     }
 
-    vec3 col = sampleTex(uv).rgb * edgeAlpha;
+    // Sample the upscaled FBO — LINEAR filtering gives smooth barrel curves
+    vec3 col = texture2D(u_tex, uv).rgb * edgeAlpha;
 
     // -- Scanlines: darken every Nth physical pixel row (pure counting) --
     float scanFactor = 0.0;
@@ -175,9 +190,17 @@ export class Display {
   width: number;
   height: number;
 
-  private program: WebGLProgram;
+  // Pass 1 (upscale)
+  private progUpscale: WebGLProgram;
+  private fbo: WebGLFramebuffer;
+  private fboTex: WebGLTexture;
+
+  // Pass 2 (CRT)
+  private progCRT: WebGLProgram;
+
   scale = 2;
-  private buffer: WebGLBuffer;
+  private buffer: WebGLBuffer;     // quad with flipped UVs (for source texture)
+  private bufferFBO: WebGLBuffer;  // quad with standard UVs (for FBO)
   private glDirty = true;
 
   // Effect parameters
@@ -188,15 +211,18 @@ export class Display {
   private brightness = 0;
   private contrast = 1;
 
-  // Cached uniform locations
-  private uResolution: WebGLUniformLocation | null = null;
-  private uTexSize: WebGLUniformLocation | null = null;
-  private uSmoothing: WebGLUniformLocation | null = null;
-  private uCurvature: WebGLUniformLocation | null = null;
-  private uScanlines: WebGLUniformLocation | null = null;
-  private uDotmask: WebGLUniformLocation | null = null;
-  private uBrightness: WebGLUniformLocation | null = null;
-  private uContrast: WebGLUniformLocation | null = null;
+  // Cached uniform locations — pass 1
+  private u1TexSize: WebGLUniformLocation | null = null;
+  private u1Smoothing: WebGLUniformLocation | null = null;
+
+  // Cached uniform locations — pass 2
+  private u2Resolution: WebGLUniformLocation | null = null;
+  private u2TexSize: WebGLUniformLocation | null = null;
+  private u2Curvature: WebGLUniformLocation | null = null;
+  private u2Scanlines: WebGLUniformLocation | null = null;
+  private u2Dotmask: WebGLUniformLocation | null = null;
+  private u2Brightness: WebGLUniformLocation | null = null;
+  private u2Contrast: WebGLUniformLocation | null = null;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.canvas = canvas;
@@ -207,7 +233,7 @@ export class Display {
     if (!gl) throw new Error('WebGL not supported');
     this.gl = gl;
 
-    // Build fullscreen quad buffer
+    // Quad with flipped UVs for pass 1 (source texture is top-down pixel data)
     const verts = new Float32Array([
       // pos       uv
       -1, -1,     0, 1,
@@ -219,33 +245,57 @@ export class Display {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
 
-    // Compile shader program
-    this.program = this.buildProgram(VERT_SRC, FRAG_DISPLAY);
-    gl.useProgram(this.program);
-    this.bindAttributes(this.program);
+    // Quad with standard UVs for pass 2 (FBO is already in GL orientation)
+    const vertsFBO = new Float32Array([
+      // pos       uv
+      -1, -1,     0, 0,
+       1, -1,     1, 0,
+      -1,  1,     0, 1,
+       1,  1,     1, 1,
+    ]);
+    this.bufferFBO = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.bufferFBO);
+    gl.bufferData(gl.ARRAY_BUFFER, vertsFBO, gl.STATIC_DRAW);
 
-    // Cache uniform locations
-    this.uResolution = gl.getUniformLocation(this.program, 'u_resolution');
-    this.uTexSize = gl.getUniformLocation(this.program, 'u_texSize');
-    this.uSmoothing = gl.getUniformLocation(this.program, 'u_smoothing');
-    this.uCurvature = gl.getUniformLocation(this.program, 'u_curvature');
-    this.uScanlines = gl.getUniformLocation(this.program, 'u_scanlines');
-    this.uDotmask = gl.getUniformLocation(this.program, 'u_dotmask');
-    this.uBrightness = gl.getUniformLocation(this.program, 'u_brightness');
-    this.uContrast = gl.getUniformLocation(this.program, 'u_contrast');
+    // ── Pass 1 program (upscale) ──
+    this.progUpscale = this.buildProgram(VERT_SRC, FRAG_UPSCALE);
+    this.u1TexSize = gl.getUniformLocation(this.progUpscale, 'u_texSize');
+    this.u1Smoothing = gl.getUniformLocation(this.progUpscale, 'u_smoothing');
 
-    // Create texture with nearest-neighbor filtering
+    // ── Pass 2 program (CRT) ──
+    this.progCRT = this.buildProgram(VERT_SRC, FRAG_CRT);
+    this.u2Resolution = gl.getUniformLocation(this.progCRT, 'u_resolution');
+    this.u2TexSize = gl.getUniformLocation(this.progCRT, 'u_texSize');
+    this.u2Curvature = gl.getUniformLocation(this.progCRT, 'u_curvature');
+    this.u2Scanlines = gl.getUniformLocation(this.progCRT, 'u_scanlines');
+    this.u2Dotmask = gl.getUniformLocation(this.progCRT, 'u_dotmask');
+    this.u2Brightness = gl.getUniformLocation(this.progCRT, 'u_brightness');
+    this.u2Contrast = gl.getUniformLocation(this.progCRT, 'u_contrast');
+
+    // ── Source texture (emulator pixels, NEAREST) ──
     this.texture = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-
-    // Allocate initial texture
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
-    // Apply default 2x scale
+    // ── FBO texture (upscaled, LINEAR for smooth barrel sampling) ──
+    this.fboTex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // ── Framebuffer ──
+    this.fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.fboTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // Apply default 2x scale (also sizes the FBO texture)
     this.applyScale();
   }
 
@@ -274,9 +324,9 @@ export class Display {
     return shader;
   }
 
-  private bindAttributes(program: WebGLProgram): void {
+  private bindAttributes(program: WebGLProgram, buf?: WebGLBuffer): void {
     const gl = this.gl;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf || this.buffer);
 
     const aPos = gl.getAttribLocation(program, 'a_pos');
     gl.enableVertexAttribArray(aPos);
@@ -287,32 +337,19 @@ export class Display {
     gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
   }
 
-  /** Re-establish full GL pipeline state. Called on next updateTexture. */
-  private restoreState(): void {
-    const gl = this.gl;
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(this.program);
-    this.bindAttributes(this.program);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-
-    // Set all uniforms from cached values
-    gl.uniform2f(this.uResolution, this.canvas.width, this.canvas.height);
-    gl.uniform2f(this.uTexSize, this.width, this.height);
-    gl.uniform1f(this.uSmoothing, this.smoothing);
-    gl.uniform1f(this.uCurvature, this.curvature);
-    gl.uniform1f(this.uScanlines, this.scanlines);
-    gl.uniform1i(this.uDotmask, this.dotmask);
-    gl.uniform1f(this.uBrightness, this.brightness);
-    gl.uniform1f(this.uContrast, this.contrast);
-
-    this.glDirty = false;
-  }
-
   private applyScale(): void {
-    this.canvas.width = this.width * this.scale;
-    this.canvas.height = this.height * this.scale;
+    const gl = this.gl;
+    const w = this.width * this.scale;
+    const h = this.height * this.scale;
+
+    this.canvas.width = w;
+    this.canvas.height = h;
     this.canvas.style.width = '';
     this.canvas.style.height = '';
+
+    // Resize FBO texture to match display resolution
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 
     // Canvas resize invalidates GL state; defer full restore to next draw
     this.glDirty = true;
@@ -363,12 +400,51 @@ export class Display {
   }
 
   /**
-   * Upload pixel buffer and draw.
+   * Upload pixel buffer and draw (two-pass).
    */
   updateTexture(pixels: Uint8Array): void {
     const gl = this.gl;
-    if (this.glDirty) this.restoreState();
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const dirty = this.glDirty;
+
+    // Upload emulator pixels to source texture
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    if (dirty) {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    }
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    // ── Pass 1: upscale to FBO ──
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.progUpscale);
+    this.bindAttributes(this.progUpscale);
+    // Source texture is already bound
+    if (dirty) {
+      gl.uniform2f(this.u1TexSize, this.width, this.height);
+    }
+    gl.uniform1f(this.u1Smoothing, this.smoothing);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // ── Pass 2: CRT effects to screen ──
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.progCRT);
+    this.bindAttributes(this.progCRT, this.bufferFBO);
+    gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
+    if (dirty) {
+      gl.uniform2f(this.u2Resolution, w, h);
+      gl.uniform2f(this.u2TexSize, this.width, this.height);
+      gl.uniform1f(this.u2Curvature, this.curvature);
+      gl.uniform1f(this.u2Scanlines, this.scanlines);
+      gl.uniform1i(this.u2Dotmask, this.dotmask);
+      gl.uniform1f(this.u2Brightness, this.brightness);
+      gl.uniform1f(this.u2Contrast, this.contrast);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    this.glDirty = false;
   }
 }
