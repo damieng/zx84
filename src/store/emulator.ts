@@ -73,8 +73,6 @@ export let currentDiskInfo: DskImage | null = null;
 export let currentDiskName = '';
 export let canvasEl: HTMLCanvasElement | null = null;
 
-// Auto-type state
-type KeySpec = { row: number; bit: number };
 // Tape idle tracking
 let tapeIdleFrames = 0;
 let tapeEverRead = false;

@@ -124,10 +124,10 @@ async function main(): Promise<void> {
   console.log(`ZX84 Headless Harness — model: ${model}`);
 
   // Fetch ROM
-  const romData = await fetchROM(model);
+  let romData = await fetchROM(model);
 
   // Create headless machine (no canvas)
-  const spec = new Spectrum(model);
+  let spec = new Spectrum(model);
   spec.loadROM(romData);
   spec.reset();
   console.log(`Machine ready. CPU at PC=${h16(spec.cpu.pc)}`);
@@ -137,8 +137,15 @@ async function main(): Promise<void> {
     loadFileInto(spec, fileArg);
   }
 
-  // Alias for convenience
-  const breakpoints = spec.breakpoints;
+  /** Switch to a new model, creating a fresh machine. */
+  async function switchModel(newModel: SpectrumModel): Promise<void> {
+    romData = await fetchROM(newModel);
+    spec = new Spectrum(newModel);
+    spec.loadROM(romData);
+    spec.reset();
+    model = newModel;
+    console.log(`Switched to ${newModel.toUpperCase()}. PC=${h16(spec.cpu.pc)}`);
+  }
 
   // ── REPL ─────────────────────────────────────────────────────────────
 
@@ -150,7 +157,7 @@ async function main(): Promise<void> {
 
   rl.prompt();
 
-  rl.on('line', (line: string) => {
+  rl.on('line', async (line: string) => {
     const trimmed = line.trim();
     if (!trimmed) { rl.prompt(); return; }
 
@@ -183,7 +190,7 @@ async function main(): Promise<void> {
 
         case 'cont':
         case 'c': {
-          if (breakpoints.size === 0) {
+          if (spec.breakpoints.size === 0) {
             console.log('No breakpoints set. Use "bp <addr>" first.');
             break;
           }
@@ -229,26 +236,26 @@ async function main(): Promise<void> {
 
         case 'bp': {
           if (!parts[1]) {
-            if (breakpoints.size === 0) {
+            if (spec.breakpoints.size === 0) {
               console.log('No breakpoints');
             } else {
-              console.log('Breakpoints: ' + [...breakpoints].map(h16).join(', '));
+              console.log('Breakpoints: ' + [...spec.breakpoints].map(h16).join(', '));
             }
             break;
           }
           const addr = parseAddr(parts[1]);
-          breakpoints.add(addr);
+          spec.breakpoints.add(addr);
           console.log(`Breakpoint set at ${h16(addr)}`);
           break;
         }
 
         case 'del': {
           if (!parts[1]) {
-            breakpoints.clear();
+            spec.breakpoints.clear();
             console.log('All breakpoints cleared');
           } else {
             const addr = parseAddr(parts[1]);
-            breakpoints.delete(addr);
+            spec.breakpoints.delete(addr);
             console.log(`Breakpoint at ${h16(addr)} removed`);
           }
           break;
@@ -324,6 +331,23 @@ async function main(): Promise<void> {
 
         case 'ocr': {
           console.log(spec.ocrScreen());
+          break;
+        }
+
+        case 'model': {
+          const m = parts[1]?.toLowerCase();
+          if (!m || !['48k', '128k', '+2', '+2a', '+3'].includes(m)) {
+            console.log(`Current model: ${model}. Usage: model <48k|128k|+2|+2a|+3>`);
+            break;
+          }
+          await switchModel(m as SpectrumModel);
+          break;
+        }
+
+        case 'subframe':
+        case 'sf': {
+          spec.subFrameRendering = !spec.subFrameRendering;
+          console.log(`Sub-frame rendering: ${spec.subFrameRendering ? 'ON' : 'OFF'}`);
           break;
         }
 
@@ -475,6 +499,8 @@ Commands:
   find <hex>           Search memory for byte sequence
   screen | scr         Show screen text (RST 16 grid)
   ocr                  OCR screen (bitmap matching)
+  model [m]            Show/switch model (48k|128k|+2|+2a|+3)
+  subframe | sf        Toggle sub-frame rendering
   quit | q             Exit
   help | ?             This message
 

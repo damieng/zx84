@@ -21,32 +21,13 @@ import { TapeDeck } from './formats/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
 import { Plus3DosTrap } from './plus3/plus3dos-trap.ts';
 import type { DskImage } from './formats/dsk.ts';
+import { Contention } from './contention.ts';
+import { ScreenText } from './screen-text.ts';
+import { trapTapeLoad } from './tape-loader.ts';
+import { installMemoryHooks, wirePortIO } from './io-ports.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz
 const AY_CLOCK = 1773400;        // ~1.77 MHz
-
-/** Model-dependent ULA timing parameters. */
-interface MachineTiming {
-  tStatesPerFrame: number;
-  tStatesPerLine: number;
-  /** Frame-relative T-state at which contention begins (first pixel line). */
-  contentionStart: number;
-}
-
-const TIMING_48K: MachineTiming = {
-  tStatesPerFrame: 69888,   // 224 × 312
-  tStatesPerLine: 224,
-  contentionStart: 14335,
-};
-
-const TIMING_128K: MachineTiming = {
-  tStatesPerFrame: 70908,   // 228 × 311
-  tStatesPerLine: 228,
-  contentionStart: 14361,
-};
-
-/** ULA contention delay pattern — indexed by (T-state mod 8). */
-const CONTENTION_PATTERN = new Uint8Array([6, 5, 4, 3, 2, 1, 0, 0]);
 
 /** Samples produced per Spectrum frame at a given sample rate */
 function samplesPerFrame(sampleRate: number): number {
@@ -93,36 +74,6 @@ export interface IOActivity {
   subFrameBorderChanges: number;
 }
 
-/**
- * ZX Spectrum character set → Unicode mapping for codes 0x80-0xFF.
- * 0x80-0x8F: 2×2 block graphics (Unicode Block Elements)
- * 0x90-0xA4: UDGs A-U (rendered as circled letters)
- * 0xA5-0xFF: BASIC keyword tokens
- */
-const SPECTRUM_CHARS: string[] = [
-  // 0x80-0x8F: block graphics (bit pattern: b0=TL, b1=TR, b2=BL, b3=BR)
-  ' ',  '\u2598', '\u259D', '\u2580', '\u2596', '\u258C', '\u259E', '\u259B',
-  '\u2597', '\u259A', '\u2590', '\u259C', '\u2584', '\u2599', '\u259F', '\u2588',
-  // 0x90-0xA4: UDGs A-U
-  '\u24B6', '\u24B7', '\u24B8', '\u24B9', '\u24BA', '\u24BB', '\u24BC', '\u24BD',
-  '\u24BE', '\u24BF', '\u24C0', '\u24C1', '\u24C2', '\u24C3', '\u24C4', '\u24C5',
-  '\u24C6', '\u24C7', '\u24C8', '\u24C9', '\u24CA',
-  // 0xA5-0xFF: BASIC keyword tokens
-  'RND', 'INKEY$', 'PI', 'FN ', 'POINT ', 'SCREEN$ ', 'ATTR ', 'AT ', 'TAB ',
-  'VAL$ ', 'CODE ', 'VAL ', 'LEN ', 'SIN ', 'COS ', 'TAN ', 'ASN ', 'ACS ',
-  'ATN ', 'LN ', 'EXP ', 'INT ', 'SQR ', 'SGN ', 'ABS ', 'PEEK ', 'IN ',
-  'USR ', 'STR$ ', 'CHR$ ', 'NOT ', 'BIN ',
-  'OR ', 'AND ', '<=', '>=', '<>', 'LINE ', 'THEN ', 'TO ', 'STEP ',
-  'DEF FN ', 'CAT ', 'FORMAT ', 'MOVE ', 'ERASE ', 'OPEN #', 'CLOSE #',
-  'MERGE ', 'VERIFY ', 'BEEP ', 'CIRCLE ', 'INK ', 'PAPER ', 'FLASH ',
-  'BRIGHT ', 'INVERSE ', 'OVER ', 'OUT ',
-  'LPRINT ', 'LLIST ', 'STOP ', 'READ ', 'DATA ', 'RESTORE ', 'NEW ',
-  'BORDER ', 'CONTINUE ', 'DIM ', 'REM ', 'FOR ', 'GO TO ', 'GO SUB ',
-  'INPUT ', 'LOAD ', 'LIST ', 'LET ', 'PAUSE ', 'NEXT ', 'POKE ', 'PRINT ',
-  'PLOT ', 'RUN ', 'SAVE ', 'RANDOMIZE ', 'IF ', 'CLS ', 'DRAW ', 'CLEAR ',
-  'RETURN ', 'COPY ',
-];
-
 export class Spectrum {
   model: SpectrumModel;
   memory: SpectrumMemory;
@@ -134,6 +85,8 @@ export class Spectrum {
   audio: Audio;
   tape: TapeDeck;
   fdc: UPD765A;
+  contention: Contention;
+  screenText: ScreenText;
 
   /** Disk access mode: 'fdc' = full FDC emulation, 'bios' = +3DOS BIOS traps */
   diskMode: 'fdc' | 'bios' = 'fdc';
@@ -146,8 +99,7 @@ export class Spectrum {
   kempstonState = 0;
 
   /** 32x24 character grid mirroring what RST 16 prints to the display */
-  screenGrid: string[] = new Array(768).fill(' ');
-  private screenSkipCount = 0;
+  get screenGrid(): string[] { return this.screenText.screenGrid; }
 
   private running = false;
   private starting = false;
@@ -163,8 +115,8 @@ export class Spectrum {
   private beeperDCPrev = 0;
   private beeperDCOut = 0;
 
-  /** Previous beeper state for toggle detection */
-  private prevBeeperBit = 0;
+  /** Previous beeper state for toggle detection (accessed by io-ports.ts) */
+  prevBeeperBit = 0;
 
   /** Whether at least one frame has rendered (for display) */
   private needsDisplay = true;
@@ -173,13 +125,7 @@ export class Spectrum {
   private lastFrameTime = 0;
   private frameTimeAccum = 0;
 
-  /** Model-dependent timing */
-  private timing: MachineTiming;
-
-  get tStatesPerFrame(): number { return this.timing.tStatesPerFrame; }
-
-  /** T-state counter at start of current frame (for contention/floating bus). */
-  private frameStartTStates = 0;
+  get tStatesPerFrame(): number { return this.contention.timing.tStatesPerFrame; }
 
   /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
   turbo = false;
@@ -188,7 +134,7 @@ export class Spectrum {
   subFrameRendering = false;
 
   /** Sub-frame state: border color changes logged this frame as [frameTState, color] */
-  private borderChanges: [number, number][] = [];
+  borderChanges: [number, number][] = [];
   /** Sub-frame state: border color at frame start */
   private frameStartBorderColor = 0;
   /** Sub-frame state: VRAM snapshot taken at frame start (6912 bytes: 0x4000-0x5AFF) */
@@ -198,7 +144,6 @@ export class Spectrum {
   private vramWriteOff = new Uint16Array(8192);
   private vramWriteVal = new Uint8Array(8192);
   private vramWriteCount = 0;
-  /** Detection/contention monitoring */
   /** Execution trace */
   private _tracing = false;
   private _traceMode: 'full' | 'contention' | 'portio' = 'full';
@@ -235,7 +180,8 @@ export class Spectrum {
     this.audio = new Audio();
     this.tape = new TapeDeck();
     this.fdc = new UPD765A();
-    this.timing = is128kClass(model) ? TIMING_128K : TIMING_48K;
+    this.contention = new Contention(model, this.memory);
+    this.screenText = new ScreenText();
 
     this.tStatesPerSample = Z80_CLOCK / 44100;
 
@@ -243,158 +189,59 @@ export class Spectrum {
       this.biosTrap = new Plus3DosTrap(this.cpu, this.memory, this.fdc);
     }
 
-    this.installMemoryHooks();
-    this.wirePortIO();
+    installMemoryHooks(this);
+    wirePortIO(this);
   }
 
-  /**
-   * Override Z80 read8/write8 to apply per-access ULA contention and
-   * silently discard writes to ROM (0x0000-0x3FFF).
-   */
-  private installMemoryHooks(): void {
-    const memory = this.memory;
+  /** Trace state accessors for io-ports.ts */
+  get tracing(): boolean { return this._tracing; }
+  get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
 
-    this.cpu.read8 = (addr: number): number => {
-      addr &= 0xFFFF;
-      if (this.isContended(addr)) {
-        this.cpu.tStates += this.contentionDelay();
-      }
-      return this.cpu.memory[addr];
-    };
-
-    this.cpu.write8 = (addr: number, val: number): void => {
-      addr &= 0xFFFF;
-      if (this.isContended(addr)) {
-        this.cpu.tStates += this.contentionDelay();
-      }
-      if (addr < 0x4000 && !memory.specialPaging) return; // ROM — silently discard
-      // Log VRAM writes for sub-frame rendering replay
-      if (this.subFrameRendering && addr >= 0x4000 && addr < 0x5B00) {
-        const i = this.vramWriteCount;
-        if (i < 8192) {
-          this.vramWriteTs[i] = this.cpu.tStates - this.frameStartTStates;
-          this.vramWriteOff[i] = addr - 0x4000;
-          this.vramWriteVal[i] = val & 0xFF;
-          this.vramWriteCount++;
-        }
-      }
-      this.cpu.memory[addr] = val & 0xFF;
-    };
-
-    this.cpu.portIn = (port: number): number => {
-      this.applyIOContention(port);
-      const val = this.cpu.portInHandler ? this.cpu.portInHandler(port) : 0xFF;
-      if (this._tracing && this._traceMode !== 'full') this.logPortAccess('IN', port, val);
-      return val;
-    };
-
-    this.cpu.portOut = (port: number, val: number): void => {
-      this.applyIOContention(port);
-      if (this._tracing && this._traceMode !== 'full') this.logPortAccess('OUT', port, val);
-      if (this.cpu.portOutHandler) this.cpu.portOutHandler(port, val);
-    };
+  /** Log a VRAM write for sub-frame rendering replay (called from io-ports.ts write8 hook). */
+  logVRAMWrite(addr: number, val: number): void {
+    const i = this.vramWriteCount;
+    if (i < 8192) {
+      this.vramWriteTs[i] = this.cpu.tStates - this.contention.frameStartTStates;
+      this.vramWriteOff[i] = addr - 0x4000;
+      this.vramWriteVal[i] = val & 0xFF;
+      this.vramWriteCount++;
+    }
   }
 
-  private wirePortIO(): void {
-    this.cpu.portOutHandler = (port: number, val: number) => {
-      // ULA port: any port with bit 0 = 0
-      if ((port & 0x01) === 0) {
-        const newBeeperBit = (val >> 4) & 1;
-        if (newBeeperBit !== this.prevBeeperBit) {
-          this.activity.beeperToggled = true;
-          this.prevBeeperBit = newBeeperBit;
-        }
-        // Log border color changes for sub-frame rendering
-        if (this.subFrameRendering) {
-          const newBorder = val & 0x07;
-          if (newBorder !== this.ula.borderColor) {
-            const frameTStates = this.cpu.tStates - this.frameStartTStates;
-            this.borderChanges.push([frameTStates, newBorder]);
-          }
-        }
-        this.ula.writePort(val);
+  /** Log a port access for trace modes (called from io-ports.ts). */
+  logPortAccess(dir: string, port: number, val: number): void {
+    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
+    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
+    const pc = this.cpu.pc;
+
+    if (this._traceMode === 'portio') {
+      const tally = dir === 'IN' ? this._portTallyIn! : this._portTallyOut!;
+      let entry = tally.get(port);
+      if (!entry) {
+        entry = { count: 0, pcs: new Set(), vals: new Set() };
+        tally.set(port, entry);
       }
-
-      // 128K bank switching: port 0x7FFD
-      if (is128kClass(this.model)) {
-        // +2A: strict decode (port & 0xC002) === 0x4000 to avoid 0x1FFD collision
-        // 128K/+2: loose decode (port & 0x8002) === 0
-        const match7FFD = isPlus2AClass(this.model)
-          ? (port & 0xC002) === 0x4000
-          : (port & 0x8002) === 0;
-        if (match7FFD) {
-          this.memory.bankSwitch(val);
-          this.cpu.memory = this.memory.flat;
-        }
-
-        // +2A: port 0x1FFD (port & 0xF002) === 0x1000
-        if (isPlus2AClass(this.model) && (port & 0xF002) === 0x1000) {
-          this.memory.bankSwitch1FFD(val);
-          if (isPlus3(this.model)) this.fdc.motorOn = (val & 0x08) !== 0;
-          this.cpu.memory = this.memory.flat;
-        }
-
-        // +3 FDC data write: port 0x3FFD (A13=1, A12=1, A1=0)
-        if (isPlus3(this.model) && (port & 0xF002) === 0x3000) {
-          this.fdc.writeData(val);
-          this.activity.fdcAccesses++;
-        }
+      entry.count++;
+      if (entry.pcs.size < 32) entry.pcs.add(pc);
+      if (entry.vals.size < 64) entry.vals.add(val);
+      return;
+    } else if (this._traceMode === 'contention' && pc >= 0x4000) {
+      const frameTStates = this.cpu.tStates - this.contention.frameStartTStates;
+      const line = ((frameTStates - this.contention.timing.contentionStart) / this.contention.timing.tStatesPerLine) | 0;
+      const contended = this.contention.isContended(pc);
+      const isULA = (port & 1) === 0;
+      const label = this.portLabel(port);
+      // Log ULA reads from contended memory (contention probes) and
+      // reads from unrecognised ports (potential floating bus reads)
+      if (dir === 'IN' && (contended || !label)) {
+        const tag = isULA && contended ? ' (contention probe)' :
+                    !label ? ` (floating bus? ${val === 0xFF ? 'idle' : 'VRAM'})` : '';
+        this._traceBuffer.push(
+          `${h16(pc)}  IN port=${h16(port)} val=${h8(val)} fT=${frameTStates} line=${line}${tag}`
+        );
       }
-
-      // AY ports — 128K only (48K has no AY chip)
-      if (is128kClass(this.model)) {
-        // AY register select: port 0xFFFD (A15=1, A14=1, A1=0)
-        if ((port & 0xC002) === 0xC000) {
-          this.ay.selectedReg = val & 0x0F;
-        }
-
-        // AY data write: port 0xBFFD (A15=1, A14=0, A1=0)
-        if ((port & 0xC002) === 0x8000) {
-          this.ay.writeRegister(this.ay.selectedReg, val);
-          this.activity.ayWrites++;
-        }
-      }
-    };
-
-    this.cpu.portInHandler = (port: number): number => {
-      // ULA port: any port with bit 0 = 0
-      if ((port & 0x01) === 0) {
-        this.activity.ulaReads++;
-        if (this.ula.tapeActive) this.activity.earReads++;
-        return this.ula.readPort((port >> 8) & 0xFF);
-      }
-
-      // AY register read: port 0xFFFD — 128K only
-      if (is128kClass(this.model) && (port & 0xC002) === 0xC000) {
-        return this.ay.readRegister(this.ay.selectedReg);
-      }
-
-      // FDC ports (A13=1, A12=0/1, A1=0): 0x2FFD status, 0x3FFD data
-      // +3: routed to uPD765A. +2A: chip absent, bus returns 0xFF.
-      // FDC operates normally in both FDC and BIOS modes — un-trapped ROM
-      // code (DD_LOGIN, DD_INIT, etc.) needs valid FDC responses. The BIOS
-      // traps intercept DD_ routines before they reach the FDC hardware.
-      if (isPlus2AClass(this.model)) {
-        if ((port & 0xF002) === 0x2000) {
-          if (!isPlus3(this.model)) return 0xFF;
-          return this.fdc.readStatus();
-        }
-        if ((port & 0xF002) === 0x3000) {
-          if (!isPlus3(this.model)) return 0xFF;
-          this.activity.fdcAccesses++;
-          return this.fdc.readData();
-        }
-      }
-
-      // Kempston joystick: bits 5-7 of low byte all zero
-      if ((port & 0x00E0) === 0) {
-        this.activity.kempstonReads++;
-        return this.kempstonState;
-      }
-
-      // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
-      return this.floatingBusRead();
-    };
+    }
+    if (this._traceBuffer.length >= 500_000) this._tracing = false;
   }
 
   loadROM(data: Uint8Array): void {
@@ -420,14 +267,14 @@ export class Spectrum {
     this.biosTrap?.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
-    this.clearScreenGrid();
+    this.screenText.clear();
     this.kempstonState = 0;
     this.beeperAccum = 0;
     this.beeperTStatesAccum = 0;
     this.beeperDCPrev = 0;
     this.beeperDCOut = 0;
     this.prevBeeperBit = 0;
-    this.frameStartTStates = 0;
+    this.contention.frameStartTStates = 0;
     this.needsDisplay = true;
     this.setStatus('Reset');
   }
@@ -533,107 +380,6 @@ export class Spectrum {
     this.rafId = requestAnimationFrame(this.frameLoop);
   };
 
-  /** True if the given address is in ULA-contended memory. */
-  private isContended(addr: number): boolean {
-    // 0x4000-0x7FFF is always contended (bank 5, the screen RAM)
-    if (addr >= 0x4000 && addr < 0x8000) return true;
-    // 128K: odd-numbered banks (1,3,5,7) paged at 0xC000 are contended
-    if (is128kClass(this.model) && addr >= 0xC000) {
-      return (this.memory.currentBank & 1) === 1;
-    }
-    return false;
-  }
-
-  /** Returns the contention delay (extra T-states) for the current beam position. */
-  private contentionDelay(): number {
-    const t = this.timing;
-    const frameTStates = this.cpu.tStates - this.frameStartTStates;
-    const offset = frameTStates - t.contentionStart;
-    if (offset < 0) return 0;
-    const line = (offset / t.tStatesPerLine) | 0;
-    if (line >= 192) return 0;
-    const col = offset - line * t.tStatesPerLine;
-    if (col >= 128) return 0;
-    return CONTENTION_PATTERN[col & 7];
-  }
-
-  /**
-   * Apply I/O contention for port access.
-   * On real hardware, the ULA applies contention during I/O cycles based on
-   * whether the port address high byte is contended and whether it's a ULA port.
-   *
-   * Patterns (C = contention delay, N = none, number = sub-cycle T-states):
-   *   Contended + ULA (A0=0): C:1, C:3  —  2 contention checks
-   *   Contended + non-ULA:    C:1, C:1, C:1, C:1  —  4 checks
-   *   Non-contended + ULA:    N:1, C:3  —  1 check
-   *   Non-contended + non-ULA: N:4  —  no contention
-   *
-   * The intermediate +1/-1 advances position tStates correctly for each check
-   * without adding extra time (sub-cycle T-states are in the base instruction timing).
-   */
-  private applyIOContention(port: number): void {
-    const highContended = this.isContended(port);
-    const isULA = (port & 1) === 0;
-
-    if (highContended && isULA) {
-      // C:1, C:3
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates += 1;
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates -= 1;
-    } else if (highContended) {
-      // C:1, C:1, C:1, C:1
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates += 1;
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates += 1;
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates += 1;
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates -= 3;
-    } else if (isULA) {
-      // N:1, C:3
-      this.cpu.tStates += 1;
-      this.cpu.tStates += this.contentionDelay();
-      this.cpu.tStates -= 1;
-    }
-  }
-
-  /**
-   * Floating bus read: returns whatever the ULA is currently fetching from VRAM.
-   * During active display, this is a pixel byte or attribute byte.
-   * Outside active display, returns 0xFF.
-   */
-  private floatingBusRead(): number {
-    const t = this.timing;
-    const frameTStates = this.cpu.tStates - this.frameStartTStates;
-    const offset = frameTStates - t.contentionStart;
-    if (offset < 0) return 0xFF;
-    const line = (offset / t.tStatesPerLine) | 0;
-    if (line >= 192) return 0xFF;
-    const col = offset - line * t.tStatesPerLine;
-    if (col >= 128) return 0xFF;
-
-    // Each character cell takes 4 T-states: pixel fetch, attr fetch
-    const charCol = (col >> 2) & 0x1F;
-    const phase = col & 3;
-    const mem = this.memory.flat;
-
-    if (phase < 2) {
-      // Pixel byte — use the Spectrum's peculiar bitmap addressing
-      const y = line;
-      const bitmapAddr = 0x4000 |
-        ((y & 0xC0) << 5) |
-        ((y & 0x07) << 8) |
-        ((y & 0x38) << 2);
-      return mem[bitmapAddr + charCol];
-    } else {
-      // Attribute byte
-      const attrAddr = 0x5800 + ((line >> 3) << 5) + charCol;
-      return mem[attrAddr];
-    }
-  }
-
   private runFrame(): void {
     // Reset activity counters for this frame
     this.activity.ulaReads = 0;
@@ -645,12 +391,15 @@ export class Spectrum {
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
 
-    // Fire interrupt at frame start
-    this.cpu.interrupt();
+    // Frame starts when INT fires — mark the reference point BEFORE the CPU
+    // responds, so interrupt-response T-states count as part of the frame.
+    // This keeps contention phase, sub-frame scanline boundaries, and floating
+    // bus reads aligned with real ULA timing.
+    this.contention.frameStartTStates = this.cpu.tStates;
+    const frameEnd = this.cpu.tStates + this.contention.timing.tStatesPerFrame;
 
-    // Run CPU for one frame's worth of T-states
-    this.frameStartTStates = this.cpu.tStates;
-    const frameEnd = this.cpu.tStates + this.timing.tStatesPerFrame;
+    // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget)
+    this.cpu.interrupt();
 
     // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;
@@ -669,51 +418,16 @@ export class Spectrum {
       if (this.cpu.pc === 0x0556) this.activity.tapeLoads++;
       if (this.cpu.pc === 0x0010) {
         this.activity.rst16Calls++;
-        this.captureScreenChar(this.cpu.a);
+        this.screenText.captureChar(this.cpu.a, this.cpu.memory);
       }
       // Screen grid maintenance — keep shadow copy in sync with ROM routines.
-      // DF_SZ (0x5C6B) = number of lower-screen lines (usually 2).
       const pc = this.cpu.pc;
-      if (pc === 0x0DAF) {
-        // CL_ALL — clear entire display
-        this.screenGrid.fill(' ');
-      } else if (pc === 0x0D6E) {
-        // CLS_LOWER — clear bottom DF_SZ lines only
-        const dfSz = this.cpu.memory[0x5C6B] || 2;
-        this.screenGrid.fill(' ', (24 - dfSz) * 32, 24 * 32);
-      } else if (pc === 0x0DFE) {
-        // CL_SC_ALL — scroll upper screen up one line
-        const dfSz = this.cpu.memory[0x5C6B] || 2;
-        const upperRows = 24 - dfSz;
-        for (let i = 0; i < (upperRows - 1) * 32; i++) {
-          this.screenGrid[i] = this.screenGrid[i + 32];
-        }
-        this.screenGrid.fill(' ', (upperRows - 1) * 32, upperRows * 32);
-      } else if (pc === 0x0E00) {
-        // CL_SCROLL — general scroll. Skip B=0x17 (handled by 0x0DFE above).
-        const b = (this.cpu.bc >> 8) & 0xFF;
-        if (b !== 0x17 && b > 0 && b <= 24) {
-          const startRow = 24 - b;
-          for (let i = startRow * 32; i < 23 * 32; i++) {
-            this.screenGrid[i] = this.screenGrid[i + 32];
-          }
-          this.screenGrid.fill(' ', 23 * 32, 24 * 32);
-        }
-      }
-
-      // Detect LDIR clearing screen memory (common non-ROM CLS pattern):
-      //   LD HL,0x4000 / LD (HL),0 / LD DE,0x4001 / LD BC,0x17FF / LDIR
-      // or LD DE,0x4000 / LD BC,0x1800 / LDIR
-      if (this.cpu.memory[pc] === 0xED && this.cpu.memory[(pc + 1) & 0xFFFF] === 0xB0) {
-        const de = this.cpu.de;
-        if (de >= 0x4000 && de <= 0x4001 && this.cpu.bc >= 0x1700) {
-          this.screenGrid.fill(' ');
-        }
-      }
+      this.screenText.checkROMRoutines(pc, this.cpu.memory, this.cpu.bc);
+      this.screenText.checkLDIRClear(pc, this.cpu.memory, this.cpu.de, this.cpu.bc);
 
       // ROM trap: intercept LD-BYTES for instant tape loading
       if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
-        this.trapTapeLoad();
+        trapTapeLoad(this.cpu, this.tape);
         this.tape.skipBlock(); // advance player past the instant-loaded block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
       } else if (this.diskMode === 'bios' && this.biosTrap &&
@@ -805,8 +519,8 @@ export class Spectrum {
   private renderSubFrame(): void {
     const shadow = this.vramShadow;
     const borderTop = this.ula['borderTop'] as number;
-    const tpl = this.timing.tStatesPerLine;
-    const cStart = this.timing.contentionStart;
+    const tpl = this.contention.timing.tStatesPerLine;
+    const cStart = this.contention.timing.contentionStart;
     const screenHeight = this.ula.screenHeight;
 
     let writeIdx = 0;
@@ -864,143 +578,17 @@ export class Spectrum {
     this.fdc.insertDisk(image);
   }
 
-  /**
-   * ROM trap for LD-BYTES at 0x0556.
-   * Intercepts the standard tape loading routine and transfers block data
-   * directly into memory, giving instant loading.
-   */
-  private trapTapeLoad(): void {
-    const cpu = this.cpu;
-
-    // Expected flag byte is in A register
-    const expectedFlag = cpu.a;
-    // Carry flag: 1 = LOAD, 0 = VERIFY
-    const isLoad = cpu.getFlag(Z80.FLAG_C);
-    // IX = destination address, DE = byte count
-    let dest = cpu.ix;
-    let count = cpu.de;
-
-    const block = this.tape.nextBlock();
-
-    if (!block || block.flag !== expectedFlag) {
-      // No block or flag mismatch — signal failure
-      cpu.setFlag(Z80.FLAG_C, false);
-    } else if (!isLoad) {
-      // VERIFY mode — just set success without copying
-      cpu.setFlag(Z80.FLAG_C, true);
-    } else {
-      // LOAD mode — copy block data into memory
-      const len = Math.min(count, block.data.length);
-      for (let i = 0; i < len; i++) {
-        cpu.write8(dest, block.data[i]);
-        dest = (dest + 1) & 0xFFFF;
-      }
-      count = 0;
-      cpu.ix = dest;
-      cpu.de = count;
-      cpu.setFlag(Z80.FLAG_C, true);
-    }
-
-    // Pop return address (simulating RET from LD-BYTES)
-    cpu.pc = cpu.pop16();
-    // Re-enable interrupts (LD-BYTES runs with DI)
-    cpu.iff1 = true;
-    cpu.iff2 = true;
-  }
-
-  /** Capture a character from RST 16 (A register value) into the 32x24 screen grid. */
-  private captureScreenChar(a: number): void {
-    // Skip parameter bytes for control codes
-    if (this.screenSkipCount > 0) {
-      this.screenSkipCount--;
-      return;
-    }
-
-    if (a === 0x0D) {
-      // Carriage return — position change handled by ROM, no grid update needed
-    } else if ((a >= 0x20 && a <= 0x7F) || a >= 0x80) {
-      // Printable character — read print position from the active screen channel.
-      // Upper screen (channel 'S') uses S_POSN at 0x5C88-89.
-      // Lower screen (channel 'K') uses DFCCL at 0x5C86-87 — the display file
-      // address directly encodes row/col via the Spectrum's interleaved layout.
-      const mem = this.cpu.memory;
-      const curchl = mem[0x5C51] | (mem[0x5C52] << 8);
-      const isLower = curchl >= 0x5C00 && curchl < 0xFFFC && mem[curchl + 4] === 0x4B; // 'K'
-
-      let actualCol: number, actualRow: number;
-      if (isLower) {
-        // Decode position from DFCCL display file address
-        const dfccl = mem[0x5C86] | (mem[0x5C87] << 8);
-        const rel = dfccl - 0x4000;
-        const third = (rel >> 11) & 3;       // screen third (0-2)
-        const rowInThird = (rel >> 5) & 7;   // character row within third
-        actualRow = third * 8 + rowInThird;
-        actualCol = rel & 0x1F;
-      } else {
-        const col = mem[0x5C88];   // S_POSN column (33 = leftmost, 2 = rightmost)
-        const line = mem[0x5C89]; // S_POSN line (24 = top, 1 = bottom)
-        actualCol = 33 - col;
-        actualRow = 24 - line;
-      }
-
-      // When the K channel writes at column 0, the ROM has cleared and reset the
-      // editing area — clear the grid rows from here downward so stale text is removed.
-      if (isLower && actualCol === 0) {
-        const dfSz = this.cpu.memory[0x5C6B] || 2;
-        if (actualRow >= 24 - dfSz) {
-          this.screenGrid.fill(' ', actualRow * 32, 24 * 32);
-        }
-      }
-
-      if (actualCol >= 0 && actualCol <= 31 && actualRow >= 0 && actualRow <= 23) {
-        let ch: string;
-        if (a >= 0x80) {
-          ch = SPECTRUM_CHARS[a - 0x80];
-          // Tokens expand to multiple chars — only store first char in grid cell
-          if (ch.length > 1) ch = ch[0];
-        } else if (a === 0x5E) {
-          ch = '\u2191'; // ↑ instead of ^
-        } else if (a === 0x60) {
-          ch = '\u00A3'; // £ instead of `
-        } else if (a === 0x7F) {
-          ch = '\u00A9'; // © instead of DEL
-        } else {
-          ch = String.fromCharCode(a);
-        }
-        this.screenGrid[actualRow * 32 + actualCol] = ch;
-      }
-    } else if (a <= 0x1F) {
-      // Control codes — set skip count for parameter bytes
-      // AT (0x16) and TAB (0x17) take 2 parameter bytes
-      // INK (0x10), PAPER (0x11), FLASH (0x12), BRIGHT (0x13),
-      // INVERSE (0x14), OVER (0x15) take 1 parameter byte
-      if (a === 0x16 || a === 0x17) {
-        this.screenSkipCount = 2;
-      } else if (a >= 0x10 && a <= 0x15) {
-        this.screenSkipCount = 1;
-      }
-    }
-  }
-
   getScreenText(): string {
-    const lines: string[] = [];
-    for (let row = 0; row < 24; row++) {
-      const offset = row * 32;
-      let line = '';
-      for (let col = 0; col < 32; col++) {
-        line += this.screenGrid[offset + col];
-      }
-      lines.push(line.trimEnd());
-    }
-    return lines.join('\n');
+    return this.screenText.getText();
   }
 
   clearScreenGrid(): void {
-    this.screenGrid.fill(' ');
-    this.screenSkipCount = 0;
+    this.screenText.clear();
   }
 
-  get tracing(): boolean { return this._tracing; }
+  ocrScreen(): string {
+    return this.screenText.ocr(this.cpu.memory);
+  }
 
   startTrace(mode: 'full' | 'contention' | 'portio' = 'full'): void {
     this._traceBuffer = [];
@@ -1146,41 +734,6 @@ export class Spectrum {
     return '';
   }
 
-  private logPortAccess(dir: string, port: number, val: number): void {
-    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
-    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
-    const pc = this.cpu.pc;
-
-    if (this._traceMode === 'portio') {
-      const tally = dir === 'IN' ? this._portTallyIn! : this._portTallyOut!;
-      let entry = tally.get(port);
-      if (!entry) {
-        entry = { count: 0, pcs: new Set(), vals: new Set() };
-        tally.set(port, entry);
-      }
-      entry.count++;
-      if (entry.pcs.size < 32) entry.pcs.add(pc);
-      if (entry.vals.size < 64) entry.vals.add(val);
-      return;
-    } else if (this._traceMode === 'contention' && pc >= 0x4000) {
-      const frameTStates = this.cpu.tStates - this.frameStartTStates;
-      const line = ((frameTStates - this.timing.contentionStart) / this.timing.tStatesPerLine) | 0;
-      const contended = this.isContended(pc);
-      const isULA = (port & 1) === 0;
-      const label = this.portLabel(port);
-      // Log ULA reads from contended memory (contention probes) and
-      // reads from unrecognised ports (potential floating bus reads)
-      if (dir === 'IN' && (contended || !label)) {
-        const tag = isULA && contended ? ' (contention probe)' :
-                    !label ? ` (floating bus? ${val === 0xFF ? 'idle' : 'VRAM'})` : '';
-        this._traceBuffer.push(
-          `${h16(pc)}  IN port=${h16(port)} val=${h8(val)} fT=${frameTStates} line=${line}${tag}`
-        );
-      }
-    }
-    if (this._traceBuffer.length >= 500_000) this._tracing = false;
-  }
-
   private portLabel(port: number): string {
     if ((port & 1) === 0) return 'ULA';
     if ((port & 0x00E0) === 0) return 'Kemp';
@@ -1224,72 +777,6 @@ export class Spectrum {
     this._portTallyIn = null;
     this._portTallyOut = null;
     return parts.join('\n');
-  }
-
-  /**
-   * OCR fallback: compare each 8×8 screen cell against the CHARS character set.
-   * Returns a 32×24 text string (with newlines) of recognised characters.
-   */
-  ocrScreen(): string {
-    const mem = this.cpu.memory;
-    const chars = mem[0x5C36] | (mem[0x5C37] << 8);
-    let text = '';
-
-    for (let charRow = 0; charRow < 24; charRow++) {
-      const third = charRow >> 3;
-      const rowInThird = charRow & 7;
-
-      for (let charCol = 0; charCol < 32; charCol++) {
-        const base = 0x4000 + (third << 11) + (rowInThird << 5) + charCol;
-
-        // Fast path: all-zero cell → space
-        const b0 = mem[base];
-        if (b0 === 0) {
-          let allZero = true;
-          for (let p = 1; p < 8; p++) {
-            if (mem[base + (p << 8)] !== 0) { allZero = false; break; }
-          }
-          if (allZero) { text += ' '; continue; }
-        }
-
-        // Compare against CHARS (codes 33-127, space already handled)
-        let ch = '';
-        for (let c = 33; c < 128; c++) {
-          const cb = chars + (c << 3);
-          let match = true;
-          for (let p = 0; p < 8; p++) {
-            if (mem[base + (p << 8)] !== mem[cb + p]) { match = false; break; }
-          }
-          if (match) {
-            ch = c === 0x5E ? '\u2191' : c === 0x60 ? '\u00A3' : c === 0x7F ? '\u00A9'
-               : String.fromCharCode(c);
-            break;
-          }
-        }
-
-        // Try inverted match (INVERSE video)
-        if (!ch) {
-          for (let c = 33; c < 128; c++) {
-            const cb = chars + (c << 3);
-            let match = true;
-            for (let p = 0; p < 8; p++) {
-              if (mem[base + (p << 8)] !== (mem[cb + p] ^ 0xFF)) { match = false; break; }
-            }
-            if (match) {
-              ch = c === 0x5E ? '\u2191' : c === 0x60 ? '\u00A3' : c === 0x7F ? '\u00A9'
-                 : String.fromCharCode(c);
-              break;
-            }
-          }
-        }
-
-        text += ch || ' ';
-      }
-
-      if (charRow < 23) text += '\n';
-    }
-
-    return text;
   }
 
   private setStatus(msg: string): void {
