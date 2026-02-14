@@ -30,16 +30,16 @@ export function StatusBar() {
     <div id="status-bar" class="status-controls">
       <div id="status">{statusText.value}</div>
       <div id="activity">
-        <Led id="led-kbd" kind="kbd" label="KBD" on={ledKbd.value} />
-        <Led id="led-kemp" kind="kemp" label="KEMP" on={ledKemp.value} />
+        <Led id="led-kbd" kind="kbd" label="KEYBOARD" on={ledKbd.value} />
+        <Led id="led-kemp" kind="kemp" label="KEMPSTON" on={ledKemp.value} />
         <Led id="led-ear" kind="ear" label="EAR" on={ledEar.value} />
         <Led id="led-load" kind="load" label="LOAD" on={ledLoad.value} />
         <Led id="led-rst16" kind="rst16" label="RST16" on={ledRst16.value}
           onClick={() => spectrum && toggleTranscribeMode('rst16')} />
         <Led id="led-text" kind="text" label="TEXT" on={ledText.value}
           onClick={() => spectrum && toggleTranscribeMode('text')} />
-        <Led id="led-beep" kind="beep" label="BEEP" on={ledBeep.value} />
-        <Led id="led-ay" kind="ay" label="AY-3" on={ledAy.value} />
+        <Led id="led-beep" kind="beep" label="BEEPER" on={ledBeep.value} />
+        <Led id="led-ay" kind="ay" label="AY-3-8912" on={ledAy.value} />
         <Led id="led-dsk" kind="dsk" label="DISK" on={ledDsk.value} />
       </div>
     </div>
