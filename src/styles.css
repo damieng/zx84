@@ -7,7 +7,7 @@
 }
 
 body {
-  background: #1a1a2e;
+  background: #555566;
   color: #e0e0e0;
   font-family: var(--font-ui);
   display: flex;
@@ -121,6 +121,9 @@ body {
   border-radius: 4px;
   overflow: hidden;
   padding: 0 6px 6px;
+  border-left: 2px solid #000;
+  border-right: 2px solid #000;
+  border-bottom: 2px solid #000;
 }
 
 .pane > .section-label {
@@ -275,9 +278,13 @@ canvas {
   gap: 12px;
 }
 
+.status-controls {
+  color: #000;
+}
+
 #status {
   font-size: 0.8rem;
-  color: #888;
+  color: inherit;
   flex: 1;
   min-width: 0;
   white-space: nowrap;
@@ -296,7 +303,7 @@ canvas {
   align-items: center;
   gap: 4px;
   font-size: 0.7rem;
-  color: #666;
+  color: inherit;
 }
 
 .led-dot {
@@ -322,8 +329,8 @@ canvas {
 .led[data-kind="dsk"].on .led-dot { background: #f44; }
 .led[data-kind="dsk"].on { color: #c88; }
 
-/* Display/Graphics pane */
-#display-panel {
+/* Display pane */
+#display-pane {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -336,13 +343,13 @@ canvas {
   gap: 8px;
 }
 
-#display-panel label {
+#display-pane label {
   flex-direction: row;
   align-items: center;
   gap: 4px;
 }
 
-#display-panel select {
+#display-pane select {
   width: auto;
   padding: 3px 6px;
   font-size: 0.8rem;
@@ -559,8 +566,6 @@ input[type="range"]::-moz-range-thumb {
 #banks-output {
   margin: 0;
   padding: 6px;
-  border: 1px solid #333;
-  border-radius: 4px;
   font-size: 0.7rem;
   white-space: pre;
 }
