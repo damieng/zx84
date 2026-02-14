@@ -649,15 +649,15 @@ export class Z80 {
               switch (p) {
                 case 0: this.write8(this.bc, this.a); break;
                 case 1: this.write8(this.de, this.a); break;
-                case 2: this.write16(this.fetch16(), this.hl); this.tStates += 4; break;
-                case 3: this.write8(this.fetch16(), this.a); this.tStates += 2; break;
+                case 2: this.write16(this.fetch16(), this.hl); this.tStates += 9; break;
+                case 3: this.write8(this.fetch16(), this.a); this.tStates += 6; break;
               }
             } else {
               switch (p) {
                 case 0: this.a = this.read8(this.bc); break;
                 case 1: this.a = this.read8(this.de); break;
-                case 2: this.hl = this.read16(this.fetch16()); this.tStates += 4; break;
-                case 3: this.a = this.read8(this.fetch16()); this.tStates += 2; break;
+                case 2: this.hl = this.read16(this.fetch16()); this.tStates += 9; break;
+                case 3: this.a = this.read8(this.fetch16()); this.tStates += 6; break;
               }
             }
             this.tStates += 7;
