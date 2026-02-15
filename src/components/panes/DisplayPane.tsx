@@ -121,18 +121,20 @@ export function DisplayPane() {
           </select>
         </label>
       </div>
-      <label class="checkbox-row">
-        <input type="checkbox" checked={subFrameRendering.value}
-          onChange={(e) => {
-            const v = (e.target as HTMLInputElement).checked;
-            subFrameRendering.value = v;
-            persistSetting('sub-frame-rendering', v ? 'on' : 'off');
-            if (spectrum) {
-              spectrum.subFrameRendering = v;
-            }
-          }} />
-        Sub-frame precision
-      </label>
+      <div class="slider-row">
+        <span class="slider-label">Precision</span>
+        <select value={subFrameRendering.value ? 'scanline' : 'frame'} onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value === 'scanline';
+          subFrameRendering.value = v;
+          persistSetting('sub-frame-rendering', v ? 'on' : 'off');
+          if (spectrum) {
+            spectrum.subFrameRendering = v;
+          }
+        }}>
+          <option value="frame">Per frame (50 Hz)</option>
+          <option value="scanline">Per scanline (15.6 kHz)</option>
+        </select>
+      </div>
       <div class="slider-row">
         <span class="slider-label">Renderer</span>
         <select id="renderer-select" value={renderer.value} onChange={(e) => {
