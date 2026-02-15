@@ -23,11 +23,11 @@ import { DrivePane } from './components/panes/DrivePane.tsx';
 import { TapePane } from './components/panes/TapePane.tsx';
 import { DisassemblyPane } from './components/panes/DisassemblyPane.tsx';
 
-import { paneOrder } from './store/panes.ts';
+import { paneOrder } from './ui/panes.ts';
 import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling } from './store/settings.ts';
 import {
   spectrum, joyPressForType, initAudio, init, loadFile,
-} from './store/emulator.ts';
+} from './emulator.ts';
 
 // ── Pane registry ───────────────────────────────────────────────────────
 
@@ -120,6 +120,7 @@ function onKeyUp(e: KeyboardEvent): void {
 
 const GAMEPAD_DEADZONE = 0.4;
 const gamepadPrevState: Array<Record<string, boolean>> = [{}, {}];
+const gamepadDetected: boolean[] = [false, false];
 
 function pollGamepads(): void {
   if (!spectrum) return;
@@ -131,6 +132,15 @@ function pollGamepads(): void {
     const gp = gamepads[p] ?? null;
     const prev = gamepadPrevState[p];
     const mode = joySelectors[p].value;
+
+    if (gp && !gamepadDetected[p]) {
+      console.log(`[Gamepad] P${p+1} connected: ${gp.id} (${gp.buttons.length} buttons, ${gp.axes.length} axes)`);
+      gamepadDetected[p] = true;
+    } else if (!gp && gamepadDetected[p]) {
+      console.log(`[Gamepad] P${p+1} disconnected`);
+      gamepadDetected[p] = false;
+    }
+
     if (!gp || mode === 'none') {
       for (const dir of ['up', 'down', 'left', 'right', 'fire']) {
         if (prev[dir]) {
@@ -194,13 +204,19 @@ export function App() {
   // Gamepad polling loop
   useEffect(() => {
     if (!needsGamepadPolling.value) return;
+    console.log('[Gamepad] Polling started. Checking for gamepads...');
+    console.log('[Gamepad] P1 mapping:', joyMapP1.value, '| P1 type:', joyP1.value);
+    console.log('[Gamepad] P2 mapping:', joyMapP2.value, '| P2 type:', joyP2.value);
     let rafId = 0;
     function loop() {
       pollGamepads();
       rafId = requestAnimationFrame(loop);
     }
     rafId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafId);
+    return () => {
+      console.log('[Gamepad] Polling stopped');
+      cancelAnimationFrame(rafId);
+    };
   }, [needsGamepadPolling.value]);
 
   // Init emulator on mount

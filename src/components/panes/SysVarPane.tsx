@@ -1,5 +1,5 @@
 import { Pane } from '../Pane.tsx';
-import { sysvarHtml } from '../../store/emulator.ts';
+import { sysvarHtml } from '../../emulator.ts';
 
 export function SysVarPane() {
   return (

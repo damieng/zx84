@@ -10,22 +10,22 @@
  */
 
 import { Z80 } from './cores/z80.ts';
-import { disasmOne, stripMarkers } from './z80-disasm.ts';
+import { disasmOne, stripMarkers } from './debug/z80-disasm.ts';
 import { AY3891x } from './cores/ay-3-8910.ts';
 import { SpectrumMemory } from './memory.ts';
-import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from './ula.ts';
+import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from './cores/ula.ts';
 import { SpectrumKeyboard } from './keyboard.ts';
-import { WebGLRenderer } from './webgl-renderer.ts';
-import { CanvasRenderer } from './canvas-renderer.ts';
-import type { IScreenRenderer } from './display.ts';
+import { WebGLRenderer } from './display/webgl-renderer.ts';
+import { CanvasRenderer } from './display/canvas-renderer.ts';
+import type { IScreenRenderer } from './display/display.ts';
 import { Audio } from './audio.ts';
-import { TapeDeck } from './formats/tap.ts';
+import { TapeDeck } from './tape/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
 import { Plus3DosTrap } from './plus3/plus3dos-trap.ts';
-import type { DskImage } from './formats/dsk.ts';
+import type { DskImage } from './plus3/dsk.ts';
 import { Contention } from './contention.ts';
-import { ScreenText } from './screen-text.ts';
-import { trapTapeLoad } from './tape-loader.ts';
+import { ScreenText } from './debug/screen-text.ts';
+import { trapTapeLoad } from './tape/tape-loader.ts';
 import { installMemoryHooks, wirePortIO } from './io-ports.ts';
 
 const Z80_CLOCK = 3500000;       // 3.5 MHz

@@ -6,11 +6,11 @@
  */
 
 import { batch } from '@preact/signals';
-import { Z80 } from '../cores/z80.ts';
-import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '../spectrum.ts';
-import { disassembleAroundPC, formatDisasmHtml } from '../z80-disasm.ts';
-import { parseBasicProgram, parseBasicVariables } from '../basic-parser.ts';
-import * as settings from './settings.ts';
+import { Z80 } from './cores/z80.ts';
+import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from './spectrum.ts';
+import { disassembleAroundPC, formatDisasmHtml } from './debug/z80-disasm.ts';
+import { parseBasicProgram, parseBasicVariables } from './debug/basic-parser.ts';
+import * as settings from './store/settings.ts';
 import {
   spectrum, floppySound, currentDiskInfo, currentDiskName,
   currentModel, emulationPaused, tracing,

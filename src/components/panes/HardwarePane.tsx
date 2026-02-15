@@ -4,7 +4,7 @@ import { HiCpuChip, HiPower } from 'react-icons/hi2';
 import {
   currentModel, romStatusText, switchModel, loadRomFiles,
   turboMode, clockSpeedText, resetMachine, toggleTurbo,
-} from '../../store/emulator.ts';
+} from '../../emulator.ts';
 import type { SpectrumModel } from '../../spectrum.ts';
 
 export function HardwarePane() {

@@ -3,24 +3,24 @@
  */
 
 import { signal, batch } from '@preact/signals';
-import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '../spectrum.ts';
-import { WebGLRenderer } from '../webgl-renderer.ts';
-import { CanvasRenderer } from '../canvas-renderer.ts';
-import { FloppySound } from '../plus3/floppy-sound.ts';
-import { Z80 } from '../cores/z80.ts';
-import { loadSNA, saveSNA } from '../formats/sna.ts';
-import { loadZ80 } from '../formats/z80format.ts';
-import { loadSZX, saveSZX } from '../formats/szx.ts';
-import { loadSP } from '../formats/sp.ts';
-import { unzip } from '../formats/zip.ts';
-import { parseTZX } from '../formats/tzx.ts';
-import { parseDSK } from '../formats/dsk.ts';
-import { showFilePicker } from '../ui/zip-picker.ts';
-import { disassemble, stripMarkers } from '../z80-disasm.ts';
-import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
-import * as settings from './settings.ts';
-import type { DskImage } from '../formats/dsk.ts';
-import type { TapeBlock } from '../formats/tap.ts';
+import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from './spectrum.ts';
+import { WebGLRenderer } from './display/webgl-renderer.ts';
+import { CanvasRenderer } from './display/canvas-renderer.ts';
+import { FloppySound } from './plus3/floppy-sound.ts';
+import { Z80 } from './cores/z80.ts';
+import { loadSNA, saveSNA } from './snapshot/sna.ts';
+import { loadZ80 } from './snapshot/z80format.ts';
+import { loadSZX, saveSZX } from './snapshot/szx.ts';
+import { loadSP } from './snapshot/sp.ts';
+import { unzip } from './snapshot/zip.ts';
+import { parseTZX } from './tape/tzx.ts';
+import { parseDSK } from './plus3/dsk.ts';
+import { showFilePicker } from './ui/zip-picker.ts';
+import { disassemble, stripMarkers } from './debug/z80-disasm.ts';
+import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './store/persistence.ts';
+import * as settings from './store/settings.ts';
+import type { DskImage } from './plus3/dsk.ts';
+import type { TapeBlock } from './tape/tap.ts';
 import { onFrame, updateRegsOnce, resetSpeedTracking, forceSpeedUpdate } from './frame-bridge.ts';
 export { fontDataHash, updateFontPreview, loadFontStore, saveFontStore, capturedFontData } from './frame-bridge.ts';
 

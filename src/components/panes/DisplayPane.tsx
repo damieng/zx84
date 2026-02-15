@@ -3,7 +3,7 @@ import {
   scale, brightness, contrast, smoothing, curvature, scanlines,
   maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, renderer, persistSetting,
 } from '../../store/settings.ts';
-import { spectrum, switchRenderer } from '../../store/emulator.ts';
+import { spectrum, switchRenderer } from '../../emulator.ts';
 
 interface MonitorPreset {
   maskType: number;

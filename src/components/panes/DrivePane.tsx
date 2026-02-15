@@ -5,7 +5,7 @@ import { HiFolderOpen, HiArrowUpTray, HiEllipsisVertical } from 'react-icons/hi2
 import {
   driveHtml, trapLogHtml, showTrapLog, currentModel,
   setDiskMode, ejectDisk, loadFile,
-} from '../../store/emulator.ts';
+} from '../../emulator.ts';
 import { diskMode } from '../../store/settings.ts';
 import { isPlus3 } from '../../spectrum.ts';
 

@@ -1,7 +1,7 @@
 import { Pane } from '../Pane.tsx';
 import { HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight, HiXMark } from 'react-icons/hi2';
 import { joyP1, joyP2, joyMapP1, joyMapP2, persistSetting } from '../../store/settings.ts';
-import { joyPressForType } from '../../store/emulator.ts';
+import { joyPressForType } from '../../emulator.ts';
 
 function DpadButton({ dir, playerIdx }: { dir: string; playerIdx: number }) {
   const selectors = [joyP1, joyP2];

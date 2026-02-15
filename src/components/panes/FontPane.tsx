@@ -4,7 +4,7 @@ import { HiPlus, HiArrowDownTray } from 'react-icons/hi2';
 import { fontName, persistSetting } from '../../store/settings.ts';
 import {
   setStatus, updateFontPreview, loadFontStore, saveFontStore, capturedFontData,
-} from '../../store/emulator.ts';
+} from '../../emulator.ts';
 
 function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void {
   const cols = 32, rows = 3;

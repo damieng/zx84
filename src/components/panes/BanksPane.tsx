@@ -1,5 +1,5 @@
 import { Pane } from '../Pane.tsx';
-import { banksHtml, currentModel } from '../../store/emulator.ts';
+import { banksHtml, currentModel } from '../../emulator.ts';
 import { is128kClass } from '../../spectrum.ts';
 
 export function BanksPane() {

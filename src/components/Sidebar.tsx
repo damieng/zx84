@@ -4,7 +4,7 @@
 
 import { type ComponentChildren } from 'preact';
 import { useCallback, useRef } from 'preact/hooks';
-import { movePaneTo } from '../store/panes.ts';
+import { movePaneTo } from '../ui/panes.ts';
 
 interface SidebarProps {
   id: string;

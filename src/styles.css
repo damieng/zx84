@@ -387,6 +387,14 @@ canvas {
   gap: 8px;
 }
 
+#display-controls label {
+  flex: 1;
+}
+
+#display-controls label:last-child {
+  justify-content: flex-end;
+}
+
 #display-pane label {
   flex-direction: row;
   align-items: center;

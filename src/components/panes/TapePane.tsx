@@ -6,10 +6,10 @@ import {
   tapeLoaded, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile,
-} from '../../store/emulator.ts';
+} from '../../emulator.ts';
 import { tapeAutoRewind, tapeCollapseBlocks } from '../../store/settings.ts';
 import { persistSetting } from '../../store/settings.ts';
-import type { TapeBlock, DataBlock } from '../../formats/tap.ts';
+import type { TapeBlock, DataBlock } from '../../tape/tap.ts';
 
 const HEADER_TYPES: Record<number, string> = {
   0: 'Program',

@@ -3,7 +3,7 @@
  */
 
 import { useRef, useEffect } from 'preact/hooks';
-import { setCanvas, spectrum, transcribeMode, transcribeText } from '../store/emulator.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeText } from '../emulator.ts';
 import { renderer } from '../store/settings.ts';
 
 export function Screen() {

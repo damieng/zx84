@@ -1,5 +1,5 @@
 import { Pane } from '../Pane.tsx';
-import { basicHtml } from '../../store/emulator.ts';
+import { basicHtml } from '../../emulator.ts';
 
 export function BasicPane() {
   return (

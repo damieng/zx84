@@ -61,7 +61,8 @@
       "WebFetch(domain:www.nonowt.com)",
       "WebFetch(domain:www.hnilica.cz)",
       "WebFetch(domain:problemkaputt.de)",
-      "WebFetch(domain:css-tricks.com)"
+      "WebFetch(domain:css-tricks.com)",
+      "Bash(git mv:*)"
     ]
   }
 }
