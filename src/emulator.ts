@@ -235,9 +235,6 @@ export async function createMachine(): Promise<boolean> {
   const savedAyStereo = settings.ayStereo() as 'MONO' | 'ABC' | 'BCA' | 'CBA';
   spectrum.ay.setStereoMode(savedAyStereo);
 
-  // Apply saved mouse enabled state
-  spectrum.kempstonMouseEnabled = settings.mouseEnabled();
-
   // Apply saved disk mode for +3
   if (isPlus3(model)) {
     spectrum.diskMode = settings.diskMode();
@@ -765,11 +762,11 @@ export function applyTape(data: Uint8Array, filename: string): void {
 
 // ── File routing ────────────────────────────────────────────────────────
 
-export async function loadFile(data: Uint8Array, filename: string): Promise<void> {
+export async function loadFile(data: Uint8Array, filename: string, unit?: number): Promise<void> {
   const ext = filename.toLowerCase().split('.').pop();
 
   if (ext === 'zip') {
-    await handleZipFile(data);
+    await handleZipFile(data, unit);
     return;
   }
 
@@ -783,11 +780,17 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
     if (!spectrum) { setStatus('Load a ROM first'); return; }
     try {
       const image = parseDSK(data);
-      setCurrentDiskInfo(image);
-      setCurrentDiskName(filename);
-      spectrum.loadDisk(image, 0);
-      setStatus(`Disk loaded: ${filename}`);
-      persistLastFile(data, filename);
+      const diskUnit = unit ?? 0; // Default to unit 0 if not specified
+      if (diskUnit === 0) {
+        setCurrentDiskInfo(image);
+        setCurrentDiskName(filename);
+      } else {
+        setCurrentDiskInfoB(image);
+        setCurrentDiskNameB(filename);
+      }
+      spectrum.loadDisk(image, diskUnit);
+      setStatus(`Disk ${diskUnit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
+      if (diskUnit === 0) persistLastFile(data, filename);
     } catch (e) {
       setStatus(`DSK error: ${(e as Error).message}`);
     }
@@ -804,7 +807,7 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
   setStatus(`Unknown file type: .${ext}`);
 }
 
-async function handleZipFile(data: Uint8Array): Promise<void> {
+async function handleZipFile(data: Uint8Array, unit?: number): Promise<void> {
   let entries;
   try {
     entries = await unzip(data);
@@ -831,7 +834,7 @@ async function handleZipFile(data: Uint8Array): Promise<void> {
     chosen = entries.find(e => e.name === picked)!;
   }
 
-  await loadFile(chosen.data, chosen.name);
+  await loadFile(chosen.data, chosen.name, unit);
 }
 
 // ── Save snapshot ───────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 import { createEffect, Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiOutlineFolderOpen, HiOutlineBackward, HiOutlinePlay, HiOutlinePause, HiOutlineEllipsisVertical } from 'solid-icons/hi';
+import { HiOutlineBackward, HiOutlinePlay, HiOutlinePause, HiOutlineEllipsisVertical, HiOutlineChevronLeft, HiOutlineChevronRight } from 'solid-icons/hi';
 import {
   tapeLoaded, tapeName, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
-  ejectTape, loadFile,
+  ejectTape, loadFile, tapePrev, tapeNext,
 } from '@/emulator.ts';
 import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
@@ -96,13 +96,14 @@ export function TapePane() {
   return (
     <Pane id="tape-panel" label="Tape" mono>
       <div id="tape-controls">
-        <button title="Open tape" onClick={() => fileInputRef?.click()}><HiOutlineFolderOpen /></button>
         <button title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
+        <button title="Previous block" onClick={tapePrev}><HiOutlineChevronLeft /></button>
         <button
           title={tapePaused() ? 'Resume' : 'Pause'}
           class={tapePaused() ? 'active' : ''}
           onClick={tapeTogglePause}
         >{tapePaused() ? <HiOutlinePlay /> : <HiOutlinePause />}</button>
+        <button title="Next block" onClick={tapeNext}><HiOutlineChevronRight /></button>
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
           title="Tape options"
@@ -122,7 +123,7 @@ export function TapePane() {
         <input
           type="file"
           ref={fileInputRef}
-          accept=".tap,.tzx"
+          accept=".tap,.tzx,.zip"
           style="display:none"
           onChange={async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
@@ -140,7 +141,7 @@ export function TapePane() {
       >
         <span class="tape-label">T:</span>
         <span class="tape-name-text" title={tapeLoaded() ? tapeName() : ''}>
-          {tapeLoaded() ? tapeName() : 'No tape loaded'}
+          {tapeLoaded() ? tapeName() : 'No tape inserted'}
         </span>
         <Show when={tapeLoaded()}>
           <button class="tape-eject" title="Eject tape" onClick={(e) => { e.stopPropagation(); ejectTape(); }}>

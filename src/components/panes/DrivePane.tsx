@@ -6,7 +6,7 @@ import { HiOutlineFolderOpen, HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  setDiskModeAction, ejectDisk, loadDiskToUnit,
+  setDiskModeAction, ejectDisk, loadFile,
 } from '@/emulator.ts';
 import { diskMode, dualDrives, setDualDrives, persistSetting } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
@@ -81,13 +81,13 @@ export function DrivePane() {
         <input
           type="file"
           ref={fileInputRefA}
-          accept=".dsk"
+          accept=".dsk,.zip"
           style="display:none"
           onChange={async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
             const data = new Uint8Array(await file.arrayBuffer());
-            loadDiskToUnit(data, file.name, 0);
+            await loadFile(data, file.name, 0);
             (e.target as HTMLInputElement).value = '';
           }}
         />
@@ -95,13 +95,13 @@ export function DrivePane() {
           <input
             type="file"
             ref={fileInputRefB}
-            accept=".dsk"
+            accept=".dsk,.zip"
             style="display:none"
             onChange={async (e) => {
               const file = (e.target as HTMLInputElement).files?.[0];
               if (!file) return;
               const data = new Uint8Array(await file.arrayBuffer());
-              loadDiskToUnit(data, file.name, 1);
+              await loadFile(data, file.name, 1);
               (e.target as HTMLInputElement).value = '';
             }}
           />
