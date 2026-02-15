@@ -13,17 +13,21 @@
 - [ ] `.tzx` advanced blocks (turbo loaders, direct recording, pure tone)
 
 ### Display Enhancements
-- [ ] Save screen as PNG
+- [x] Save screen as PNG
 - [ ] Save screen as animated GIF (flash support)
-- [ ] Per-scanline border color changes (full rainbow effects)
+- [x] Per-scanline border color changes (full rainbow effects)
 
 ### Audio Enhancements
 - [ ] 3-channel AY visualizer
-- [ ] Save music as `.ay` format
+- [ ] Extract music as `.ay` format???
+- [ ] Log music as `.psg` format
+- [ ] Log music as `.ym` format
+- [ ] Log music as `.vgm` format
 
 ### Debugger
 - [ ] Memory viewer / hex editor
-- [ ] BASIC program listing viewer
+- [x] BASIC program listing viewer
+- [x] Breakpoints
 - [ ] Watch expressions / conditional breakpoints
 
 ---
@@ -37,12 +41,9 @@
 - [ ] Key mapping customization UI
 
 ### Fonts
-- [ ] Auto-detect current font from memory
-- [ ] Save current font to `.ch8`
+- [x] Font hunting
+- [x] Save current font to `.ch8`
 - [ ] Real-time font replacement
-
-### Persistence
-- [ ] Save individual RAM blocks (e.g., screen memory)
 
 ### Performance
 - [ ] Performance profiling overlay (FPS, frame budget, T-state usage)
@@ -75,7 +76,7 @@
 
 ### Hardware Fixes
 - [ ] +3 Ghost fix (artifact reduction)
-- [ ] External 3" / 3.5" drive support
+- [x] External 3" / 3.5" drive support
 
 ### Sound Enhancements
 - [ ] Tape motor/relay sounds
@@ -89,22 +90,3 @@
 - [ ] Snow effect (register corruption on ULA memory contention clash)
 - [ ] Interrupt timing refinement (IM2 vector table reads)
 - [ ] Accurate +3 memory contention on special paging modes
-
----
-
-## Notes
-
-### Completed Recently
-See README.md for full feature list. Recent additions include:
-- Breakpoints and debugger stepping
-- Execution tracing with loop detection
-- Extended keyboard mappings
-- Drag-and-drop file loading
-- Sub-frame precision rendering
-- Activity monitoring LEDs
-- Turbo mode
-
-### Won't Do
-- Cloud save/sync (privacy concerns, keep it local-first)
-- Social features (out of scope)
-- ROM hosting (legal issues)

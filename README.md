@@ -37,7 +37,7 @@ Relive the 80s with customizable visual filters:
 - **Curvature** — Authentic barrel distortion
 - **Brightness/Contrast** — Fine-tune the picture
 - **Border Modes** — None, standard, or full (for overscan effects)
-- **Sub-frame Rendering** — Pixel-perfect rainbow effects
+- **Sub-frame Rendering** — Pixel-perfect rainbow effects including Nirvana+
 
 ### 🎵 Crystal-Clear Audio
 - **AudioWorklet** — Low-latency, glitch-free sound
@@ -145,70 +145,6 @@ That's it! For tape files, the emulator will start playback automatically.
 npm run build     # TypeScript check + Vite build → dist/
 npm run preview   # Serve production build locally
 ```
-
----
-
-## 🛠️ Architecture
-
-```
-src/
-├── app.tsx               Root component, pane registry
-├── main.tsx              Entry point, HMR setup
-├── spectrum.ts           Machine orchestrator, frame loop
-├── memory.ts             48K/128K/+2A memory with bank switching
-├── ula.ts                Display, keyboard, beeper
-├── keyboard.ts           Keyboard matrix and PC mappings
-├── display.ts            WebGL renderer with CRT shader
-├── audio.ts              AudioWorklet ring buffer
-├── floppy-sound.ts       Drive sound effects
-├── plus3dos-trap.ts      +3DOS BIOS-level disk traps
-├── cores/
-│   ├── z80.ts            Z80 CPU (all instructions + undocumented)
-│   ├── ay-3-8910.ts      AY-3-8912 sound chip
-│   └── upd765a.ts        uPD765A floppy controller
-├── formats/
-│   ├── sna.ts            .sna snapshots
-│   ├── z80format.ts      .z80 snapshots (v1-v3)
-│   ├── szx.ts            .szx snapshots (ZX-State)
-│   ├── tap.ts            .tap tapes
-│   ├── tzx.ts            .tzx tapes
-│   ├── dsk.ts            .dsk disks
-│   └── zip.ts            ZIP extraction
-├── components/
-│   ├── panes/            All UI panes
-│   ├── Screen.tsx        Main display canvas
-│   ├── StatusBar.tsx     Activity LEDs and status
-│   └── Sidebar.tsx       Collapsible panel container
-└── store/
-    ├── emulator.ts       Global state, machine lifecycle
-    ├── settings.ts       Display/audio/joystick settings
-    └── panes.ts          Pane visibility and layout
-```
-
-**Core Loop**: The `Spectrum` class orchestrates everything — Z80 executes instructions, port I/O routes to ULA/AY/memory banking/FDC, the frame loop runs at 50.08 Hz paced by audio buffer fill, and display updates via WebGL.
-
----
-
-## 🧪 Technical Details
-
-### Accuracy
-- **Contended Memory** — Accurate delay patterns for 48K (0x4000-0x7FFF) and 128K (odd banks)
-- **Floating Bus** — Port reads return ULA video data during active display
-- **I/O Contention** — Proper port access delays
-- **Sub-cycle Timing** — VRAM writes tracked per T-state for rainbow effects
-
-### Tech Stack
-- **TypeScript** — Strict mode, zero runtime dependencies
-- **Preact** — Lightweight React alternative for UI
-- **Signals** — Reactive state management
-- **Vite** — Fast dev server and optimized builds
-- **Browser APIs** — Web Audio, WebGL, IndexedDB, DecompressionStream
-
-### Performance
-- **60 FPS** — Smooth emulation at native Spectrum speed
-- **Turbo Mode** — ~14x speed-up for fast-loading
-- **Audio Pacing** — Zero drift, perfect pitch
-- **Memory Efficient** — No garbage collection pressure
 
 ---
 
