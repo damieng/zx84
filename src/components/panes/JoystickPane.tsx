@@ -134,6 +134,7 @@ function JoyColumn({ playerIdx, label }: { playerIdx: number; label: string }) {
         <select id={`joy-map-${label.toLowerCase()}`} value={joyMapSel.value} onChange={handleMapChange}>
           <option value="none">No mapping</option>
           <option value="keys">Cursor keys</option>
+          <option value="wasd">WASD + Space</option>
           {hasGamepadConfig && <option value="gamepad">Gamestick</option>}
           <option value="gamepad-configure">Configure Gamestick</option>
         </select>

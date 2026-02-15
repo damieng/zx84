@@ -61,9 +61,19 @@ function renderPanes(side: 'left' | 'right') {
 
 // ── Keyboard ────────────────────────────────────────────────────────────
 
-const HOST_KEY_TO_JOY: Record<string, string> = {
+const CURSOR_KEY_TO_JOY: Record<string, string> = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
   AltRight: 'fire', Space: 'fire',
+};
+
+const WASD_KEY_TO_JOY: Record<string, string> = {
+  KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right',
+  Space: 'fire',
+};
+
+const KEY_MAP_FOR_MODE: Record<string, Record<string, string>> = {
+  keys: CURSOR_KEY_TO_JOY,
+  wasd: WASD_KEY_TO_JOY,
 };
 
 function setDpadHighlight(player: number, dir: string, pressed: boolean): void {
@@ -72,23 +82,27 @@ function setDpadHighlight(player: number, dir: string, pressed: boolean): void {
   btn?.classList.toggle('pressed', pressed);
 }
 
+function handleJoyKey(e: KeyboardEvent, pressed: boolean): boolean {
+  const joySelectors = [joyP1, joyP2];
+  const joyMapSelectors = [joyMapP1, joyMapP2];
+  let handled = false;
+  for (let p = 0; p < 2; p++) {
+    const mapMode = joyMapSelectors[p].value;
+    const keyMap = KEY_MAP_FOR_MODE[mapMode];
+    if (!keyMap || joySelectors[p].value === 'none') continue;
+    const joyDir = keyMap[e.code];
+    if (joyDir) {
+      joyPressForType(joyDir, pressed, joySelectors[p].value);
+      setDpadHighlight(p, joyDir, pressed);
+      handled = true;
+    }
+  }
+  return handled;
+}
+
 function onKeyDown(e: KeyboardEvent): void {
   if (!spectrum) return;
-  const joyDir = HOST_KEY_TO_JOY[e.code];
-  if (joyDir) {
-    const joySelectors = [joyP1, joyP2];
-    const joyMapSelectors = [joyMapP1, joyMapP2];
-    let handled = false;
-    for (let p = 0; p < 2; p++) {
-      if (joyMapSelectors[p].value === 'keys' && joySelectors[p].value !== 'none') {
-        joyPressForType(joyDir, true, joySelectors[p].value);
-        setDpadHighlight(p, joyDir, true);
-        handled = true;
-      }
-    }
-    if (handled) { e.preventDefault(); return; }
-  }
-
+  if (handleJoyKey(e, true)) { e.preventDefault(); return; }
   if (spectrum.keyboard.handleKeyEvent(e.code, true, e.key)) {
     e.preventDefault();
   }
@@ -96,22 +110,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
 function onKeyUp(e: KeyboardEvent): void {
   if (!spectrum) return;
-
-  const joyDir = HOST_KEY_TO_JOY[e.code];
-  if (joyDir) {
-    const joySelectors = [joyP1, joyP2];
-    const joyMapSelectors = [joyMapP1, joyMapP2];
-    let handled = false;
-    for (let p = 0; p < 2; p++) {
-      if (joyMapSelectors[p].value === 'keys' && joySelectors[p].value !== 'none') {
-        joyPressForType(joyDir, false, joySelectors[p].value);
-        setDpadHighlight(p, joyDir, false);
-        handled = true;
-      }
-    }
-    if (handled) { e.preventDefault(); return; }
-  }
-
+  if (handleJoyKey(e, false)) { e.preventDefault(); return; }
   if (spectrum.keyboard.handleKeyEvent(e.code, false, e.key)) {
     e.preventDefault();
   }
