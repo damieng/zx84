@@ -4,8 +4,8 @@
 
 import { signal, batch } from '@preact/signals';
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '../spectrum.ts';
-import { Display } from '../display.ts';
-import { CanvasDisplay } from '../canvas-display.ts';
+import { WebGLRenderer } from '../webgl-renderer.ts';
+import { CanvasRenderer } from '../canvas-renderer.ts';
 import { FloppySound } from '../plus3/floppy-sound.ts';
 import { Z80 } from '../cores/z80.ts';
 import { loadSNA, saveSNA } from '../formats/sna.ts';
@@ -161,8 +161,8 @@ export function setCanvas(el: HTMLCanvasElement): void {
     const w = spectrum.ula.screenWidth;
     const h = spectrum.ula.screenHeight;
     spectrum.display = settings.renderer.value === 'canvas'
-      ? new CanvasDisplay(el, w, h)
-      : new Display(el, w, h);
+      ? new CanvasRenderer(el, w, h)
+      : new WebGLRenderer(el, w, h);
     applyDisplaySettings();
   }
 }

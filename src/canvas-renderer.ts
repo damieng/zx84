@@ -5,9 +5,9 @@
  * onto the visible canvas with imageSmoothingEnabled = false.
  */
 
-import type { IDisplay } from './display.ts';
+import type { IScreenRenderer } from './display.ts';
 
-export class CanvasDisplay implements IDisplay {
+export class CanvasRenderer implements IScreenRenderer {
   canvas: HTMLCanvasElement;
   scale = 2;
 
