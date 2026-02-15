@@ -30,6 +30,16 @@ export function Sidebar(props: SidebarProps) {
     pane.classList.add('dragging');
     e.dataTransfer!.effectAllowed = 'move';
     e.dataTransfer!.setData('text/plain', pane.id);
+
+    // Use a compact drag image (just the label bar) to avoid ghosting all panes
+    const label = pane.querySelector('.section-label') as HTMLElement;
+    if (label) {
+      const ghost = label.cloneNode(true) as HTMLElement;
+      ghost.style.cssText = `position:fixed;top:-1000px;width:${label.offsetWidth}px;background:#000;color:#fff;padding:6px 10px;border-radius:4px;font-size:0.85rem;`;
+      document.body.appendChild(ghost);
+      e.dataTransfer!.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2);
+      requestAnimationFrame(() => ghost.remove());
+    }
   }
 
   function onDragEnd(e: DragEvent) {
