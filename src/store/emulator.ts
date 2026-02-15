@@ -8,14 +8,14 @@ import { FloppySound } from '../plus3/floppy-sound.ts';
 import { Z80 } from '../cores/z80.ts';
 import { loadSNA, saveSNA } from '../formats/sna.ts';
 import { loadZ80 } from '../formats/z80format.ts';
-import { loadSZX } from '../formats/szx.ts';
+import { loadSZX, saveSZX } from '../formats/szx.ts';
 import { loadSP } from '../formats/sp.ts';
 import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
 import { showFilePicker } from '../ui/zip-picker.ts';
 import { disassemble, disassembleAroundPC, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
-import { parseBasicProgram } from '../basic-parser.ts';
+import { parseBasicProgram, parseBasicVariables } from '../basic-parser.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
@@ -34,6 +34,7 @@ export const tracing = signal(false);
 export const regsHtml = signal('');
 export const sysvarHtml = signal('');
 export const basicHtml = signal('');
+export const basicVarsHtml = signal('');
 export const banksHtml = signal('');
 export const diskInfoHtml = signal('');
 export const driveHtml = signal('');
@@ -160,7 +161,7 @@ export function setRomStatus(msg: string): void {
 
 export function setCanvas(el: HTMLCanvasElement): void {
   canvasEl = el;
-  if (spectrum) createMachine();
+  if (spectrum) createMachineSync();
 }
 
 export function applyDisplaySettings(): void {
@@ -184,9 +185,7 @@ export function applyDisplaySettings(): void {
   spectrum.subFrameRendering = settings.subFrameRendering.value;
 }
 
-export function createMachine(): boolean {
-  console.log('[HMR] createMachine() called');
-
+export async function createMachine(): Promise<boolean> {
   if (!canvasEl) return false;
   if (spectrum) {
     spectrum.destroy();
@@ -208,8 +207,7 @@ export function createMachine(): boolean {
     spectrum.reset();
 
     // Try to restore HMR state before starting
-    hmrRestored = restoreHMRState();
-    console.log('[HMR] HMR restored:', hmrRestored);
+    hmrRestored = await restoreHMRState();
     if (!hmrRestored) {
       spectrum.start();
     }
@@ -248,6 +246,10 @@ export function createMachine(): boolean {
   return hmrRestored;
 }
 
+export function createMachineSync(): void {
+  createMachine().catch(err => console.error('createMachine error:', err));
+}
+
 export function unpause(): void {
   emulationPaused.value = false;
 }
@@ -256,6 +258,7 @@ function clearDebugPanels(): void {
   disasmText.value = '';
   sysvarHtml.value = '';
   basicHtml.value = '';
+  basicVarsHtml.value = '';
 }
 
 export function togglePause(): void {
@@ -468,7 +471,7 @@ export async function switchModel(model: SpectrumModel): Promise<void> {
     setRomStatus('');
   }
 
-  createMachine();
+  await createMachine();
 }
 
 // ── ROM loading ─────────────────────────────────────────────────────────
@@ -494,7 +497,7 @@ export async function applyROM(data: Uint8Array, fileLabel: string): Promise<voi
   await persistROM(detectedModel, data, fileLabel);
   setRomStatus('');
 
-  createMachine();
+  await createMachine();
 }
 
 export async function loadRomFiles(files: FileList): Promise<void> {
@@ -542,7 +545,7 @@ async function ensure128kROM(): Promise<boolean> {
       currentModel.value = model;
       romData = entry.data;
       setRomStatus('');
-      createMachine();
+      await createMachine();
       return true;
     }
   }
@@ -1128,10 +1131,11 @@ function updateHardwareSignals(model: SpectrumModel): void {
   }
 }
 
-/** Update disassembly, system variables, and BASIC listing signals. */
+/** Update disassembly, system variables, BASIC listing, and variables signals. */
 function updateDebugSignals(): void {
   sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, currentModel.value);
   basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
+  basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
   const cpu = spectrum!.cpu;
   const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
   disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
@@ -1265,10 +1269,11 @@ function onFrame(): void {
       }
     }
 
-    // Registers + sysvars + BASIC always updated
+    // Registers + sysvars + BASIC + vars always updated
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
     basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
+    basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
 
     // Disassembly only when paused (breakpoint hit etc.)
     if (emulationPaused.value) {
@@ -1367,7 +1372,7 @@ export async function init(): Promise<void> {
   if (entry) {
     romData = entry.data;
     setRomStatus('');
-    const hmrRestored = createMachine();
+    const hmrRestored = await createMachine();
 
     // Only restore last file if HMR state wasn't just restored
     if (!hmrRestored) {
@@ -1417,24 +1422,25 @@ export function initAudio(): void {
 const HMR_STATE_KEY = 'zx84-hmr-state';
 
 export function saveHMRState(): void {
-  console.log('[HMR] saveHMRState() called', { spectrum: !!spectrum, romData: !!romData });
-
-  if (!spectrum || !romData) {
-    console.warn('[HMR] saveHMRState() aborted - no spectrum or romData');
-    return;
-  }
+  if (!spectrum || !romData) return;
 
   try {
     // Stop emulation temporarily
     const wasPaused = emulationPaused.value;
     if (!wasPaused) spectrum.stop();
 
-    // Save snapshot data
-    const snaData = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
-    console.log('[HMR] SNA data created:', snaData.length, 'bytes');
+    // Save snapshot data as SZX
+    const ayRegs = spectrum.ay.getRegisters();
+    const szxData = saveSZX(
+      spectrum.cpu,
+      spectrum.memory,
+      spectrum.ula.borderColor,
+      ayRegs,
+      spectrum.ay.selectedReg
+    );
 
     // Convert to base64 for localStorage
-    const b64 = btoa(String.fromCharCode(...snaData));
+    const b64 = btoa(String.fromCharCode(...szxData));
 
     // Save state bundle
     const state = {
@@ -1444,31 +1450,21 @@ export function saveHMRState(): void {
     };
 
     localStorage.setItem(HMR_STATE_KEY, JSON.stringify(state));
-    console.log('[HMR] State saved to localStorage, size:', b64.length, 'chars');
   } catch (err) {
-    console.error('[HMR] Failed to save HMR state:', err);
+    console.warn('Failed to save HMR state:', err);
   }
 }
 
-export function restoreHMRState(): boolean {
-  console.log('[HMR] restoreHMRState() called');
-
+export async function restoreHMRState(): Promise<boolean> {
   try {
     const raw = localStorage.getItem(HMR_STATE_KEY);
-    if (!raw) {
-      console.log('[HMR] No saved state found in localStorage');
-      return false;
-    }
+    if (!raw) return false;
 
-    console.log('[HMR] Found saved state, parsing...');
     const state = JSON.parse(raw);
     const age = Date.now() - state.timestamp;
 
-    console.log('[HMR] State age:', age, 'ms');
-
     // Only restore if less than 60 seconds old (avoid restoring stale state)
     if (age > 60000) {
-      console.warn('[HMR] State too old, discarding');
       localStorage.removeItem(HMR_STATE_KEY);
       return false;
     }
@@ -1481,31 +1477,47 @@ export function restoreHMRState(): boolean {
       data[i] = binary.charCodeAt(i);
     }
 
-    console.log('[HMR] Decoded snapshot:', data.length, 'bytes');
-
     // Wait for spectrum to be ready
-    if (!spectrum || !romData) {
-      console.warn('[HMR] Spectrum not ready yet');
-      return false;
-    }
+    if (!spectrum || !romData) return false;
 
-    // Load snapshot
-    console.log('[HMR] Loading snapshot into spectrum...');
+    // Load SZX snapshot
     spectrum.stop();
     spectrum.reset();
-    const result = loadSNA(data, spectrum.cpu, spectrum.memory);
+    const result = await loadSZX(data, spectrum.cpu, spectrum.memory);
+
+    // Apply paging state for 128K
+    if (result.is128K) {
+      spectrum.memory.port7FFD = result.port7FFD;
+      spectrum.memory.currentBank = result.port7FFD & 0x07;
+      spectrum.memory.currentROM = (result.port7FFD >> 4) & 1;
+      spectrum.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
+      if (isPlus2AClass(currentModel.value)) {
+        spectrum.memory.port1FFD = result.port1FFD;
+        spectrum.memory.specialPaging = (result.port1FFD & 1) !== 0;
+      }
+      spectrum.memory.applyBanking();
+    }
+
     spectrum.ula.borderColor = result.borderColor;
     spectrum.cpu.memory = spectrum.memory.flat;
+
+    // Restore AY state if present
+    if (result.ayRegs) {
+      spectrum.ay.setRegisters(result.ayRegs);
+      if (result.ayCurrentReg !== undefined) {
+        spectrum.ay.selectedReg = result.ayCurrentReg;
+      }
+    }
+
     spectrum.start();
 
     // Clean up
     localStorage.removeItem(HMR_STATE_KEY);
 
-    console.log('[HMR] State restored successfully! PC:', result);
     setStatus('HMR: State restored');
     return true;
   } catch (err) {
-    console.error('[HMR] Failed to restore HMR state:', err);
+    console.warn('Failed to restore HMR state:', err);
     localStorage.removeItem(HMR_STATE_KEY);
     return false;
   }

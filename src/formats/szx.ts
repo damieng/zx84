@@ -256,3 +256,103 @@ function build48KRAM(memory: SpectrumMemory): Uint8Array {
   ram.set(memory.ramBanks[0], 32768);   // 0xC000
   return ram;
 }
+
+// ── SZX Writer ──────────────────────────────────────────────────────────
+
+function w16(data: Uint8Array, offset: number, value: number): void {
+  data[offset] = value & 0xFF;
+  data[offset + 1] = (value >> 8) & 0xFF;
+}
+
+function w32(data: Uint8Array, offset: number, value: number): void {
+  data[offset] = value & 0xFF;
+  data[offset + 1] = (value >> 8) & 0xFF;
+  data[offset + 2] = (value >> 16) & 0xFF;
+  data[offset + 3] = (value >> 24) & 0xFF;
+}
+
+function writeBlockHeader(data: Uint8Array, offset: number, id: string, size: number): number {
+  // 4-byte ID
+  for (let i = 0; i < 4; i++) {
+    data[offset + i] = i < id.length ? id.charCodeAt(i) : 0;
+  }
+  // 4-byte size (LE)
+  w32(data, offset + 4, size);
+  return offset + 8;
+}
+
+export function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Uint8Array {
+  // Calculate total size:
+  // Header: 8 bytes
+  // Z80R: 8 (block header) + 37 (data) = 45
+  // SPCR: 8 + 4 = 12
+  // RAMP × 8: 8 × (8 + 3 + 16384) = 131144
+  // AY (optional): 8 + 18 = 26
+  const totalSize = 8 + 45 + 12 + (8 * (8 + 3 + 16384)) + (ayRegs ? 26 : 0);
+  const data = new Uint8Array(totalSize);
+  let offset = 0;
+
+  // ── Header ──────────────────────────────────────────────────────────
+  data[offset++] = 0x5A; // 'Z'
+  data[offset++] = 0x58; // 'X'
+  data[offset++] = 0x53; // 'S'
+  data[offset++] = 0x54; // 'T'
+  data[offset++] = 1;    // major version
+  data[offset++] = 4;    // minor version
+  data[offset++] = memory.is128K ? 2 : 1; // machine ID: 1=48K, 2=128K
+  data[offset++] = 0;    // flags
+
+  // ── Z80R block (CPU registers) ──────────────────────────────────────
+  offset = writeBlockHeader(data, offset, 'Z80R', 37);
+
+  w16(data, offset + 0, (cpu.a << 8) | cpu.f);   // AF
+  w16(data, offset + 2, (cpu.b << 8) | cpu.c);   // BC
+  w16(data, offset + 4, (cpu.d << 8) | cpu.e);   // DE
+  w16(data, offset + 6, (cpu.h << 8) | cpu.l);   // HL
+  w16(data, offset + 8, (cpu.a_ << 8) | cpu.f_); // AF'
+  w16(data, offset + 10, (cpu.b_ << 8) | cpu.c_); // BC'
+  w16(data, offset + 12, (cpu.d_ << 8) | cpu.e_); // DE'
+  w16(data, offset + 14, (cpu.h_ << 8) | cpu.l_); // HL'
+  w16(data, offset + 16, cpu.ix);
+  w16(data, offset + 18, cpu.iy);
+  w16(data, offset + 20, cpu.sp);
+  w16(data, offset + 22, cpu.pc);
+  data[offset + 24] = cpu.i;
+  data[offset + 25] = cpu.r;
+  data[offset + 26] = cpu.iff1 ? 1 : 0;
+  data[offset + 27] = cpu.iff2 ? 1 : 0;
+  data[offset + 28] = cpu.im;
+  w32(data, offset + 29, cpu.tStates);
+  data[offset + 33] = 0; // chHoldIntReqCycles
+  data[offset + 34] = cpu.halted ? 0x02 : 0; // chFlags
+  w16(data, offset + 35, 0); // wMemPtr
+  offset += 37;
+
+  // ── SPCR block (Spectrum-specific) ──────────────────────────────────
+  offset = writeBlockHeader(data, offset, 'SPCR', 4);
+  data[offset++] = borderColor & 0x07;
+  data[offset++] = memory.port7FFD;
+  data[offset++] = memory.port1FFD;
+  data[offset++] = (borderColor & 0x07) << 1; // portFE
+
+  // ── RAMP blocks (RAM pages) ─────────────────────────────────────────
+  for (let page = 0; page < 8; page++) {
+    offset = writeBlockHeader(data, offset, 'RAMP', 3 + 16384);
+    w16(data, offset, 0); // wFlags: 0 = uncompressed
+    offset += 2;
+    data[offset++] = page; // chPageNo
+    data.set(memory.ramBanks[page], offset);
+    offset += 16384;
+  }
+
+  // ── AY block (AY chip state) ────────────────────────────────────────
+  if (ayRegs) {
+    offset = writeBlockHeader(data, offset, 'AY\0\0', 18);
+    data[offset++] = 0; // chFlags
+    data[offset++] = ayCurrentReg ?? 0; // chCurrentRegister
+    data.set(ayRegs.slice(0, 16), offset);
+    offset += 16;
+  }
+
+  return data;
+}

@@ -16,7 +16,6 @@ render(<App />, root);
 
 // Save state before page unload (for full reloads)
 window.addEventListener('beforeunload', () => {
-  console.log('[HMR] beforeunload event - saving state');
   saveHMRState();
 });
 
@@ -35,7 +34,6 @@ if (import.meta.hot) {
   });
 
   import.meta.hot.dispose(() => {
-    console.log('[HMR] dispose() called');
     saveHMRState();
     destroy();
     render(null, root);

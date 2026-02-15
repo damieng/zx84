@@ -1,6 +1,5 @@
 /**
  * Root layout: sidebars, main screen, tooltip.
- * HMR test 4
  */
 
 import { useEffect } from 'preact/hooks';
@@ -17,6 +16,7 @@ import { DisplayPane } from './components/panes/DisplayPane.tsx';
 import { FontPane } from './components/panes/FontPane.tsx';
 import { SysVarPane } from './components/panes/SysVarPane.tsx';
 import { BasicPane } from './components/panes/BasicPane.tsx';
+import { BasicVarsPane } from './components/panes/BasicVarsPane.tsx';
 import { BanksPane } from './components/panes/BanksPane.tsx';
 import { DiskInfoPane } from './components/panes/DiskInfoPane.tsx';
 import { DrivePane } from './components/panes/DrivePane.tsx';
@@ -40,6 +40,7 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
   'font-panel': FontPane,
   'sysvar-panel': SysVarPane,
   'basic-panel': BasicPane,
+  'basic-vars-panel': BasicVarsPane,
   'banks-panel': BanksPane,
   'disk-info-panel': DiskInfoPane,
   'drive-panel': DrivePane,

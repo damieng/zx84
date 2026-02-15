@@ -217,3 +217,127 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+/**
+ * Parse ZX Spectrum 5-byte number to a displayable value.
+ * Format: 1 byte exponent, 4 bytes mantissa (or special integral format)
+ */
+function parse5ByteNumber(data: Uint8Array, offset: number): string {
+  const exp = data[offset];
+  const b1 = data[offset + 1];
+  const b2 = data[offset + 2];
+  const b3 = data[offset + 3];
+  const b4 = data[offset + 4];
+
+  // Integral format: exp=0, b1=0 or 0xFF (sign), b2-b3=value, b4=0
+  if (exp === 0 && b4 === 0) {
+    const isNeg = b1 === 0xFF;
+    let value = b2 | (b3 << 8);
+    if (isNeg) value = value - 65536;
+    return value.toString();
+  }
+
+  // Floating point format (simplified display)
+  // For now, just show it as a hex representation
+  return `[${exp.toString(16).padStart(2, '0')} ${b1.toString(16).padStart(2, '0')} ${b2.toString(16).padStart(2, '0')} ${b3.toString(16).padStart(2, '0')} ${b4.toString(16).padStart(2, '0')}]`;
+}
+
+/**
+ * Parse BASIC variables area from memory.
+ * Returns HTML for display.
+ */
+export function parseBasicVariables(mem: Uint8Array): string {
+  // Read VARS and E_LINE system variables
+  const varsAddr = mem[0x5C4B] | (mem[0x5C4C] << 8);
+  const eLineAddr = mem[0x5C59] | (mem[0x5C5A] << 8);
+
+  if (varsAddr === 0 || eLineAddr === 0 || varsAddr >= eLineAddr || varsAddr >= 0x10000) {
+    return '<span style="color:#666">(no variables)</span>';
+  }
+
+  const lines: string[] = [];
+  let offset = varsAddr;
+  let varCount = 0;
+  const maxVars = 1000; // Safety limit
+
+  while (offset < eLineAddr && varCount < maxVars) {
+    const firstByte = mem[offset];
+    if (firstByte === 0x80) break; // End marker
+
+    const typeFlags = firstByte & 0xE0;
+
+    // Simple numeric variable (0x60-0x7A)
+    if (typeFlags === 0x60) {
+      const name = String.fromCharCode(firstByte);
+      const value = parse5ByteNumber(mem, offset + 1);
+      lines.push(`<span class="var-name">${name}</span> = ${escapeHtml(value)}`);
+      offset += 6;
+      varCount++;
+    }
+    // String variable (0x40-0x5A)
+    else if (typeFlags === 0x40) {
+      const name = String.fromCharCode(firstByte) + '$';
+      const len = mem[offset + 1] | (mem[offset + 2] << 8);
+      const strData = mem.slice(offset + 3, offset + 3 + len);
+      const str = String.fromCharCode(...strData);
+      lines.push(`<span class="var-name">${name}</span> = "${escapeHtml(str)}"`);
+      offset += 3 + len;
+      varCount++;
+    }
+    // Numeric array (0x80-0x9A)
+    else if (typeFlags === 0x80) {
+      const name = String.fromCharCode(firstByte - 0x20) + '()';
+      const dataLen = mem[offset + 1] | (mem[offset + 2] << 8);
+      lines.push(`<span class="var-name">${name}</span> <span style="color:#888">[array]</span>`);
+      offset += 3 + dataLen;
+      varCount++;
+    }
+    // String array (0xC0-0xDA)
+    else if (typeFlags === 0xC0) {
+      const name = String.fromCharCode(firstByte - 0x80) + '$()';
+      const dataLen = mem[offset + 1] | (mem[offset + 2] << 8);
+      lines.push(`<span class="var-name">${name}</span> <span style="color:#888">[array]</span>`);
+      offset += 3 + dataLen;
+      varCount++;
+    }
+    // Multi-char numeric variable (0xA0-0xBA)
+    else if (typeFlags === 0xA0) {
+      let name = String.fromCharCode((firstByte & 0x1F) + 0x60);
+      let i = offset + 1;
+      while (i < eLineAddr) {
+        const ch = mem[i];
+        if (ch & 0x80) {
+          name += String.fromCharCode(ch & 0x7F);
+          i++;
+          break;
+        }
+        name += String.fromCharCode(ch);
+        i++;
+      }
+      const value = parse5ByteNumber(mem, i);
+      lines.push(`<span class="var-name">${name}</span> = ${escapeHtml(value)}`);
+      offset = i + 5;
+      varCount++;
+    }
+    // FOR-NEXT control variable (0xE0-0xFA)
+    else if (typeFlags === 0xE0) {
+      const name = String.fromCharCode(firstByte - 0x80);
+      const current = parse5ByteNumber(mem, offset + 1);
+      const limit = parse5ByteNumber(mem, offset + 6);
+      const step = parse5ByteNumber(mem, offset + 11);
+      lines.push(`<span class="var-name">${name}</span> = ${escapeHtml(current)} <span style="color:#888">TO ${escapeHtml(limit)} STEP ${escapeHtml(step)}</span>`);
+      offset += 18;
+      varCount++;
+    }
+    else {
+      // Unknown variable type - skip it
+      break;
+    }
+  }
+
+  if (lines.length === 0) {
+    return '<span style="color:#666">(no variables defined)</span>';
+  }
+
+  return lines.join('\n');
+}

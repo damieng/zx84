@@ -621,6 +621,27 @@ input[type="range"]::-moz-range-thumb {
   font-weight: bold;
 }
 
+/* BASIC variables pane */
+#basic-vars-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#basic-vars-output {
+  margin: 0;
+  padding: 6px;
+  font-size: 0.7rem;
+  white-space: pre;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+#basic-vars-output .var-name {
+  color: #6cf;
+  font-weight: bold;
+}
+
 /* Memory bank pane */
 #banks-panel {
   display: flex;
