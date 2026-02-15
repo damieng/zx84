@@ -28,7 +28,6 @@ function Led({ id, kind, label, tip, on, onClick }: {
 export function StatusBar() {
   return (
     <div id="status-bar" class="status-controls">
-      <div id="status">{statusText.value}</div>
       <div id="activity">
         <Led id="led-kbd" kind="kbd" label="KEYBOARD" on={ledKbd.value}
           tip="Reading the keyboard via the ULA port" />
@@ -53,6 +52,7 @@ export function StatusBar() {
         <Led id="led-rainbow" kind="rainbow" label="RAINBOW" on={ledRainbow.value}
           tip="Attribute area is being rewritten mid-frame (rainbow/colour-cycling effect)" />
       </div>
+      <div id="status">{statusText.value}</div>
     </div>
   );
 }

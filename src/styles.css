@@ -327,11 +327,8 @@ canvas {
 }
 
 #status-bar {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
   margin-top: 6px;
-  gap: 12px;
+  text-align: center;
 }
 
 .status-controls {
@@ -341,8 +338,6 @@ canvas {
 #status {
   font-size: 0.8rem;
   color: inherit;
-  flex: 1;
-  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -350,8 +345,8 @@ canvas {
 
 #activity {
   display: flex;
+  justify-content: center;
   gap: 8px;
-  flex-shrink: 0;
 }
 
 .led {
