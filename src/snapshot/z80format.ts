@@ -14,8 +14,8 @@
  *   https://sinclair.wiki.zxnet.co.uk/wiki/Z80_format
  */
 
-import { Z80 } from '../cores/z80.ts';
-import { SpectrumMemory } from '../memory.ts';
+import { Z80 } from '@/cores/z80.ts';
+import { SpectrumMemory } from '@/memory.ts';
 
 export interface Z80Result {
   is128K: boolean;

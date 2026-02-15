@@ -1,6 +1,6 @@
-import { Pane } from '../Pane.tsx';
-import { banksHtml, currentModel } from '../../emulator.ts';
-import { is128kClass } from '../../spectrum.ts';
+import { Pane } from '@/components/Pane.tsx';
+import { banksHtml, currentModel } from '@/emulator.ts';
+import { is128kClass } from '@/spectrum.ts';
 
 export function BanksPane() {
   return (

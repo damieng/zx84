@@ -9,7 +9,7 @@
  * seek/recalibrate succeed but read/write/format return "not ready."
  */
 
-import type { DskImage, DskTrack } from '../plus3/dsk.ts';
+import type { DskImage, DskTrack } from '@/plus3/dsk.ts';
 
 // ── Command codes (lower 5 bits of command byte) ────────────────────────
 

@@ -3,7 +3,7 @@
  */
 
 import { signal, computed } from '@preact/signals';
-import { getSaved, setSaved } from './persistence.ts';
+import { getSaved, setSaved } from '@/store/persistence.ts';
 
 // ── Display settings ────────────────────────────────────────────────────
 

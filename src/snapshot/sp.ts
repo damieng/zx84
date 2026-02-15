@@ -9,8 +9,8 @@
  *   https://fms.komkon.org/stuff/spectrum.faq
  */
 
-import { Z80 } from '../cores/z80.ts';
-import { SpectrumMemory } from '../memory.ts';
+import { Z80 } from '@/cores/z80.ts';
+import { SpectrumMemory } from '@/memory.ts';
 
 export interface SPResult {
   is128K: boolean;

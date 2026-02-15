@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
-import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
+import { Pane } from '@/components/Pane.tsx';
+import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import {
   HiPlay, HiPause,
   HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
@@ -11,7 +11,7 @@ import {
   stepInto, stepOver, stepOut,
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
-} from '../../emulator.ts';
+} from '@/emulator.ts';
 
 /** Find the data-addr from a click target inside .disasm-output */
 function addrFromEvent(e: MouseEvent): number | null {

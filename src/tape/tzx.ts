@@ -9,7 +9,7 @@
  * Loops are expanded at parse time.
  */
 
-import type { TapeBlock, DataBlock } from './tap.ts';
+import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
 const TZX_MAGIC = [0x5A, 0x58, 0x54, 0x61, 0x70, 0x65, 0x21, 0x1A]; // "ZXTape!\x1A"
 

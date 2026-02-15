@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
+import { Pane } from '@/components/Pane.tsx';
 import { HiFolderOpen, HiArrowDownTray } from 'react-icons/hi2';
-import { loadFile, saveSnapshot, saveScreenshot, saveRAM } from '../../emulator.ts';
+import { loadFile, saveSnapshot, saveScreenshot, saveRAM } from '@/emulator.ts';
 
 export function LoadSavePane() {
   const snapInputRef = useRef<HTMLInputElement>(null);

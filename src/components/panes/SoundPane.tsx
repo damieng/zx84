@@ -1,6 +1,6 @@
-import { Pane } from '../Pane.tsx';
-import { volume, ayMix, ayStereo, persistSetting } from '../../store/settings.ts';
-import { spectrum, applyDisplaySettings } from '../../emulator.ts';
+import { Pane } from '@/components/Pane.tsx';
+import { volume, ayMix, ayStereo, persistSetting } from '@/store/settings.ts';
+import { spectrum, applyDisplaySettings } from '@/emulator.ts';
 
 export function SoundPane() {
   return (

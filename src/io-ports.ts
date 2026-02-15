@@ -6,8 +6,8 @@
  * Kempston joystick, contention, and floating bus).
  */
 
-import type { Spectrum } from './spectrum.ts';
-import { is128kClass, isPlus2AClass, isPlus3 } from './spectrum.ts';
+import type { Spectrum } from '@/spectrum.ts';
+import { is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 
 /**
  * Override Z80 read8/write8 to apply per-access ULA contention and

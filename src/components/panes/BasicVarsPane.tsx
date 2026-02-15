@@ -1,5 +1,5 @@
-import { Pane } from '../Pane.tsx';
-import { basicVarsHtml } from '../../emulator.ts';
+import { Pane } from '@/components/Pane.tsx';
+import { basicVarsHtml } from '@/emulator.ts';
 
 export function BasicVarsPane() {
   return (

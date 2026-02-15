@@ -4,7 +4,7 @@
 
 import { type ComponentChildren } from 'preact';
 import { useCallback } from 'preact/hooks';
-import { collapsedPanes, toggleCollapsed } from '../ui/panes.ts';
+import { collapsedPanes, toggleCollapsed } from '@/ui/panes.ts';
 
 interface PaneProps {
   id: string;

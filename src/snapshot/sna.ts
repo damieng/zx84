@@ -5,8 +5,8 @@
  * 128K SNA: 131,103+ bytes (adds PC, port 0x7FFD, TR-DOS flag, extra banks)
  */
 
-import { Z80 } from '../cores/z80.ts';
-import { SpectrumMemory } from '../memory.ts';
+import { Z80 } from '@/cores/z80.ts';
+import { SpectrumMemory } from '@/memory.ts';
 
 export interface SNAResult {
   is128K: boolean;

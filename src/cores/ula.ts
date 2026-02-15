@@ -8,7 +8,7 @@
  * - Keyboard reading (port 0xFE, address lines select half-rows)
  */
 
-import { SpectrumKeyboard } from '../keyboard.ts';
+import { SpectrumKeyboard } from '@/keyboard.ts';
 
 // 16-color palette: normal (0-7) and bright (8-15)
 // RGBA values for each color

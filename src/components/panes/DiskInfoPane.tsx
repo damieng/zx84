@@ -1,6 +1,6 @@
-import { Pane } from '../Pane.tsx';
-import { diskInfoHtml, currentModel, currentDiskInfo } from '../../emulator.ts';
-import { isPlus3 } from '../../spectrum.ts';
+import { Pane } from '@/components/Pane.tsx';
+import { diskInfoHtml, currentModel, currentDiskInfo } from '@/emulator.ts';
+import { isPlus3 } from '@/spectrum.ts';
 
 export function DiskInfoPane() {
   return (

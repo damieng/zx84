@@ -7,8 +7,8 @@
  * Bank switching via port 0x7FFD swaps data in/out of the flat array.
  */
 
-import type { SpectrumModel } from './spectrum.ts';
-import { isPlus2AClass } from './spectrum.ts';
+import type { SpectrumModel } from '@/spectrum.ts';
+import { isPlus2AClass } from '@/spectrum.ts';
 
 /** Special paging all-RAM bank configurations (indexed by mode 0-3). */
 const SPECIAL_MODES: ReadonlyArray<readonly [number, number, number, number]> = [

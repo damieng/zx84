@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
-import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
+import { Pane } from '@/components/Pane.tsx';
+import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import { HiFolderOpen, HiArrowUpTray, HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
 import {
   tapeLoaded, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile,
-} from '../../emulator.ts';
-import { tapeAutoRewind, tapeCollapseBlocks } from '../../store/settings.ts';
-import { persistSetting } from '../../store/settings.ts';
-import type { TapeBlock, DataBlock } from '../../tape/tap.ts';
+} from '@/emulator.ts';
+import { tapeAutoRewind, tapeCollapseBlocks } from '@/store/settings.ts';
+import { persistSetting } from '@/store/settings.ts';
+import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
 const HEADER_TYPES: Record<number, string> = {
   0: 'Program',

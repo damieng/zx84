@@ -9,8 +9,8 @@
  * to decide whether to advance the tape player past the loaded block.
  */
 
-import { Z80 } from '../cores/z80.ts';
-import type { TapeDeck } from './tap.ts';
+import { Z80 } from '@/cores/z80.ts';
+import type { TapeDeck } from '@/tape/tap.ts';
 
 export function trapTapeLoad(cpu: Z80, tape: TapeDeck): boolean {
   // Expected flag byte is in A register

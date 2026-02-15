@@ -12,8 +12,8 @@
  * Each block: 4-byte ID + 4-byte LE payload size, then payload.
  */
 
-import { Z80 } from '../cores/z80.ts';
-import { SpectrumMemory } from '../memory.ts';
+import { Z80 } from '@/cores/z80.ts';
+import { SpectrumMemory } from '@/memory.ts';
 
 export interface SZXResult {
   is128K: boolean;

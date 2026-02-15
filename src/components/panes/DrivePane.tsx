@@ -1,13 +1,13 @@
 import { useRef } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
-import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
+import { Pane } from '@/components/Pane.tsx';
+import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import { HiFolderOpen, HiArrowUpTray, HiEllipsisVertical } from 'react-icons/hi2';
 import {
   driveHtml, trapLogHtml, showTrapLog, currentModel,
   setDiskMode, ejectDisk, loadFile,
-} from '../../emulator.ts';
-import { diskMode } from '../../store/settings.ts';
-import { isPlus3 } from '../../spectrum.ts';
+} from '@/emulator.ts';
+import { diskMode } from '@/store/settings.ts';
+import { isPlus3 } from '@/spectrum.ts';
 
 export function DrivePane() {
   const mode = diskMode.value;

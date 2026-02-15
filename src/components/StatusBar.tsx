@@ -5,7 +5,7 @@
 import {
   statusText, ledKbd, ledKemp, ledEar, ledLoad, ledRst16, ledText,
   ledBeep, ledAy, ledDsk, ledRainbow, toggleTranscribeMode, spectrum,
-} from '../emulator.ts';
+} from '@/emulator.ts';
 
 function Led({ id, kind, label, tip, on, onClick }: {
   id: string; kind: string; label: string; tip: string; on: boolean;

@@ -1,11 +1,11 @@
 import { useRef } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
+import { Pane } from '@/components/Pane.tsx';
 import { HiCpuChip, HiPower } from 'react-icons/hi2';
 import {
   currentModel, romStatusText, switchModel, loadRomFiles,
   turboMode, clockSpeedText, resetMachine, toggleTurbo,
-} from '../../emulator.ts';
-import type { SpectrumModel } from '../../spectrum.ts';
+} from '@/emulator.ts';
+import type { SpectrumModel } from '@/spectrum.ts';
 
 export function HardwarePane() {
   const romInputRef = useRef<HTMLInputElement>(null);

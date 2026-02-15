@@ -3,8 +3,8 @@
  */
 
 import { useRef, useEffect } from 'preact/hooks';
-import { setCanvas, spectrum, transcribeMode, transcribeText } from '../emulator.ts';
-import { renderer } from '../store/settings.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeText } from '@/emulator.ts';
+import { renderer } from '@/store/settings.ts';
 
 export function Screen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

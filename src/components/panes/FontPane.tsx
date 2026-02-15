@@ -1,10 +1,10 @@
 import { useRef, useEffect } from 'preact/hooks';
-import { Pane } from '../Pane.tsx';
+import { Pane } from '@/components/Pane.tsx';
 import { HiPlus, HiArrowDownTray } from 'react-icons/hi2';
-import { fontName, persistSetting } from '../../store/settings.ts';
+import { fontName, persistSetting } from '@/store/settings.ts';
 import {
   setStatus, updateFontPreview, loadFontStore, saveFontStore, capturedFontData,
-} from '../../emulator.ts';
+} from '@/emulator.ts';
 
 function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void {
   const cols = 32, rows = 3;

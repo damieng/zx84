@@ -9,7 +9,7 @@
  *   brightness/contrast, and vignette.
  */
 
-import type { IScreenRenderer } from './display.ts';
+import type { IScreenRenderer } from '@/display/display.ts';
 
 const VERT_SRC = `
   attribute vec2 a_pos;

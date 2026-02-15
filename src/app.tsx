@@ -3,31 +3,31 @@
  */
 
 import { useEffect } from 'preact/hooks';
-import { Sidebar } from './components/Sidebar.tsx';
-import { Screen } from './components/Screen.tsx';
-import { StatusBar } from './components/StatusBar.tsx';
-import { Tooltip } from './components/Tooltip.tsx';
+import { Sidebar } from '@/components/Sidebar.tsx';
+import { Screen } from '@/components/Screen.tsx';
+import { StatusBar } from '@/components/StatusBar.tsx';
+import { Tooltip } from '@/components/Tooltip.tsx';
 
-import { HardwarePane } from './components/panes/HardwarePane.tsx';
-import { LoadSavePane } from './components/panes/LoadSavePane.tsx';
-import { JoystickPane } from './components/panes/JoystickPane.tsx';
-import { SoundPane } from './components/panes/SoundPane.tsx';
-import { DisplayPane } from './components/panes/DisplayPane.tsx';
-import { FontPane } from './components/panes/FontPane.tsx';
-import { SysVarPane } from './components/panes/SysVarPane.tsx';
-import { BasicPane } from './components/panes/BasicPane.tsx';
-import { BasicVarsPane } from './components/panes/BasicVarsPane.tsx';
-import { BanksPane } from './components/panes/BanksPane.tsx';
-import { DiskInfoPane } from './components/panes/DiskInfoPane.tsx';
-import { DrivePane } from './components/panes/DrivePane.tsx';
-import { TapePane } from './components/panes/TapePane.tsx';
-import { DisassemblyPane } from './components/panes/DisassemblyPane.tsx';
+import { HardwarePane } from '@/components/panes/HardwarePane.tsx';
+import { LoadSavePane } from '@/components/panes/LoadSavePane.tsx';
+import { JoystickPane } from '@/components/panes/JoystickPane.tsx';
+import { SoundPane } from '@/components/panes/SoundPane.tsx';
+import { DisplayPane } from '@/components/panes/DisplayPane.tsx';
+import { FontPane } from '@/components/panes/FontPane.tsx';
+import { SysVarPane } from '@/components/panes/SysVarPane.tsx';
+import { BasicPane } from '@/components/panes/BasicPane.tsx';
+import { BasicVarsPane } from '@/components/panes/BasicVarsPane.tsx';
+import { BanksPane } from '@/components/panes/BanksPane.tsx';
+import { DiskInfoPane } from '@/components/panes/DiskInfoPane.tsx';
+import { DrivePane } from '@/components/panes/DrivePane.tsx';
+import { TapePane } from '@/components/panes/TapePane.tsx';
+import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
 
-import { paneOrder } from './ui/panes.ts';
-import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling } from './store/settings.ts';
+import { paneOrder } from '@/ui/panes.ts';
+import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling } from '@/store/settings.ts';
 import {
   spectrum, joyPressForType, initAudio, init, loadFile,
-} from './emulator.ts';
+} from '@/emulator.ts';
 
 // ── Pane registry ───────────────────────────────────────────────────────
 

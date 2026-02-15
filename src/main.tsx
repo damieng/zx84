@@ -5,9 +5,9 @@
  */
 
 import { render } from 'preact';
-import { App } from './app.tsx';
-import { destroy, saveHMRState } from './emulator.ts';
-import './styles.css';
+import { App } from '@/app.tsx';
+import { destroy, saveHMRState } from '@/emulator.ts';
+import '@/styles.css';
 
 const root = document.getElementById('app')!;
 render(<App />, root);

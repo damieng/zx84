@@ -8,8 +8,8 @@
  * falls on.
  */
 
-import { type SpectrumModel, is128kClass } from './spectrum.ts';
-import type { SpectrumMemory } from './memory.ts';
+import { type SpectrumModel, is128kClass } from '@/spectrum.ts';
+import type { SpectrumMemory } from '@/memory.ts';
 
 /** Model-dependent ULA timing parameters. */
 export interface MachineTiming {
