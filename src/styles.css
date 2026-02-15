@@ -627,9 +627,10 @@ input[type="range"]::-moz-range-thumb {
 .joy-deadzone {
   border-radius: 50%;
   background: #ddd;
-  border: 2px solid #999;
-  width: 100%;
-  height: 100%;
+  border: 1px solid #bbb;
+  width: 20px;
+  height: 20px;
+  margin: auto;
 }
 
 /* Waiting state: gentle blue pulse so you know which control to press */
