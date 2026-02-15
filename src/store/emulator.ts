@@ -668,35 +668,42 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
 export function applyTape(data: Uint8Array, filename: string): void {
   if (!spectrum) { setStatus('Load a ROM first'); return; }
 
+  // Stop the machine first to prevent the frame loop from interfering
+  spectrum.stop();
+
   const ext = filename.toLowerCase().split('.').pop();
+  let blocks: TapeBlock[];
   try {
     if (ext === 'tzx') {
-      spectrum.tape.blocks = parseTZX(data);
-      spectrum.tape.position = 0;
+      blocks = parseTZX(data);
     } else {
-      spectrum.loadTAP(data);
+      blocks = spectrum.tape.parseTAP(data);
     }
   } catch (e) {
+    spectrum.start();
     setStatus(`Error: ${(e as Error).message}`);
     return;
   }
 
-  spectrum.tape.rewind();
-  spectrum.tape.paused = false;
+  // Set tape state on the deck — start paused so the playback engine
+  // doesn't race ahead through blocks before the ROM actually tries to LOAD.
+  spectrum.tape.blocks = blocks;
+  spectrum.tape.position = 0;
+  spectrum.tape.paused = true;
 
+  // Reset machine (preserves tape) and restart
+  spectrum.reset();
+  spectrum.start();
+
+  // Update UI signals after machine state is settled
   batch(() => {
     tapeLoaded.value = true;
-    tapeBlocks.value = [...spectrum!.tape.blocks];
+    tapeBlocks.value = [...blocks];
     tapePosition.value = 0;
     tapePaused.value = true;
-    spectrum!.tape.paused = true;
     tapePlaying.value = true;
   });
 
-  spectrum.stop();
-  spectrum.reset();
-  spectrum.start();
-  spectrum.tape.startPlayback();
   unpause();
   setStatus(`Tape loaded: ${filename}`);
 }
@@ -877,9 +884,9 @@ export function tapeSetPosition(pos: number): void {
   tapePosition.value = pos;
 }
 
-export function toggleAutoRewind(): void {
-  settings.tapeAutoRewind.value = !settings.tapeAutoRewind.value;
-  settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind.value ? 'on' : 'off');
+export function toggleTapeCollapse(): void {
+  settings.tapeCollapse.value = !settings.tapeCollapse.value;
+  settings.persistSetting('tape-collapse', settings.tapeCollapse.value ? 'on' : 'off');
 }
 
 // ── Auto-type ───────────────────────────────────────────────────────────
@@ -1208,19 +1215,14 @@ function onFrame(): void {
     ledRst16.value = transcribeMode.value === 'rst16' || a.rst16Calls > 0;
     ledText.value = transcribeMode.value === 'text';
 
-    // Tape position
+    // Tape position + pause state (pause may change via ROM trap auto-unpause)
     if (spectrum!.tape.loaded) {
       tapePosition.value = spectrum!.tape.position;
+      if (tapePaused.value !== spectrum!.tape.paused) {
+        tapePaused.value = spectrum!.tape.paused;
+      }
     }
 
-
-    // Auto-rewind
-    if (settings.tapeAutoRewind.value && spectrum!.tape.loaded &&
-        spectrum!.tape.position >= spectrum!.tape.blocks.length &&
-        spectrum!.tape.blocks.length > 0) {
-      spectrum!.tape.rewind();
-      tapePosition.value = 0;
-    }
 
     // Registers + system state
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);

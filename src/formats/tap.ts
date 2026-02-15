@@ -132,13 +132,9 @@ export class TapeDeck {
 
   // ── TAP parser ─────────────────────────────────────────────────────────
 
-  /** Parse a TAP file into blocks */
-  load(fileData: Uint8Array): void {
-    this.blocks = [];
-    this.position = 0;
-    this.paused = false;
-    this.stopPlayback();
-
+  /** Parse a TAP file and return blocks without modifying deck state */
+  parseTAP(fileData: Uint8Array): TapeBlock[] {
+    const blocks: TapeBlock[] = [];
     let offset = 0;
     while (offset + 2 <= fileData.length) {
       const blockLen = fileData[offset] | (fileData[offset + 1] << 8);
@@ -150,7 +146,7 @@ export class TapeDeck {
       // Payload is everything between flag and checksum
       const data = fileData.slice(offset + 1, offset + blockLen - 1);
 
-      this.blocks.push({
+      blocks.push({
         kind: 'data',
         flag,
         data,
@@ -166,6 +162,15 @@ export class TapeDeck {
       });
       offset += blockLen;
     }
+    return blocks;
+  }
+
+  /** Parse a TAP file into blocks (legacy — sets deck state) */
+  load(fileData: Uint8Array): void {
+    this.blocks = this.parseTAP(fileData);
+    this.position = 0;
+    this.paused = false;
+    this.stopPlayback();
   }
 
   /**

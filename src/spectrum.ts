@@ -103,6 +103,7 @@ export class Spectrum {
 
   private running = false;
   private starting = false;
+  private startGen = 0;
   private rafId = 0;
   private tStatesPerSample: number;
 
@@ -283,11 +284,12 @@ export class Spectrum {
   async start(): Promise<void> {
     if (this.running || this.starting) return;
     this.starting = true;
+    const gen = ++this.startGen;
 
     await this.audio.init();
 
-    // Check if stop() was called while we were awaiting
-    if (!this.starting) return;
+    // Check if stop() was called or a newer start() was issued while we were awaiting
+    if (!this.starting || gen !== this.startGen) return;
     this.starting = false;
 
     this.tStatesPerSample = Z80_CLOCK / this.audio.sampleRate;
@@ -430,8 +432,14 @@ export class Spectrum {
       // Only trap when a ROM-loadable block is ahead; if only custom loader
       // blocks remain (tone/pulses/pure-data), let the ROM execute its real
       // LD-BYTES code so custom loaders can read EAR naturally.
-      if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 &&
+      // Auto-unpause: the tape starts paused on mount so the playback engine
+      // doesn't race ahead; we unpause here when the ROM actually tries to LOAD.
+      if (this.tape.loaded && this.cpu.pc === 0x0556 &&
           this.cpu.memory[0x0556] === 0x14 && this.tape.hasRomBlock()) {
+        if (this.tape.paused) {
+          this.tape.paused = false;
+          this.tape.startPlayback();
+        }
         trapTapeLoad(this.cpu, this.tape);
         this.tape.skipBlock(); // advance player past the consumed block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
