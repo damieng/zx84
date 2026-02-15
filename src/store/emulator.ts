@@ -62,7 +62,6 @@ export const tapePlaying = signal(false);
 
 // Transcribe mode
 export const transcribeMode = signal<'off' | 'rst16' | 'text'>('off');
-export const debugOverlay = signal('');
 export const transcribeText = signal('');
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
@@ -933,7 +932,7 @@ function renderRegs(cpu: Z80, tStatesPerFrame?: number): string {
   ].join('\n');
 }
 
-function renderSysVars(mem: Uint8Array): string {
+function renderSysVars(mem: Uint8Array, model: SpectrumModel): string {
   const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
   const rows: [string, string, string, string, string, string][] = [
     ['ERR_NR',  hex8(mem[0x5C3A]),        '1 less than error report code',
@@ -961,6 +960,31 @@ function renderSysVars(mem: Uint8Array): string {
     ['DF_SZ',   hex8(mem[0x5C6B]),         'Number of lines in lower part of screen',
      'SCR_CT',  hex8(mem[0x5C8C]),         'Scroll count — number of scrolls before "scroll?" message'],
   ];
+
+  // 128K/+2/+2A/+3: extra sysvars in the old printer buffer (5B00-5BFF)
+  if (is128kClass(model)) {
+    rows.push(
+      ['BANKM',  hex8(mem[0x5B5C]),          'Copy of port 7FFD (paging control)',
+       'BAUD',   hex16(w(0x5B5F)),            'RS232 bit period in T-states/26'],
+      ['SERFL',  hex8(mem[0x5B61]) + ',' + hex8(mem[0x5B62]), 'RS232 second-char-received flag and data',
+       'COL',    hex8(mem[0x5B63]),            'Current column from 1 to WIDTH'],
+      ['WIDTH',  hex8(mem[0x5B64]),            'Paper column width (default 80)',
+       'TVPARS', hex8(mem[0x5B65]),            'Number of inline RS232 parameters expected'],
+      ['FLAGS3', hex8(mem[0x5B66]),            'Printer/device flags (bit 3: RS232, bit 4: disk)',
+       'OLDSP',  hex16(w(0x5B6A)),             'Old stack pointer when TSTACK in use'],
+    );
+  }
+
+  // +2A/+3: disk-related variables
+  if (isPlus2AClass(model)) {
+    rows.push(
+      ['BNK678', hex8(mem[0x5B67]),            'Copy of port 1FFD (ext. paging, disk motor, strobe)',
+       'LODDRV', String.fromCharCode(mem[0x5B79] || 0x54), 'Default device for LOAD/VERIFY/MERGE'],
+      ['SAVDRV', String.fromCharCode(mem[0x5B7A] || 0x54), 'Default device for SAVE',
+       'DUMPLF', hex8(mem[0x5B7B]),            'Line feed units for COPY EXP (normally 9)'],
+    );
+  }
+
   const s = (name: string, tip: string) =>
     `<span class="reg-name" data-tip="${tip}">${name}</span>`;
   return rows.map(([n1, v1, t1, n2, v2, t2]) =>
@@ -1089,7 +1113,7 @@ function updateHardwareSignals(model: SpectrumModel): void {
 
 /** Update disassembly and system variable signals. */
 function updateDebugSignals(): void {
-  sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
+  sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, currentModel.value);
   const cpu = spectrum!.cpu;
   const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
   disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
@@ -1221,17 +1245,6 @@ function onFrame(): void {
       if (tapePaused.value !== spectrum!.tape.paused) {
         tapePaused.value = spectrum!.tape.paused;
       }
-    }
-
-
-    // Debug overlay for sub-frame diagnostics
-    if (spectrum!.subFrameRendering) {
-      const d = a;
-      const warn = !d.dbgIntFired || !d.dbgIff1AtStart ? ' !!!' : '';
-      debugOverlay.value =
-        `W:${d.subFrameVramWrites} INT:${d.dbgIntFired ? 'Y' : 'N'} IFF1:${d.dbgIff1AtStart ? '1' : '0'} HALT:${d.dbgHaltedAtStart ? 'Y' : 'N'} BNK:${d.dbgBankSwitches} OS:${d.dbgOvershoot} 1st:${d.dbgFirstWriteT} last:${d.dbgLastWriteT}${warn}`;
-    } else {
-      debugOverlay.value = '';
     }
 
     // Registers always updated

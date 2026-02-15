@@ -72,20 +72,6 @@ export interface IOActivity {
   subFrameVramWrites: number;
   /** Number of border color changes logged for sub-frame rendering this frame */
   subFrameBorderChanges: number;
-  /** Debug: did the interrupt fire this frame? */
-  dbgIntFired: boolean;
-  /** Debug: number of bank switches this frame */
-  dbgBankSwitches: number;
-  /** Debug: T-state overshoot from previous frame */
-  dbgOvershoot: number;
-  /** Debug: was CPU halted when frame started? */
-  dbgHaltedAtStart: boolean;
-  /** Debug: iff1 state when frame started */
-  dbgIff1AtStart: boolean;
-  /** Debug: frame-relative T-state of first VRAM write */
-  dbgFirstWriteT: number;
-  /** Debug: frame-relative T-state of last VRAM write */
-  dbgLastWriteT: number;
 }
 
 export class Spectrum {
@@ -107,7 +93,7 @@ export class Spectrum {
   biosTrap: Plus3DosTrap | null = null;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, dbgIntFired: false, dbgBankSwitches: 0, dbgOvershoot: 0, dbgHaltedAtStart: false, dbgIff1AtStart: false, dbgFirstWriteT: -1, dbgLastWriteT: -1 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
@@ -155,9 +141,9 @@ export class Spectrum {
   /** Sub-frame state: VRAM snapshot taken at frame start (6912 bytes: 0x4000-0x5AFF) */
   private vramShadow = new Uint8Array(6912);
   /** Sub-frame state: logged VRAM writes — T-states, offsets within shadow, values */
-  private vramWriteTs = new Int32Array(32768);
-  private vramWriteOff = new Uint16Array(32768);
-  private vramWriteVal = new Uint8Array(32768);
+  private vramWriteTs = new Int32Array(8192);
+  private vramWriteOff = new Uint16Array(8192);
+  private vramWriteVal = new Uint8Array(8192);
   private vramWriteCount = 0;
   /** Execution trace */
   private _tracing = false;
@@ -216,15 +202,12 @@ export class Spectrum {
   /** Log a VRAM write for sub-frame rendering replay (called from io-ports.ts write8 hook). */
   logVRAMWrite(addr: number, val: number): void {
     const i = this.vramWriteCount;
-    if (i < 32768) {
+    if (i < 8192) {
       const ft = this.cpu.tStates - this.contention.frameStartTStates;
       this.vramWriteTs[i] = ft;
       this.vramWriteOff[i] = addr - 0x4000;
       this.vramWriteVal[i] = val & 0xFF;
       this.vramWriteCount++;
-      // Track first/last write T-state for diagnostics
-      if (i === 0) this.activity.dbgFirstWriteT = ft;
-      this.activity.dbgLastWriteT = ft;
     }
   }
 
@@ -411,13 +394,6 @@ export class Spectrum {
     this.activity.rst16Calls = 0;
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
-    this.activity.dbgBankSwitches = 0;
-
-    // Debug: capture state before interrupt
-    this.activity.dbgHaltedAtStart = this.cpu.halted;
-    this.activity.dbgIff1AtStart = this.cpu.iff1;
-    this.activity.dbgOvershoot = this.cpu.tStates - (this.contention.frameStartTStates + this.contention.timing.tStatesPerFrame);
-
     // Frame starts when INT fires — mark the reference point BEFORE the CPU
     // responds, so interrupt-response T-states count as part of the frame.
     // This keeps contention phase, sub-frame scanline boundaries, and floating
@@ -430,12 +406,9 @@ export class Spectrum {
     // stays pending and fires as soon as EI re-enables interrupts.
     let intT = this.cpu.interrupt();
     let intPending = intT === 0;  // interrupt didn't fire — keep it pending
-    this.activity.dbgIntFired = intT > 0;
 
     // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;
-    this.activity.dbgFirstWriteT = -1;
-    this.activity.dbgLastWriteT = -1;
     if (subFrame) {
       this.vramShadow.set(this.memory.flat.subarray(0x4000, 0x5B00));
       this.vramWriteCount = 0;
@@ -516,7 +489,6 @@ export class Spectrum {
         intT = this.cpu.interrupt();
         if (intT > 0) {
           intPending = false;
-          this.activity.dbgIntFired = true;
         }
       }
 

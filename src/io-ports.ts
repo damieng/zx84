@@ -82,7 +82,6 @@ export function wirePortIO(s: Spectrum): void {
       if (match7FFD) {
         s.memory.bankSwitch(val);
         s.cpu.memory = s.memory.flat;
-        s.activity.dbgBankSwitches++;
       }
 
       // +2A: port 0x1FFD (port & 0xF002) === 0x1000

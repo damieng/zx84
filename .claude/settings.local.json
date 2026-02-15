@@ -56,7 +56,10 @@
       "Bash(mem:*)",
       "Bash(cont:*)",
       "Bash(npm run hmr-freeze:*)",
-      "Bash(npm run hmr-unfreeze:*)"
+      "Bash(npm run hmr-unfreeze:*)",
+      "WebFetch(domain:mdfs.net)",
+      "WebFetch(domain:www.nonowt.com)",
+      "WebFetch(domain:www.hnilica.cz)"
     ]
   }
 }

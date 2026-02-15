@@ -3,7 +3,7 @@
  */
 
 import { useRef, useEffect } from 'preact/hooks';
-import { setCanvas, spectrum, transcribeMode, transcribeText, debugOverlay } from '../store/emulator.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeText } from '../store/emulator.ts';
 
 export function Screen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,8 +50,6 @@ export function Screen() {
   const mode = transcribeMode.value;
   const active = mode !== 'off';
   const text = transcribeText.value;
-  const dbg = debugOverlay.value;
-
   return (
     <div id="screen-wrap">
       <canvas id="screen" ref={canvasRef} class={active ? 'dimmed' : ''} />
@@ -60,13 +58,6 @@ export function Screen() {
         ref={overlayRef}
         class={active ? 'active' : ''}
       >{text}</pre>
-      {dbg && <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        background: 'rgba(0,0,0,0.85)', color: '#0f0',
-        fontFamily: 'monospace', fontSize: '22px', padding: '6px 8px',
-        pointerEvents: 'none', zIndex: 10, whiteSpace: 'pre',
-        letterSpacing: '0.5px'
-      }}>{dbg}</div>}
     </div>
   );
 }
