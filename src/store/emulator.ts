@@ -15,6 +15,7 @@ import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
 import { showFilePicker } from '../ui/zip-picker.ts';
 import { disassemble, disassembleAroundPC, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
+import { parseBasicProgram } from '../basic-parser.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
@@ -32,6 +33,7 @@ export const tracing = signal(false);
 // Per-frame updated signals (written by bridge)
 export const regsHtml = signal('');
 export const sysvarHtml = signal('');
+export const basicHtml = signal('');
 export const banksHtml = signal('');
 export const diskInfoHtml = signal('');
 export const driveHtml = signal('');
@@ -243,6 +245,7 @@ export function unpause(): void {
 function clearDebugPanels(): void {
   disasmText.value = '';
   sysvarHtml.value = '';
+  basicHtml.value = '';
 }
 
 export function togglePause(): void {
@@ -1115,9 +1118,10 @@ function updateHardwareSignals(model: SpectrumModel): void {
   }
 }
 
-/** Update disassembly and system variable signals. */
+/** Update disassembly, system variables, and BASIC listing signals. */
 function updateDebugSignals(): void {
   sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, currentModel.value);
+  basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
   const cpu = spectrum!.cpu;
   const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
   disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
@@ -1251,9 +1255,10 @@ function onFrame(): void {
       }
     }
 
-    // Registers + sysvars always updated
+    // Registers + sysvars + BASIC always updated
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
+    basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
 
     // Disassembly only when paused (breakpoint hit etc.)
     if (emulationPaused.value) {

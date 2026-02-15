@@ -59,7 +59,8 @@
       "Bash(npm run hmr-unfreeze:*)",
       "WebFetch(domain:mdfs.net)",
       "WebFetch(domain:www.nonowt.com)",
-      "WebFetch(domain:www.hnilica.cz)"
+      "WebFetch(domain:www.hnilica.cz)",
+      "WebFetch(domain:problemkaputt.de)"
     ]
   }
 }

@@ -22,6 +22,7 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'display-pane', sidebar: 'left' },
   { id: 'font-panel', sidebar: 'left' },
   { id: 'sysvar-panel', sidebar: 'right' },
+  { id: 'basic-panel', sidebar: 'right' },
   { id: 'banks-panel', sidebar: 'right' },
   { id: 'disk-info-panel', sidebar: 'right' },
   { id: 'drive-panel', sidebar: 'right' },

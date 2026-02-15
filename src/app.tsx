@@ -15,6 +15,7 @@ import { SoundPane } from './components/panes/SoundPane.tsx';
 import { DisplayPane } from './components/panes/DisplayPane.tsx';
 import { FontPane } from './components/panes/FontPane.tsx';
 import { SysVarPane } from './components/panes/SysVarPane.tsx';
+import { BasicPane } from './components/panes/BasicPane.tsx';
 import { BanksPane } from './components/panes/BanksPane.tsx';
 import { DiskInfoPane } from './components/panes/DiskInfoPane.tsx';
 import { DrivePane } from './components/panes/DrivePane.tsx';
@@ -37,6 +38,7 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
   'display-pane': DisplayPane,
   'font-panel': FontPane,
   'sysvar-panel': SysVarPane,
+  'basic-panel': BasicPane,
   'banks-panel': BanksPane,
   'disk-info-panel': DiskInfoPane,
   'drive-panel': DrivePane,

@@ -600,6 +600,27 @@ input[type="range"]::-moz-range-thumb {
 
 #sysvar-output .reg-name { color: #999; }
 
+/* BASIC listing pane */
+#basic-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#basic-output {
+  margin: 0;
+  padding: 6px;
+  font-size: 0.7rem;
+  white-space: pre;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+#basic-output .basic-line-num {
+  color: #888;
+  font-weight: bold;
+}
+
 /* Memory bank pane */
 #banks-panel {
   display: flex;
