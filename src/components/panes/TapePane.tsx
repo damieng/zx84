@@ -7,7 +7,8 @@ import {
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile,
 } from '../../store/emulator.ts';
-import { tapeAutoRewind } from '../../store/settings.ts';
+import { tapeAutoRewind, tapeCollapseBlocks } from '../../store/settings.ts';
+import { persistSetting } from '../../store/settings.ts';
 import type { TapeBlock, DataBlock } from '../../formats/tap.ts';
 
 const HEADER_TYPES: Record<number, string> = {
@@ -33,7 +34,7 @@ function dataTimingDetail(block: DataBlock): string {
   return parts.join(' ');
 }
 
-function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]): { line: string; detail: string; hidden: boolean; control: boolean } {
+function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[], collapseBlocks: boolean): { line: string; detail: string; hidden: boolean; control: boolean } {
   switch (block.kind) {
     case 'data': {
       const tag = sourceTag(block);
@@ -52,14 +53,14 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
         const hasMatchingData = nextBlock && nextBlock.kind === 'data' && nextBlock.flag === 0xFF && nextBlock.data.length === dataLen;
 
         let displayType = typeName;
-        if (hasMatchingData) {
+        if (hasMatchingData && collapseBlocks) {
           if (typeId === 0) displayType = 'PROGRAM';
           else if (typeId === 3) {
             displayType = (dataLen === 6912 && param1 === 16384) ? 'SCREEN$' : 'CODE';
           }
         }
 
-        const line = hasMatchingData
+        const line = (hasMatchingData && collapseBlocks)
           ? `${index}: ${displayType} "${filename.trimEnd()}"${tag}`
           : `${index}: Header "${filename.trimEnd()}"${tag}`;
         let detail = `${typeName} ${dataLen} bytes`;
@@ -70,11 +71,13 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
       }
 
       // Check if this is a data block following a matching header
-      const prevBlock = blocks[index - 1];
-      if (prevBlock && prevBlock.kind === 'data' && prevBlock.flag === 0x00 && prevBlock.data.length >= 15) {
-        const headerDataLen = prevBlock.data[11] | (prevBlock.data[12] << 8);
-        if (block.data.length === headerDataLen) {
-          return { line: '', detail: '', hidden: true, control: false };
+      if (collapseBlocks) {
+        const prevBlock = blocks[index - 1];
+        if (prevBlock && prevBlock.kind === 'data' && prevBlock.flag === 0x00 && prevBlock.data.length >= 15) {
+          const headerDataLen = prevBlock.data[11] | (prevBlock.data[12] << 8);
+          if (block.data.length === headerDataLen) {
+            return { line: '', detail: '', hidden: true, control: false };
+          }
         }
       }
 
@@ -131,6 +134,7 @@ export function TapePane() {
   const paused = tapePaused.value;
   const loaded = tapeLoaded.value;
   const autoRewind = tapeAutoRewind.value;
+  const collapseBlocks = tapeCollapseBlocks.value;
 
   // Auto-scroll current block into view
   useEffect(() => {
@@ -155,10 +159,14 @@ export function TapePane() {
           title="Tape options"
           items={[
             { value: 'auto-rewind', label: 'Auto-rewind', checked: autoRewind },
+            { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: collapseBlocks },
           ]}
           onSelect={(value) => {
             if (value === 'auto-rewind') {
               toggleAutoRewind();
+            } else if (value === 'collapse-blocks') {
+              tapeCollapseBlocks.value = !tapeCollapseBlocks.value;
+              persistSetting('tape-collapse-blocks', tapeCollapseBlocks.value ? 'on' : 'off');
             }
           }}
         />
@@ -181,7 +189,7 @@ export function TapePane() {
           <div class="tape-empty">No tape loaded</div>
         ) : (
           blocks.map((block, i) => {
-            const meta = parseTapeBlockMeta(block, i, blocks);
+            const meta = parseTapeBlockMeta(block, i, blocks, collapseBlocks);
             if (meta.hidden) return null;
             const className = `tape-block${i < pos ? ' played' : ''}${i === pos ? ' current' : ''}${meta.control ? ' control' : ''}`;
             return (

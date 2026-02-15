@@ -45,9 +45,10 @@ export const fontName = signal(getSaved('font', ''));
 
 export const diskMode = signal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
 
-// ── Tape auto-rewind ────────────────────────────────────────────────────
+// ── Tape settings ───────────────────────────────────────────────────────
 
 export const tapeAutoRewind = signal(getSaved('tape-auto-rewind', 'on') === 'on');
+export const tapeCollapseBlocks = signal(getSaved('tape-collapse-blocks', 'on') === 'on');
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 
