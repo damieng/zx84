@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
 import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
-import { HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
+import { HiFolderOpen, HiArrowUpTray, HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
 import {
   tapeLoaded, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
+  ejectTape, loadFile,
 } from '../../store/emulator.ts';
 import { tapeAutoRewind } from '../../store/settings.ts';
 import type { TapeBlock, DataBlock } from '../../formats/tap.ts';
@@ -124,6 +125,7 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
 
 export function TapePane() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const blocks = tapeBlocks.value;
   const pos = tapePosition.value;
   const paused = tapePaused.value;
@@ -140,9 +142,10 @@ export function TapePane() {
   return (
     <Pane id="tape-panel" label="Tape" mono>
       <div id="tape-controls">
-        <button id="tape-rewind" title="Rewind" onClick={tapeRewind}><HiBackward /></button>
+        <button title="Open tape" onClick={() => fileInputRef.current?.click()}><HiFolderOpen /></button>
+        <button title="Eject tape" onClick={ejectTape}><HiArrowUpTray /></button>
+        <button title="Rewind" onClick={tapeRewind}><HiBackward /></button>
         <button
-          id="tape-pause"
           title={paused ? 'Resume' : 'Pause'}
           class={paused ? 'active' : ''}
           onClick={tapeTogglePause}
@@ -157,6 +160,19 @@ export function TapePane() {
             if (value === 'auto-rewind') {
               toggleAutoRewind();
             }
+          }}
+        />
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept=".tap,.tzx"
+          style="display:none"
+          onChange={async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (!file) return;
+            const data = new Uint8Array(await file.arrayBuffer());
+            await loadFile(data, file.name);
+            (e.target as HTMLInputElement).value = '';
           }}
         />
       </div>

@@ -651,37 +651,23 @@ input[type="range"]::-moz-range-thumb {
 
 /* Drive pane (live FDC state) */
 
-#disk-mode-toggle {
+.drive-toolbar {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-#disk-mode-toggle .disk-mode-label {
-  font-size: 0.75rem;
-  color: #555;
-  margin-right: 2px;
-}
-
-#disk-mode-toggle button {
+.drive-toolbar button {
   flex: 1;
-  padding: 3px 0;
-  font-size: 0.75rem;
+  padding: 4px 0;
   border: 1px solid #bbb;
   border-radius: 4px;
   background: #eee;
-  color: #666;
+  color: #000;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-#disk-mode-toggle button:hover { background: #ddd; }
-
-#disk-mode-toggle button.active {
-  background: #ddf;
-  border-color: #66f;
-  color: #000;
-  font-weight: 600;
-}
+.drive-toolbar button:hover { background: #ddd; }
 
 #drive-output {
   margin: 0;

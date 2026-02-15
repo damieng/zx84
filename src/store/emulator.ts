@@ -4,6 +4,8 @@
 
 import { signal, batch } from '@preact/signals';
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '../spectrum.ts';
+import { Display } from '../display.ts';
+import { CanvasDisplay } from '../canvas-display.ts';
 import { FloppySound } from '../plus3/floppy-sound.ts';
 import { Z80 } from '../cores/z80.ts';
 import { loadSNA, saveSNA } from '../formats/sna.ts';
@@ -161,7 +163,15 @@ export function setRomStatus(msg: string): void {
 
 export function setCanvas(el: HTMLCanvasElement): void {
   canvasEl = el;
-  if (spectrum) createMachineSync();
+  if (spectrum) {
+    // Swap display without rebuilding machine (e.g. renderer switch)
+    const w = spectrum.ula.screenWidth;
+    const h = spectrum.ula.screenHeight;
+    spectrum.display = settings.renderer.value === 'canvas'
+      ? new CanvasDisplay(el, w, h)
+      : new Display(el, w, h);
+    applyDisplaySettings();
+  }
 }
 
 export function applyDisplaySettings(): void {
@@ -900,6 +910,27 @@ export function tapeSetPosition(pos: number): void {
 export function toggleAutoRewind(): void {
   settings.tapeAutoRewind.value = !settings.tapeAutoRewind.value;
   settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind.value ? 'on' : 'off');
+}
+
+export function ejectTape(): void {
+  if (!spectrum) return;
+  spectrum.tape.blocks = [];
+  spectrum.tape.position = 0;
+  spectrum.tape.paused = true;
+  tapeLoaded.value = false;
+  tapeBlocks.value = [];
+  tapePosition.value = 0;
+  tapePaused.value = true;
+  setStatus('Tape ejected');
+}
+
+export function ejectDisk(): void {
+  if (!spectrum) return;
+  if (spectrum.fdc) spectrum.fdc.ejectDisk();
+  currentDiskInfo = null;
+  currentDiskName = '';
+  diskInfoHtml.value = '';
+  setStatus('Disk ejected');
 }
 
 // ── Per-frame bridge ────────────────────────────────────────────────────
