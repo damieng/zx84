@@ -38,6 +38,42 @@ export const joyP2 = signal(getSaved('joy-p2', 'sinclair2'));
 export const joyMapP1 = signal(getSaved('joy-map-p1', 'none'));
 export const joyMapP2 = signal(getSaved('joy-map-p2', 'none'));
 
+// ── Gamepad configuration ───────────────────────────────────────────────
+
+export type GamepadBinding =
+  | { type: 'button'; index: number }
+  | { type: 'axis'; index: number; direction: 'positive' | 'negative' };
+
+export type GamepadConfig = {
+  deadzone: number[]; // Neutral axis positions
+  up: GamepadBinding;
+  down: GamepadBinding;
+  left: GamepadBinding;
+  right: GamepadBinding;
+  fire: GamepadBinding;
+};
+
+function loadGamepadConfig(player: 1 | 2): GamepadConfig | null {
+  try {
+    const saved = getSaved(`gamepad-config-p${player}`, '');
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+export const gamepadConfigP1 = signal<GamepadConfig | null>(loadGamepadConfig(1));
+export const gamepadConfigP2 = signal<GamepadConfig | null>(loadGamepadConfig(2));
+
+export function saveGamepadConfig(player: 1 | 2, config: GamepadConfig): void {
+  if (player === 1) {
+    gamepadConfigP1.value = config;
+  } else {
+    gamepadConfigP2.value = config;
+  }
+  setSaved(`gamepad-config-p${player}`, JSON.stringify(config));
+}
+
 // ── Font settings ───────────────────────────────────────────────────────
 
 export const fontName = signal(getSaved('font', ''));
