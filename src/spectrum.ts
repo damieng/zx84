@@ -15,7 +15,8 @@ import { AY3891x } from './cores/ay-3-8910.ts';
 import { SpectrumMemory } from './memory.ts';
 import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from './ula.ts';
 import { SpectrumKeyboard } from './keyboard.ts';
-import { Display } from './display.ts';
+import { Display, type IDisplay } from './display.ts';
+import { CanvasDisplay } from './canvas-display.ts';
 import { Audio } from './audio.ts';
 import { TapeDeck } from './formats/tap.ts';
 import { UPD765A } from './cores/upd765a.ts';
@@ -81,7 +82,7 @@ export class Spectrum {
   ay: AY3891x;
   ula: ULA;
   keyboard: SpectrumKeyboard;
-  display: Display | null;
+  display: IDisplay | null;
   audio: Audio;
   tape: TapeDeck;
   fdc: UPD765A;
@@ -173,7 +174,7 @@ export class Spectrum {
   /** Frame callback (fires each rAF after rendering) */
   onFrame: (() => void) | null = null;
 
-  constructor(model: SpectrumModel, canvas?: HTMLCanvasElement | null) {
+  constructor(model: SpectrumModel, canvas?: HTMLCanvasElement | null, renderer?: 'webgl' | 'canvas') {
     this.model = model;
 
     this.memory = new SpectrumMemory(model);
@@ -181,7 +182,11 @@ export class Spectrum {
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
     this.ula = new ULA(this.keyboard);
-    this.display = canvas ? new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT) : null;
+    this.display = canvas
+      ? (renderer === 'canvas'
+        ? new CanvasDisplay(canvas, SCREEN_WIDTH, SCREEN_HEIGHT)
+        : new Display(canvas, SCREEN_WIDTH, SCREEN_HEIGHT))
+      : null;
     this.audio = new Audio();
     this.tape = new TapeDeck();
     this.tape.is48K = model === '48k';

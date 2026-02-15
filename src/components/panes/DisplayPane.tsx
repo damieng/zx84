@@ -1,9 +1,9 @@
 import { Pane } from '../Pane.tsx';
 import {
   scale, brightness, contrast, smoothing, curvature, scanlines,
-  maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, persistSetting,
+  maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, renderer, persistSetting,
 } from '../../store/settings.ts';
-import { spectrum } from '../../store/emulator.ts';
+import { spectrum, switchRenderer } from '../../store/emulator.ts';
 
 interface MonitorPreset {
   maskType: number;
@@ -134,6 +134,17 @@ export function DisplayPane() {
         Sub-frame precision
       </label>
       <div class="slider-row">
+        <span class="slider-label">Renderer</span>
+        <select id="renderer-select" value={renderer.value} onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value as 'webgl' | 'canvas';
+          switchRenderer(v);
+        }}>
+          <option value="webgl">WebGL</option>
+          <option value="canvas">Canvas</option>
+        </select>
+      </div>
+      {renderer.value === 'webgl' && (<>
+      <div class="slider-row">
         <span class="slider-label">Monitor</span>
         <select id="monitor-select" value={monitor.value} onChange={(e) => {
           const v = (e.target as HTMLSelectElement).value;
@@ -192,6 +203,7 @@ export function DisplayPane() {
       </div>
       <SliderRow label="Dot pitch" id="dot-pitch" min={10} max={40} sig={dotPitch}
         apply={(v) => spectrum?.display?.setDotPitch(v / 10)} settingKey="dot-pitch" />
+      </>)}
     </Pane>
   );
 }

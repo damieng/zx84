@@ -158,6 +158,7 @@ export function setRomStatus(msg: string): void {
 
 export function setCanvas(el: HTMLCanvasElement): void {
   canvasEl = el;
+  if (spectrum) createMachine();
 }
 
 export function applyDisplaySettings(): void {
@@ -188,7 +189,7 @@ export function createMachine(): void {
   }
 
   const model = currentModel.value;
-  spectrum = new Spectrum(model, canvasEl);
+  spectrum = new Spectrum(model, canvasEl, settings.renderer.value);
   spectrum.onStatus = (msg: string) => setStatus(msg);
   spectrum.onFrame = onFrame;
   applyDisplaySettings();
@@ -1365,6 +1366,13 @@ export function toggleTranscribeMode(mode: 'rst16' | 'text'): void {
   } else {
     transcribeMode.value = mode;
   }
+}
+
+// ── Renderer switching ──────────────────────────────────────────────────
+
+export function switchRenderer(mode: 'webgl' | 'canvas'): void {
+  settings.renderer.value = mode;
+  settings.persistSetting('renderer', mode);
 }
 
 // ── Disk mode change ────────────────────────────────────────────────────

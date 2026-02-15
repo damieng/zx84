@@ -22,6 +22,7 @@ export const dotPitch = signal(getSavedNumber('dot-pitch', '10'));
 export const curvatureMode = signal(getSavedNumber('curvature-mode', '0'));
 export const monitor = signal(getSaved('monitor', 'raw'));
 export const borderSize = signal(getSavedNumber('border-size', '2'));
+export const renderer = signal(getSaved('renderer', 'webgl') as 'webgl' | 'canvas');
 
 // ── Sound settings ──────────────────────────────────────────────────────
 
