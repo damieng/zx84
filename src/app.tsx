@@ -164,6 +164,7 @@ function pollGamepads(): void {
 
     for (const dir of ['up', 'down', 'left', 'right', 'fire'] as const) {
       if (dirs[dir] !== (prev[dir] ?? false)) {
+        console.log(`[Gamepad] P${p+1} ${dir}: ${dirs[dir] ? 'pressed' : 'released'} (mode: ${mode})`);
         joyPressForType(dir, dirs[dir], mode);
         setDpadHighlight(p, dir, dirs[dir]);
         prev[dir] = dirs[dir];
@@ -207,6 +208,12 @@ export function App() {
     console.log('[Gamepad] Polling started. Checking for gamepads...');
     console.log('[Gamepad] P1 mapping:', joyMapP1.value, '| P1 type:', joyP1.value);
     console.log('[Gamepad] P2 mapping:', joyMapP2.value, '| P2 type:', joyP2.value);
+    if (joyMapP1.value === 'gamepad' && joyP1.value !== 'kempston') {
+      console.log('[Gamepad] Note: P1 is not using Kempston. Most games expect Kempston joystick.');
+    }
+    if (joyMapP2.value === 'gamepad' && joyP2.value !== 'kempston') {
+      console.log('[Gamepad] Note: P2 is not using Kempston. Most games expect Kempston joystick.');
+    }
     let rafId = 0;
     function loop() {
       pollGamepads();

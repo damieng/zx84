@@ -732,6 +732,43 @@ input[type="range"]::-moz-range-thumb {
 }
 
 
+#tape-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: #f4f4fa;
+  border-bottom: 1px solid #ddd;
+  font-size: 0.75rem;
+  min-height: 22px;
+  flex-shrink: 0;
+}
+.tape-name-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #444;
+}
+.tape-eject {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  margin-left: auto;
+  background: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  cursor: pointer;
+  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tape-eject:hover { color: #c00; background: none !important; }
+
 #tape-blocks {
   max-height: 400px;
   overflow-y: auto;

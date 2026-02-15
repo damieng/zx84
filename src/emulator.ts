@@ -62,6 +62,7 @@ export const clockSpeedText = signal('MHz');
 
 // Tape signals
 export const tapeLoaded = signal(false);
+export const tapeName = signal('');
 export const tapeBlocks = signal<TapeBlock[]>([]);
 export const tapePosition = signal(0);
 export const tapePaused = signal(true);
@@ -713,6 +714,7 @@ export function applyTape(data: Uint8Array, filename: string): void {
   // Update UI signals after machine state is settled
   batch(() => {
     tapeLoaded.value = true;
+    tapeName.value = filename;
     tapeBlocks.value = [...blocks];
     tapePosition.value = 0;
     tapePaused.value = true;
@@ -910,6 +912,7 @@ export function ejectTape(): void {
   spectrum.tape.position = 0;
   spectrum.tape.paused = true;
   tapeLoaded.value = false;
+  tapeName.value = '';
   tapeBlocks.value = [];
   tapePosition.value = 0;
   tapePaused.value = true;

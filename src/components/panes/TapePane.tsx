@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Pane } from '@/components/Pane.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiFolderOpen, HiArrowUpTray, HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
+import { HiFolderOpen, HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
 import {
-  tapeLoaded, tapeBlocks, tapePosition, tapePaused,
+  tapeLoaded, tapeName, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile,
 } from '@/emulator.ts';
@@ -133,6 +133,7 @@ export function TapePane() {
   const pos = tapePosition.value;
   const paused = tapePaused.value;
   const loaded = tapeLoaded.value;
+  const name = tapeName.value;
   const autoRewind = tapeAutoRewind.value;
   const collapseBlocks = tapeCollapseBlocks.value;
 
@@ -147,7 +148,6 @@ export function TapePane() {
     <Pane id="tape-panel" label="Tape" mono>
       <div id="tape-controls">
         <button title="Open tape" onClick={() => fileInputRef.current?.click()}><HiFolderOpen /></button>
-        <button title="Eject tape" onClick={ejectTape}><HiArrowUpTray /></button>
         <button title="Rewind" onClick={tapeRewind}><HiBackward /></button>
         <button
           title={paused ? 'Resume' : 'Pause'}
@@ -184,6 +184,16 @@ export function TapePane() {
           }}
         />
       </div>
+      {loaded && (
+        <div id="tape-name">
+          <span class="tape-name-text" title={name}>{name}</span>
+          <button class="tape-eject" title="Eject tape" onClick={ejectTape}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
+            </svg>
+          </button>
+        </div>
+      )}
       <div id="tape-blocks" class="mono-block" ref={containerRef}>
         {!loaded ? (
           <div class="tape-empty">No tape loaded</div>
