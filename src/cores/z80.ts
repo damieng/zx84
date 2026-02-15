@@ -187,6 +187,7 @@ export class Z80 {
   fetch8(): number {
     const v = this.read8(this.pc);
     this.pc = (this.pc + 1) & 0xFFFF;
+    this.tStates += 3;  // Memory read cycle = 3T (contention checked at correct beam position)
     return v;
   }
 
@@ -230,34 +231,38 @@ export class Z80 {
 
     switch (this.im) {
       case 0:
-        // IM 0: execute instruction on data bus (RST 38h on Spectrum — bus floats to 0xFF)
+        // IM 0: RST 38h on Spectrum. 13T: ack(7T), push@T+7/T+10
+        this.tStates += 7;
         this.push16(this.pc);
         this.pc = 0x0038;
-        this.tStates += 10;  // 13T total (3T from push16's write16)
+        this.tStates += 3;
         return 13;
 
       case 1:
-        // IM 1: RST 38h
+        // IM 1: RST 38h. 13T: ack(7T), push@T+7/T+10
+        this.tStates += 7;
         this.push16(this.pc);
         this.pc = 0x0038;
-        this.tStates += 10;  // 13T total (3T from push16's write16)
+        this.tStates += 3;
         return 13;
 
       case 2: {
-        // IM 2: vectored interrupt. Vector address = (I << 8) | data_bus.
-        // On the Spectrum the data bus floats to 0xFF during interrupt acknowledge.
+        // IM 2: vectored interrupt. 19T: ack(7T), push@T+7/T+10, read@T+13/T+16
+        // Real Z80 pushes PC first, then reads the vector table.
         const vectorAddr = ((this.i << 8) | 0xFF) & 0xFFFF;
-        const target = this.read16(vectorAddr);
+        this.tStates += 7;
         this.push16(this.pc);
-        this.pc = target;
-        this.tStates += 13;  // 19T total (3T from read16 + 3T from push16's write16)
+        this.tStates += 3;
+        this.pc = this.read16(vectorAddr);
+        this.tStates += 3;
         return 19;
       }
 
       default:
+        this.tStates += 7;
         this.push16(this.pc);
         this.pc = 0x0038;
-        this.tStates += 10;  // 13T total (3T from push16's write16)
+        this.tStates += 3;
         return 13;
     }
   }
@@ -557,6 +562,7 @@ export class Z80 {
       const opcode = mem[this.pc];
       this.pc = (this.pc + 1) & 0xFFFF;
       this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
+      this.tStates += 4;  // M1 cycle (no contention hooks in fast path)
       this.executeMain(opcode);
     }
   }
@@ -564,13 +570,16 @@ export class Z80 {
   // --- Execute one instruction ---
   step(): number {
     if (this.halted) {
+      // HALT repeats a NOP-like M1 fetch from PC — apply contention
+      this.read8(this.pc);
       this.tStates += 4;
       this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
       return 4;
     }
 
     const startT = this.tStates;
-    const opcode = this.fetch8();
+    const opcode = this.fetch8();      // +3T (M1 read)
+    this.tStates += 1;                 // +1T (M1 refresh cycle)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
     this.executeMain(opcode);
@@ -598,39 +607,40 @@ export class Z80 {
           case 0:
             switch (y) {
               case 0:
-                this.tStates += 4;
+                // NOP: 4T (M1 auto-counted)
                 break;
               case 1: {
+                // EX AF,AF': 4T (M1 auto-counted)
                 let tmp: number;
                 tmp = this.a; this.a = this.a_; this.a_ = tmp;
                 tmp = this.f; this.f = this.f_; this.f_ = tmp;
-                this.tStates += 4;
                 break;
               }
               case 2: {
+                // DJNZ: 13T/8T. Auto: 4T M1 + 3T operand = 7T
                 const offset = this.fetch8();
                 this.b = (this.b - 1) & 0xFF;
                 if (this.b !== 0) {
                   this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
-                  this.tStates += 13;
+                  this.tStates += 6;
                 } else {
-                  this.tStates += 8;
+                  this.tStates += 1;
                 }
                 break;
               }
               case 3: {
+                // JR: 12T. Auto: 7T
                 const offset = this.fetch8();
                 this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
-                this.tStates += 12;
+                this.tStates += 5;
                 break;
               }
               default: {
+                // JR cc: 12T/7T. Auto: 7T
                 const offset = this.fetch8();
                 if (this.checkCondition(y - 4)) {
                   this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
-                  this.tStates += 12;
-                } else {
-                  this.tStates += 7;
+                  this.tStates += 5;
                 }
                 break;
               }
@@ -639,78 +649,82 @@ export class Z80 {
 
           case 1:
             if (q === 0) {
+              // LD rr,nn: 10T. Auto: 4T M1 + 6T fetch16 = 10T
               this.setReg16(p, this.fetch16());
-              this.tStates += 10;
             } else {
+              // ADD HL,rr: 11T. Auto: 4T M1
               this.hl = this.add16(this.hl, this.getReg16(p));
-              this.tStates += 11;
+              this.tStates += 7;
             }
             break;
 
           case 2:
             if (q === 0) {
-              // Write instructions — advance tStates to write sub-cycle for contention accuracy
+              // Write instructions — M1 auto-counted (4T), contention at correct sub-cycle
               switch (p) {
-                case 0: this.tStates += 4; this.write8(this.bc, this.a); this.tStates += 3; break;  // LD (BC),A: 7T, write@T+4
-                case 1: this.tStates += 4; this.write8(this.de, this.a); this.tStates += 3; break;  // LD (DE),A: 7T, write@T+4
-                case 2: { const addr = this.fetch16(); this.tStates += 10; this.write16(addr, this.hl); this.tStates += 3; break; }  // LD (nn),HL: 16T, writes@T+10,T+13
-                case 3: { const addr = this.fetch16(); this.tStates += 10; this.write8(addr, this.a); this.tStates += 3; break; }    // LD (nn),A: 13T, write@T+10
+                case 0: this.write8(this.bc, this.a); this.tStates += 3; break;  // LD (BC),A: 7T, write@T+4
+                case 1: this.write8(this.de, this.a); this.tStates += 3; break;  // LD (DE),A: 7T, write@T+4
+                case 2: { const addr = this.fetch16(); this.write16(addr, this.hl); this.tStates += 3; break; }  // LD (nn),HL: 16T, writes@T+10,T+13
+                case 3: { const addr = this.fetch16(); this.write8(addr, this.a); this.tStates += 3; break; }    // LD (nn),A: 13T, write@T+10
               }
             } else {
+              // Read instructions — M1 auto-counted (4T), contention at correct sub-cycle
               switch (p) {
-                case 0: this.a = this.read8(this.bc); break;
-                case 1: this.a = this.read8(this.de); break;
-                case 2: this.hl = this.read16(this.fetch16()); this.tStates += 6; break;
-                case 3: this.a = this.read8(this.fetch16()); this.tStates += 6; break;
+                case 0: this.a = this.read8(this.bc); this.tStates += 3; break;  // LD A,(BC): 7T, read@T+4
+                case 1: this.a = this.read8(this.de); this.tStates += 3; break;  // LD A,(DE): 7T, read@T+4
+                case 2: { const addr = this.fetch16(); this.hl = this.read16(addr); this.tStates += 3; break; }  // LD HL,(nn): 16T, reads@T+10,T+13
+                case 3: { const addr = this.fetch16(); this.a = this.read8(addr); this.tStates += 3; break; }    // LD A,(nn): 13T, read@T+10
               }
-              this.tStates += 7;
             }
             break;
 
           case 3:
+            // INC/DEC rr: 6T. Auto: 4T M1
             if (q === 0) {
               this.setReg16(p, (this.getReg16(p) + 1) & 0xFFFF);
             } else {
               this.setReg16(p, (this.getReg16(p) - 1) & 0xFFFF);
             }
-            this.tStates += 6;
+            this.tStates += 2;
             break;
 
           case 4: {
-            const val = this.getReg8(y);
             if (y === 6) {
-              this.tStates += 8;  // INC (HL): 11T, read@T+4, write@T+8
+              // INC (HL): 11T, read@T+4, write@T+8. Auto: 4T M1
+              const val = this.read8(this.hl);
+              this.tStates += 4;
               this.write8(this.hl, this.inc8(val));
               this.tStates += 3;
             } else {
-              this.setReg8(y, this.inc8(val));
-              this.tStates += 4;
+              // INC r: 4T (M1 auto-counted)
+              this.setReg8(y, this.inc8(this.getReg8(y)));
             }
             break;
           }
 
           case 5: {
-            const val = this.getReg8(y);
             if (y === 6) {
-              this.tStates += 8;  // DEC (HL): 11T, read@T+4, write@T+8
+              // DEC (HL): 11T, read@T+4, write@T+8. Auto: 4T M1
+              const val = this.read8(this.hl);
+              this.tStates += 4;
               this.write8(this.hl, this.dec8(val));
               this.tStates += 3;
             } else {
-              this.setReg8(y, this.dec8(val));
-              this.tStates += 4;
+              // DEC r: 4T (M1 auto-counted)
+              this.setReg8(y, this.dec8(this.getReg8(y)));
             }
             break;
           }
 
           case 6:
             if (y === 6) {
+              // LD (HL),n: 10T, write@T+7. Auto: 4T M1 + 3T operand = 7T
               const n = this.fetch8();
-              this.tStates += 7;  // LD (HL),n: 10T, write@T+7
               this.write8(this.hl, n);
               this.tStates += 3;
             } else {
+              // LD r,n: 7T. Auto: 4T M1 + 3T operand = 7T
               this.setReg8(y, this.fetch8());
-              this.tStates += 7;
             }
             break;
 
@@ -787,56 +801,69 @@ export class Z80 {
                 this.f = ((this.f & 0xED) | ((this.f & 0x01) << 4) | (this.a & 0x28)) ^ 0x01;
                 break;
             }
-            this.tStates += 4;
+            // 4T instructions (M1 auto-counted)
             break;
         }
         break;
 
       case 1:
         if (y === 6 && z === 6) {
+          // HALT: 4T (M1 auto-counted)
           this.halted = true;
-          this.tStates += 4;
         } else if (y === 6) {
-          // LD (HL),r: 7T, write@T+4
+          // LD (HL),r: 7T, write@T+4. Auto: 4T M1
           const val = this.getReg8(z);
-          this.tStates += 4;
           this.write8(this.hl, val);
           this.tStates += 3;
+        } else if (z === 6) {
+          // LD r,(HL): 7T, read@T+4. Auto: 4T M1
+          this.setReg8(y, this.read8(this.hl));
+          this.tStates += 3;
         } else {
+          // LD r,r: 4T (M1 auto-counted)
           this.setReg8(y, this.getReg8(z));
-          this.tStates += (z === 6 ? 7 : 4);
         }
         break;
 
-      case 2: {
-        const val = this.getReg8(z);
-        this.aluOp(y, val);
-        this.tStates += (z === 6 ? 7 : 4);
+      case 2:
+        if (z === 6) {
+          // ALU A,(HL): 7T, read@T+4. Auto: 4T M1
+          this.aluOp(y, this.read8(this.hl));
+          this.tStates += 3;
+        } else {
+          // ALU A,r: 4T (M1 auto-counted)
+          this.aluOp(y, this.getReg8(z));
+        }
         break;
-      }
 
       case 3:
         switch (z) {
           case 0:
             if (this.checkCondition(y)) {
+              // RET cc (true): 11T, reads@T+5,T+8. Auto: 4T M1
+              this.tStates += 1;
               this.pc = this.pop16();
-              this.tStates += 8;  // 11T total (3T from pop16's read16)
+              this.tStates += 3;
             } else {
-              this.tStates += 5;
+              // RET cc (false): 5T. Auto: 4T M1
+              this.tStates += 1;
             }
             break;
 
           case 1:
             if (q === 0) {
+              // POP qq: 10T, reads@T+4,T+7. Auto: 4T M1
               this.setReg16AF(p, this.pop16());
-              this.tStates += 7;  // 10T total (3T from pop16's read16)
+              this.tStates += 3;
             } else {
               switch (p) {
                 case 0:
+                  // RET: 10T, reads@T+4,T+7. Auto: 4T M1
                   this.pc = this.pop16();
-                  this.tStates += 7;  // 10T total (3T from pop16's read16)
+                  this.tStates += 3;
                   break;
                 case 1: {
+                  // EXX: 4T (M1 auto-counted)
                   let tmp: number;
                   tmp = this.b; this.b = this.b_; this.b_ = tmp;
                   tmp = this.c; this.c = this.c_; this.c_ = tmp;
@@ -844,109 +871,111 @@ export class Z80 {
                   tmp = this.e; this.e = this.e_; this.e_ = tmp;
                   tmp = this.h; this.h = this.h_; this.h_ = tmp;
                   tmp = this.l; this.l = this.l_; this.l_ = tmp;
-                  this.tStates += 4;
                   break;
                 }
                 case 2:
+                  // JP (HL): 4T (M1 auto-counted)
                   this.pc = this.hl;
-                  this.tStates += 4;
                   break;
                 case 3:
+                  // LD SP,HL: 6T. Auto: 4T M1
                   this.sp = this.hl;
-                  this.tStates += 6;
+                  this.tStates += 2;
                   break;
               }
             }
             break;
 
           case 2: {
+            // JP cc,nn: 10T. Auto: 4T M1 + 6T fetch16 = 10T
             const addr = this.fetch16();
             if (this.checkCondition(y)) {
               this.pc = addr;
             }
-            this.tStates += 10;
             break;
           }
 
           case 3:
             switch (y) {
               case 0:
+                // JP nn: 10T. Auto: 4T M1 + 6T fetch16 = 10T
                 this.pc = this.fetch16();
-                this.tStates += 10;
                 break;
               case 1:
                 this.executeCB();
                 break;
               case 2: {
+                // OUT (n),A: 11T. Auto: 4T M1 + 3T operand = 7T
                 const port = (this.a << 8) | this.fetch8();
                 this.portOut(port, this.a);
-                this.tStates += 11;
+                this.tStates += 4;
                 break;
               }
               case 3: {
+                // IN A,(n): 11T. Auto: 4T M1 + 3T operand = 7T
                 const port = (this.a << 8) | this.fetch8();
                 this.a = this.portIn(port);
-                this.tStates += 11;
+                this.tStates += 4;
                 break;
               }
               case 4: {
-                // EX (SP),HL: 19T, reads@T+4/T+7, writes@T+10/T+13
+                // EX (SP),HL: 19T, reads@T+4/T+7, writes@T+11/T+14. Auto: 4T M1
                 const lo = this.read8(this.sp);
-                const hi = this.read8(this.sp + 1);
-                this.tStates += 10;
+                this.tStates += 3;
+                const hi = this.read8((this.sp + 1) & 0xFFFF);
+                this.tStates += 4;
                 this.write8(this.sp, this.l);
                 this.tStates += 3;
-                this.write8(this.sp + 1, this.h);
+                this.write8((this.sp + 1) & 0xFFFF, this.h);
                 this.l = lo; this.h = hi;
-                this.tStates += 6;
+                this.tStates += 5;
                 break;
               }
               case 5: {
+                // EX DE,HL: 4T (M1 auto-counted)
                 const tmp = this.de;
                 this.de = this.hl;
                 this.hl = tmp;
-                this.tStates += 4;
                 break;
               }
               case 6:
+                // DI: 4T (M1 auto-counted)
                 this.iff1 = false;
                 this.iff2 = false;
-                this.tStates += 4;
                 break;
               case 7:
+                // EI: 4T (M1 auto-counted)
                 this.iff1 = true;
                 this.iff2 = true;
-                this.tStates += 4;
                 break;
             }
             break;
 
           case 4: {
+            // CALL cc,nn: 17T/10T. Auto: 4T M1 + 6T fetch16 = 10T
             const addr = this.fetch16();
             if (this.checkCondition(y)) {
               // CALL cc,nn (true): 17T, writes@T+11,T+14
-              this.tStates += 11;
+              this.tStates += 1;
               this.push16(this.pc);
               this.pc = addr;
               this.tStates += 3;
-            } else {
-              this.tStates += 10;
             }
             break;
           }
 
           case 5:
             if (q === 0) {
-              // PUSH qq: 11T, writes@T+5,T+8
-              this.tStates += 5;
+              // PUSH qq: 11T, writes@T+5,T+8. Auto: 4T M1
+              this.tStates += 1;
               this.push16(this.getReg16AF(p));
               this.tStates += 3;
             } else {
               switch (p) {
                 case 0: {
-                  // CALL nn: 17T, writes@T+11,T+14
+                  // CALL nn: 17T, writes@T+11,T+14. Auto: 4T M1 + 6T fetch16 = 10T
                   const addr = this.fetch16();
-                  this.tStates += 11;
+                  this.tStates += 1;
                   this.push16(this.pc);
                   this.pc = addr;
                   this.tStates += 3;
@@ -966,15 +995,15 @@ export class Z80 {
             break;
 
           case 6: {
+            // ALU A,n: 7T. Auto: 4T M1 + 3T operand = 7T
             const val = this.fetch8();
             this.aluOp(y, val);
-            this.tStates += 7;
             break;
           }
 
           case 7:
-            // RST: 11T, writes@T+5,T+8
-            this.tStates += 5;
+            // RST: 11T, writes@T+5,T+8. Auto: 4T M1
+            this.tStates += 1;
             this.push16(this.pc);
             this.pc = y * 8;
             this.tStates += 3;
@@ -998,15 +1027,22 @@ export class Z80 {
   }
 
   executeCB(): void {
-    const op = this.fetch8();
+    const op = this.fetch8();      // +3T (M1 read)
+    this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
     const x = (op >> 6) & 3;
     const y = (op >> 3) & 7;
     const z = op & 7;
 
-    let val = this.getReg8(z);
     const isMem = z === 6;
+    let val: number;
+    if (isMem) {
+      // CB (HL): read@T+8. Auto: 4T(main M1) + 4T(CB M1) = 8T
+      val = this.read8(this.hl);
+    } else {
+      val = this.getReg8(z);
+    }
 
     switch (x) {
       case 0:
@@ -1021,55 +1057,57 @@ export class Z80 {
           case 7: val = this.srl(val); break;
         }
         if (isMem) {
-          // CB shift/rotate (HL): 15T, write@T+12
-          this.tStates += 12;
+          // CB shift/rotate (HL): 15T, write@T+12. Auto: 8T
+          this.tStates += 4;
           this.write8(this.hl, val);
           this.tStates += 3;
         } else {
+          // CB shift/rotate r: 8T (auto-counted)
           this.setReg8(z, val);
-          this.tStates += 8;
         }
         break;
 
       case 1:
         this.bit(y, val);
         if (isMem) {
-          // Undocumented: BIT n,(HL) takes X/Y flags from high byte of HL
+          // BIT n,(HL): 12T. Auto: 8T
           this.f = (this.f & ~0x28) | ((this.hl >> 8) & 0x28);
+          this.tStates += 4;
         }
-        this.tStates += isMem ? 12 : 8;
+        // BIT n,r: 8T (auto-counted)
         break;
 
       case 2:
         if (isMem) {
-          // CB RES n,(HL): 15T, write@T+12
+          // CB RES n,(HL): 15T, write@T+12. Auto: 8T
           val &= ~(1 << y);
-          this.tStates += 12;
+          this.tStates += 4;
           this.write8(this.hl, val);
           this.tStates += 3;
         } else {
+          // CB RES n,r: 8T (auto-counted)
           this.setReg8(z, val & ~(1 << y));
-          this.tStates += 8;
         }
         break;
 
       case 3:
         if (isMem) {
-          // CB SET n,(HL): 15T, write@T+12
+          // CB SET n,(HL): 15T, write@T+12. Auto: 8T
           val |= (1 << y);
-          this.tStates += 12;
+          this.tStates += 4;
           this.write8(this.hl, val);
           this.tStates += 3;
         } else {
+          // CB SET n,r: 8T (auto-counted)
           this.setReg8(z, val | (1 << y));
-          this.tStates += 8;
         }
         break;
     }
   }
 
   executeED(): void {
-    const op = this.fetch8();
+    const op = this.fetch8();      // +3T (M1 read)
+    this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
     const x = (op >> 6) & 3;
@@ -1081,110 +1119,119 @@ export class Z80 {
     if (x === 1) {
       switch (z) {
         case 0: {
+          // IN r,(C): 12T. Auto: 8T
           const val = this.portIn(this.bc);
           if (y !== 6) {
             this.setReg8(y, val);
           }
           this.f = (this.f & 0x01) | SZP[val];
-          this.tStates += 12;
+          this.tStates += 4;
           break;
         }
 
         case 1:
+          // OUT (C),r: 12T. Auto: 8T
           this.portOut(this.bc, y === 6 ? 0 : this.getReg8(y));
-          this.tStates += 12;
+          this.tStates += 4;
           break;
 
         case 2:
+          // SBC/ADC HL,rr: 15T. Auto: 8T
           if (q === 0) {
             this.hl = this.sbc16(this.hl, this.getReg16(p));
           } else {
             this.hl = this.adc16(this.hl, this.getReg16(p));
           }
-          this.tStates += 15;
+          this.tStates += 7;
           break;
 
         case 3: {
+          // ED LD (nn),rr / LD rr,(nn): 20T. Auto: 8T + 6T fetch16 = 14T
           const addr = this.fetch16();
           if (q === 0) {
-            // ED LD (nn),rr: 20T, writes@T+13,T+16
-            this.tStates += 13;
+            // ED LD (nn),rr: writes@T+14,T+17
             this.write16(addr, this.getReg16(p));
-            this.tStates += 4;
+            this.tStates += 3;
           } else {
+            // ED LD rr,(nn): reads@T+14,T+17
             this.setReg16(p, this.read16(addr));
-            this.tStates += 17;  // 20T total (3T from read16)
+            this.tStates += 3;
           }
           break;
         }
 
         case 4: {
+          // NEG: 8T (auto-counted)
           const old = this.a;
           this.a = this.sub8(0, old);
-          this.tStates += 8;
           break;
         }
 
         case 5:
+          // RETI/RETN: 14T, reads@T+8,T+11. Auto: 8T
           this.pc = this.pop16();
           this.iff1 = true;
           this.iff2 = true;
-          this.tStates += 11;  // 14T total (3T from pop16's read16)
+          this.tStates += 3;
           break;
 
         case 6:
+          // IM n: 8T (auto-counted)
           switch (y & 3) {
             case 0: case 1: this.im = 0; break;
             case 2: this.im = 1; break;
             case 3: this.im = 2; break;
           }
-          this.tStates += 8;
           break;
 
         case 7:
           switch (y) {
             case 0:
+              // LD I,A: 9T. Auto: 8T
               this.i = this.a;
-              this.tStates += 9;
+              this.tStates += 1;
               break;
             case 1:
+              // LD R,A: 9T. Auto: 8T
               this.r = this.a;
-              this.tStates += 9;
+              this.tStates += 1;
               break;
             case 2:
+              // LD A,I: 9T. Auto: 8T
               this.a = this.i;
               this.f = (this.f & 0x01) | SZ[this.a] | (this.iff2 ? 0x04 : 0);
-              this.tStates += 9;
+              this.tStates += 1;
               break;
             case 3:
+              // LD A,R: 9T. Auto: 8T
               this.a = this.r;
               this.f = (this.f & 0x01) | SZ[this.a] | (this.iff2 ? 0x04 : 0);
-              this.tStates += 9;
+              this.tStates += 1;
               break;
             case 4: {
-              // RRD: 18T, read@T+8, write@T+15
+              // RRD: 18T, read@T+8, write@T+15. Auto: 8T
               const hlVal = this.read8(this.hl);
               const newHL = ((this.a & 0x0F) << 4) | (hlVal >> 4);
               this.a = (this.a & 0xF0) | (hlVal & 0x0F);
               this.f = (this.f & 0x01) | SZP[this.a];
-              this.tStates += 15;
+              this.tStates += 7;
               this.write8(this.hl, newHL);
               this.tStates += 3;
               break;
             }
             case 5: {
-              // RLD: 18T, read@T+8, write@T+15
+              // RLD: 18T, read@T+8, write@T+15. Auto: 8T
               const hlVal = this.read8(this.hl);
               const newHL = ((hlVal << 4) | (this.a & 0x0F)) & 0xFF;
               this.a = (this.a & 0xF0) | (hlVal >> 4);
               this.f = (this.f & 0x01) | SZP[this.a];
-              this.tStates += 15;
+              this.tStates += 7;
               this.write8(this.hl, newHL);
               this.tStates += 3;
               break;
             }
             default:
-              this.tStates += 8;
+              // ED NOP: 8T (auto-counted)
               break;
           }
           break;
@@ -1192,9 +1239,9 @@ export class Z80 {
     } else if (x === 2 && y >= 4) {
       switch (z) {
         case 0: {
-          // LDI/LDD/LDIR/LDDR: write@T+8
+          // LDI/LDD/LDIR/LDDR: read@T+8, write@T+11. Auto: 8T
           const val = this.read8(this.hl);
-          this.tStates += 8;
+          this.tStates += 3;
           this.write8(this.de, val);
           const n = (val + this.a) & 0xFF;
           this.f = (this.f & 0xC1) | (n & 0x08) | ((n << 4) & 0x20);
@@ -1218,14 +1265,15 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.bc !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.tStates += 13;
+            this.tStates += 10;  // LDIR/LDDR: 21T total
           } else {
-            this.tStates += 8;
+            this.tStates += 5;   // LDI/LDD: 16T total
           }
           break;
         }
 
         case 1: {
+          // CPI/CPD/CPIR/CPDR: read@T+8. Auto: 8T
           const val = this.read8(this.hl);
           const result = (this.a - val) & 0xFF;
           const h = ((this.a ^ val ^ result) & 0x10);
@@ -1249,15 +1297,17 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.bc !== 0 && result !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.tStates += 21;
+            this.tStates += 13;  // CPIR/CPDR: 21T total (8+13)
           } else {
-            this.tStates += 16;
+            this.tStates += 8;   // CPI/CPD: 16T total (8+8)
           }
           break;
         }
 
         case 2: {
+          // INI/IND/INIR/INDR: I/O@T+9, write@T+13. Auto: 8T
           const val = this.portIn(this.bc);
+          this.tStates += 5;
           this.write8(this.hl, val);
           this.b = (this.b - 1) & 0xFF;
           if (y === 4 || y === 6) {
@@ -1268,14 +1318,16 @@ export class Z80 {
           this.f = (this.b === 0 ? 0x40 : 0) | 0x02 | (this.b & 0x80);
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.tStates += 21;
+            this.tStates += 8;   // INIR/INDR: 21T total (13+8)
           } else {
-            this.tStates += 16;
+            this.tStates += 3;   // INI/IND: 16T total (13+3)
           }
           break;
         }
 
         case 3: {
+          // OUTI/OUTD/OTIR/OTDR: read@T+9. Auto: 8T
+          this.tStates += 1;
           const val = this.read8(this.hl);
           this.b = (this.b - 1) & 0xFF;
           this.portOut(this.bc, val);
@@ -1287,28 +1339,29 @@ export class Z80 {
           this.f = (this.b === 0 ? 0x40 : 0) | 0x02 | (this.b & 0x80);
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.tStates += 21;
+            this.tStates += 12;  // OTIR/OTDR: 21T total (9+12)
           } else {
-            this.tStates += 16;
+            this.tStates += 7;   // OUTI/OUTD: 16T total (9+7)
           }
           break;
         }
 
         default:
-          this.tStates += 8;
+          // ED block default: 8T (auto-counted)
           break;
       }
     } else if (op === 0x00 && this.trapHandler) {
       // ED 00: trap instruction — calls handler with address of the ED byte
       this.trapHandler((this.pc - 2) & 0xFFFF);
-      this.tStates += 8;
+      // 8T (auto-counted)
     } else {
-      this.tStates += 8;
+      // ED NOP: 8T (auto-counted)
     }
   }
 
   executeDD(): void {
-    const op = this.fetch8();
+    const op = this.fetch8();      // +3T (M1 read)
+    this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
     if (op === 0xCB) {
@@ -1317,7 +1370,7 @@ export class Z80 {
     }
 
     if (op === 0xDD || op === 0xFD) {
-      this.tStates += 4;
+      // DD DD/FD: 8T (4T DD M1 + 4T this M1, both auto-counted)
       this.pc = (this.pc - 1) & 0xFFFF;
       return;
     }
@@ -1337,33 +1390,37 @@ export class Z80 {
       this.h = savedH; this.l = savedL;
 
       if (y === 6) {
-        // LD (IX+d),r: 19T, write@T+15
+        // LD (IX+d),r: 19T, write@T+15. Auto: 8T(DD+op M1) + 3T(d) = 11T
         const val = this.getReg8(z);
-        this.tStates += 15;
+        this.tStates += 4;
         this.write8(addr, val);
         this.tStates += 4;
       } else {
+        // LD r,(IX+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
+        this.tStates += 5;
         this.setReg8(y, this.read8(addr));
-        this.tStates += 19;
+        this.tStates += 3;
       }
     } else if (x === 2 && z === 6) {
+      // ALU A,(IX+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
+      this.tStates += 5;
       this.aluOp(y, this.read8(addr));
-      this.tStates += 19;
+      this.tStates += 3;
     } else if (x === 0 && z === 6 && y !== 6) {
       if (op === 0x36) {
-        // LD (IX+d),n: 19T, write@T+15
+        // LD (IX+d),n: 19T, write@T+15. Auto: 8T + 3T(d) + 3T(n) = 14T
         const d = this.fetch8();
         const n = this.fetch8();
         const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
         this.h = savedH; this.l = savedL;
-        this.tStates += 15;
+        this.tStates += 1;
         this.write8(addr, n);
         this.tStates += 4;
       } else if (op === 0x26 || op === 0x2E) {
-        // Undocumented: LD IXH/IXL, nn
+        // Undocumented: LD IXH/IXL, nn: 11T. Auto: 8T + 3T(n) = 11T
         const n = this.fetch8();
         if (op === 0x26) {
           this.ix = (n << 8) | (this.ix & 0xFF);
@@ -1371,49 +1428,49 @@ export class Z80 {
           this.ix = (this.ix & 0xFF00) | n;
         }
         this.h = savedH; this.l = savedL;
-        this.tStates += 11;
       } else {
         this.h = savedH; this.l = savedL;
-        this.tStates += 4; // DD prefix M1 cycle
+        // DD prefix M1 already auto-counted
         this.executeMain(op);
       }
     } else if (x === 0 && (z === 4 || z === 5) && y === 6) {
-      // INC/DEC (IX+d): 23T, write@T+19
+      // INC/DEC (IX+d): 23T, read@T+16, write@T+20. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
+      this.tStates += 5;
       const val = this.read8(addr);
-      this.tStates += 19;
-      this.write8(addr, z === 4 ? this.inc8(val) : this.dec8(val));
       this.tStates += 4;
+      this.write8(addr, z === 4 ? this.inc8(val) : this.dec8(val));
+      this.tStates += 3;
     } else if (op === 0x36) {
-      // LD (IX+d),n: 19T, write@T+15 (duplicate guard)
+      // LD (IX+d),n: 19T, write@T+15 (duplicate guard). Auto: 8T + 3T(d) + 3T(n) = 14T
       const d = this.fetch8();
       const n = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
-      this.tStates += 15;
+      this.tStates += 1;
       this.write8(addr, n);
       this.tStates += 4;
     } else if (ddfdUsesHL(op)) {
-      this.tStates += 4; // DD prefix M1 cycle
+      // DD prefix M1 already auto-counted
       this.executeMain(op);
       this.ix = (this.h << 8) | this.l;
       this.h = savedH;
       this.l = savedL;
       return;
     } else {
-      // Opcode doesn't reference H/L/HL — DD prefix ignored, but still costs 4T
+      // Opcode doesn't reference H/L/HL — DD prefix auto-counted
       this.h = savedH;
       this.l = savedL;
-      this.tStates += 4; // DD prefix M1 cycle
       this.executeMain(op);
       return;
     }
   }
 
   executeFD(): void {
-    const op = this.fetch8();
+    const op = this.fetch8();      // +3T (M1 read)
+    this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
     if (op === 0xCB) {
@@ -1422,7 +1479,7 @@ export class Z80 {
     }
 
     if (op === 0xDD || op === 0xFD) {
-      this.tStates += 4;
+      // FD DD/FD: 8T (4T FD M1 + 4T this M1, both auto-counted)
       this.pc = (this.pc - 1) & 0xFFFF;
       return;
     }
@@ -1441,33 +1498,37 @@ export class Z80 {
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
       if (y === 6) {
-        // LD (IY+d),r: 19T, write@T+15
+        // LD (IY+d),r: 19T, write@T+15. Auto: 8T + 3T(d) = 11T
         const val = this.getReg8(z);
-        this.tStates += 15;
+        this.tStates += 4;
         this.write8(addr, val);
         this.tStates += 4;
       } else {
+        // LD r,(IY+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
+        this.tStates += 5;
         this.setReg8(y, this.read8(addr));
-        this.tStates += 19;
+        this.tStates += 3;
       }
     } else if (x === 2 && z === 6) {
+      // ALU A,(IY+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
+      this.tStates += 5;
       this.aluOp(y, this.read8(addr));
-      this.tStates += 19;
+      this.tStates += 3;
     } else if (x === 0 && z === 6 && y !== 6) {
       if (op === 0x36) {
-        // LD (IY+d),n: 19T, write@T+15
+        // LD (IY+d),n: 19T, write@T+15. Auto: 8T + 3T(d) + 3T(n) = 14T
         const d = this.fetch8();
         const n = this.fetch8();
         const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
         this.h = savedH; this.l = savedL;
-        this.tStates += 15;
+        this.tStates += 1;
         this.write8(addr, n);
         this.tStates += 4;
       } else if (op === 0x26 || op === 0x2E) {
-        // Undocumented: LD IYH/IYL, nn
+        // Undocumented: LD IYH/IYL, nn: 11T. Auto: 8T + 3T(n) = 11T
         const n = this.fetch8();
         if (op === 0x26) {
           this.iy = (n << 8) | (this.iy & 0xFF);
@@ -1475,42 +1536,41 @@ export class Z80 {
           this.iy = (this.iy & 0xFF00) | n;
         }
         this.h = savedH; this.l = savedL;
-        this.tStates += 11;
       } else {
         this.h = savedH; this.l = savedL;
-        this.tStates += 4; // FD prefix M1 cycle
+        // FD prefix M1 already auto-counted
         this.executeMain(op);
       }
     } else if (x === 0 && (z === 4 || z === 5) && y === 6) {
-      // INC/DEC (IY+d): 23T, write@T+19
+      // INC/DEC (IY+d): 23T, read@T+16, write@T+20. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
+      this.tStates += 5;
       const val = this.read8(addr);
-      this.tStates += 19;
-      this.write8(addr, z === 4 ? this.inc8(val) : this.dec8(val));
       this.tStates += 4;
+      this.write8(addr, z === 4 ? this.inc8(val) : this.dec8(val));
+      this.tStates += 3;
     } else if (op === 0x36) {
-      // LD (IY+d),n: 19T, write@T+15 (duplicate guard)
+      // LD (IY+d),n: 19T, write@T+15 (duplicate guard). Auto: 8T + 3T(d) + 3T(n) = 14T
       const d = this.fetch8();
       const n = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
       this.h = savedH; this.l = savedL;
-      this.tStates += 15;
+      this.tStates += 1;
       this.write8(addr, n);
       this.tStates += 4;
     } else if (ddfdUsesHL(op)) {
-      this.tStates += 4; // FD prefix M1 cycle
+      // FD prefix M1 already auto-counted
       this.executeMain(op);
       this.iy = (this.h << 8) | this.l;
       this.h = savedH;
       this.l = savedL;
       return;
     } else {
-      // Opcode doesn't reference H/L/HL — FD prefix ignored, but still costs 4T
+      // Opcode doesn't reference H/L/HL — FD prefix auto-counted
       this.h = savedH;
       this.l = savedL;
-      this.tStates += 4; // FD prefix M1 cycle
       this.executeMain(op);
       return;
     }
@@ -1535,6 +1595,9 @@ export class Z80 {
     const y = (op >> 3) & 7;
     const z = op & 7;
 
+    // DDCB/FDCB: read@T+16, write@T+20 (23T), BIT: read@T+16 (20T)
+    // Auto: 4T(DD/FD M1) + 4T(CB M1) + 3T(d) + 3T(op) = 14T; +2T extra wait on op byte
+    this.tStates += 2;
     let val = this.read8(addr);
 
     switch (x) {
@@ -1549,35 +1612,32 @@ export class Z80 {
           case 6: val = this.sll(val); break;
           case 7: val = this.srl(val); break;
         }
-        // DDCB/FDCB shift (IX+d): 23T, write@T+19
-        this.tStates += 19;
+        this.tStates += 4;
         this.write8(addr, val);
         if (z !== 6) this.setReg8(z, val);
-        this.tStates += 4;
+        this.tStates += 3;
         break;
 
       case 1:
         this.bit(y, val);
         this.f = (this.f & ~0x28) | ((addr >> 8) & 0x28);
-        this.tStates += 20;
+        this.tStates += 4;
         break;
 
       case 2:
-        // DDCB/FDCB RES (IX+d): 23T, write@T+19
         val &= ~(1 << y);
-        this.tStates += 19;
+        this.tStates += 4;
         this.write8(addr, val);
         if (z !== 6) this.setReg8(z, val);
-        this.tStates += 4;
+        this.tStates += 3;
         break;
 
       case 3:
-        // DDCB/FDCB SET (IX+d): 23T, write@T+19
         val |= (1 << y);
-        this.tStates += 19;
+        this.tStates += 4;
         this.write8(addr, val);
         if (z !== 6) this.setReg8(z, val);
-        this.tStates += 4;
+        this.tStates += 3;
         break;
     }
   }

@@ -62,6 +62,7 @@ export const tapePlaying = signal(false);
 
 // Transcribe mode
 export const transcribeMode = signal<'off' | 'rst16' | 'text'>('off');
+export const debugOverlay = signal('');
 export const transcribeText = signal('');
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
@@ -1243,6 +1244,16 @@ function onFrame(): void {
       }
     }
 
+
+    // Debug overlay for sub-frame diagnostics
+    if (spectrum!.subFrameRendering) {
+      const d = a;
+      const warn = !d.dbgIntFired || !d.dbgIff1AtStart ? ' !!!' : '';
+      debugOverlay.value =
+        `W:${d.subFrameVramWrites} INT:${d.dbgIntFired ? 'Y' : 'N'} IFF1:${d.dbgIff1AtStart ? '1' : '0'} HALT:${d.dbgHaltedAtStart ? 'Y' : 'N'} BNK:${d.dbgBankSwitches} OS:${d.dbgOvershoot} 1st:${d.dbgFirstWriteT} last:${d.dbgLastWriteT}${warn}`;
+    } else {
+      debugOverlay.value = '';
+    }
 
     // Registers always updated
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);

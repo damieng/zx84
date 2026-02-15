@@ -72,6 +72,20 @@ export interface IOActivity {
   subFrameVramWrites: number;
   /** Number of border color changes logged for sub-frame rendering this frame */
   subFrameBorderChanges: number;
+  /** Debug: did the interrupt fire this frame? */
+  dbgIntFired: boolean;
+  /** Debug: number of bank switches this frame */
+  dbgBankSwitches: number;
+  /** Debug: T-state overshoot from previous frame */
+  dbgOvershoot: number;
+  /** Debug: was CPU halted when frame started? */
+  dbgHaltedAtStart: boolean;
+  /** Debug: iff1 state when frame started */
+  dbgIff1AtStart: boolean;
+  /** Debug: frame-relative T-state of first VRAM write */
+  dbgFirstWriteT: number;
+  /** Debug: frame-relative T-state of last VRAM write */
+  dbgLastWriteT: number;
 }
 
 export class Spectrum {
@@ -93,7 +107,7 @@ export class Spectrum {
   biosTrap: Plus3DosTrap | null = null;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, dbgIntFired: false, dbgBankSwitches: 0, dbgOvershoot: 0, dbgHaltedAtStart: false, dbgIff1AtStart: false, dbgFirstWriteT: -1, dbgLastWriteT: -1 };
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
@@ -141,9 +155,9 @@ export class Spectrum {
   /** Sub-frame state: VRAM snapshot taken at frame start (6912 bytes: 0x4000-0x5AFF) */
   private vramShadow = new Uint8Array(6912);
   /** Sub-frame state: logged VRAM writes — T-states, offsets within shadow, values */
-  private vramWriteTs = new Int32Array(8192);
-  private vramWriteOff = new Uint16Array(8192);
-  private vramWriteVal = new Uint8Array(8192);
+  private vramWriteTs = new Int32Array(32768);
+  private vramWriteOff = new Uint16Array(32768);
+  private vramWriteVal = new Uint8Array(32768);
   private vramWriteCount = 0;
   /** Execution trace */
   private _tracing = false;
@@ -202,11 +216,15 @@ export class Spectrum {
   /** Log a VRAM write for sub-frame rendering replay (called from io-ports.ts write8 hook). */
   logVRAMWrite(addr: number, val: number): void {
     const i = this.vramWriteCount;
-    if (i < 8192) {
-      this.vramWriteTs[i] = this.cpu.tStates - this.contention.frameStartTStates;
+    if (i < 32768) {
+      const ft = this.cpu.tStates - this.contention.frameStartTStates;
+      this.vramWriteTs[i] = ft;
       this.vramWriteOff[i] = addr - 0x4000;
       this.vramWriteVal[i] = val & 0xFF;
       this.vramWriteCount++;
+      // Track first/last write T-state for diagnostics
+      if (i === 0) this.activity.dbgFirstWriteT = ft;
+      this.activity.dbgLastWriteT = ft;
     }
   }
 
@@ -393,6 +411,12 @@ export class Spectrum {
     this.activity.rst16Calls = 0;
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
+    this.activity.dbgBankSwitches = 0;
+
+    // Debug: capture state before interrupt
+    this.activity.dbgHaltedAtStart = this.cpu.halted;
+    this.activity.dbgIff1AtStart = this.cpu.iff1;
+    this.activity.dbgOvershoot = this.cpu.tStates - (this.contention.frameStartTStates + this.contention.timing.tStatesPerFrame);
 
     // Frame starts when INT fires — mark the reference point BEFORE the CPU
     // responds, so interrupt-response T-states count as part of the frame.
@@ -402,10 +426,16 @@ export class Spectrum {
     const frameEnd = this.cpu.tStates + this.contention.timing.tStatesPerFrame;
 
     // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget)
-    this.cpu.interrupt();
+    // On real hardware, INT is held low for ~32T. If iff1 is false, the interrupt
+    // stays pending and fires as soon as EI re-enables interrupts.
+    let intT = this.cpu.interrupt();
+    let intPending = intT === 0;  // interrupt didn't fire — keep it pending
+    this.activity.dbgIntFired = intT > 0;
 
     // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;
+    this.activity.dbgFirstWriteT = -1;
+    this.activity.dbgLastWriteT = -1;
     if (subFrame) {
       this.vramShadow.set(this.memory.flat.subarray(0x4000, 0x5B00));
       this.vramWriteCount = 0;
@@ -449,13 +479,21 @@ export class Spectrum {
                  this.biosTrap.check(this.cpu.pc)) {
         this.activity.fdcAccesses++;
       } else if (this.cpu.halted) {
-        // Advance to next sample boundary or frame end
-        const toFrameEnd = frameEnd - this.cpu.tStates;
-        const toNextSample = this.tStatesPerSample - this.beeperTStatesAccum;
-        const skip = Math.min(toFrameEnd, toNextSample);
-        const nops = Math.max(1, Math.ceil(skip / 4));
-        this.cpu.tStates += nops * 4;
-        this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + nops) & 0x7F);
+        // HALT repeats NOP-like M1 fetches from PC.  If PC is in contended
+        // memory each cycle gets a ULA delay; otherwise we can fast-skip.
+        if (this.contention.isContended(this.cpu.pc)) {
+          // Step one NOP at a time so contention is applied correctly
+          this.cpu.read8(this.cpu.pc);
+          this.cpu.tStates += 4;
+          this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + 1) & 0x7F);
+        } else {
+          const toFrameEnd = frameEnd - this.cpu.tStates;
+          const toNextSample = this.tStatesPerSample - this.beeperTStatesAccum;
+          const skip = Math.min(toFrameEnd, toNextSample);
+          const nops = Math.max(1, Math.ceil(skip / 4));
+          this.cpu.tStates += nops * 4;
+          this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + nops) & 0x7F);
+        }
 
         if (!this.cpu.iff1) {
           this.cpu.iff1 = true;
@@ -469,6 +507,17 @@ export class Spectrum {
         }
         if (this._tracing && this._traceMode === 'full' && this.cpu.pc >= 0x4000) this.captureTraceLine();
         this.cpu.step();
+      }
+
+      // Pending interrupt: on real hardware INT stays LOW for ~32T.
+      // If iff1 was false at frame start (DI in progress), the interrupt
+      // fires as soon as EI re-enables interrupts.
+      if (intPending && this.cpu.iff1) {
+        intT = this.cpu.interrupt();
+        if (intT > 0) {
+          intPending = false;
+          this.activity.dbgIntFired = true;
+        }
       }
 
       const elapsed = this.cpu.tStates - tBefore;
