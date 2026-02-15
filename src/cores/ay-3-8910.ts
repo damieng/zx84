@@ -192,6 +192,10 @@ export class AY3891x {
     return this.regs[reg & 0x0F];
   }
 
+  getRegisters(): Uint8Array {
+    return new Uint8Array(this.regs.subarray(0, 14));
+  }
+
   setRegisters(regs: Uint8Array): void {
     for (let i = 0; i < Math.min(regs.length, 14); i++) {
       this.regs[i] = regs[i];
