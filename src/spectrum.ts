@@ -69,6 +69,8 @@ export interface IOActivity {
   fdcAccesses: number;
   /** Number of ULA reads while tape is active (EAR sampling) */
   earReads: number;
+  /** Number of attribute-area (5800-5AFF) writes this frame */
+  attrWrites: number;
   /** Number of VRAM writes logged for sub-frame rendering this frame */
   subFrameVramWrites: number;
   /** Number of border color changes logged for sub-frame rendering this frame */
@@ -94,7 +96,7 @@ export class Spectrum {
   biosTrap: Plus3DosTrap | null = null;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
 
   /** Gain factors for AY/beeper balance (0.0–1.0, set from ayMix slider) */
   beeperGain = 1.0;
@@ -403,6 +405,7 @@ export class Spectrum {
     this.activity.rst16Calls = 0;
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
+    this.activity.attrWrites = 0;
     // Frame starts when INT fires — mark the reference point BEFORE the CPU
     // responds, so interrupt-response T-states count as part of the frame.
     // This keeps contention phase, sub-frame scanline boundaries, and floating

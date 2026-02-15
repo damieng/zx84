@@ -54,6 +54,7 @@ export const ledText = signal(false);
 export const ledBeep = signal(false);
 export const ledAy = signal(false);
 export const ledDsk = signal(false);
+export const ledRainbow = signal(false);
 
 // Clock speed display
 export const clockSpeedText = signal('MHz');
@@ -1287,6 +1288,7 @@ function onFrame(): void {
     ledBeep.value = a.beeperToggled;
     ledAy.value = a.ayWrites > 5;
     ledDsk.value = a.fdcAccesses > 0;
+    ledRainbow.value = a.attrWrites > 768;
 
     // Transcribe mode LEDs
     ledRst16.value = transcribeMode.value === 'rst16' || a.rst16Calls > 0;

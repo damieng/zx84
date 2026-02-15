@@ -375,6 +375,8 @@ canvas {
 .led[data-kind="ear"].on .led-dot { background: #f80; }
 .led[data-kind="ear"].on { color: #ca6; }
 .led[data-kind="dsk"].on .led-dot { background: #0f0; }
+.led[data-kind="rainbow"].on .led-dot { background: #f0f; }
+.led[data-kind="rainbow"].on { color: #f8f; }
 
 /* Display pane */
 

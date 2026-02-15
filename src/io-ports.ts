@@ -35,6 +35,8 @@ export function installMemoryHooks(s: Spectrum): void {
     if (s.subFrameRendering && addr >= 0x4000 && addr < 0x5B00) {
       s.logVRAMWrite(addr, val);
     }
+    // Count attribute writes for rainbow detection
+    if (addr >= 0x5800 && addr < 0x5B00) s.activity.attrWrites++;
     s.cpu.memory[addr] = val & 0xFF;
   };
 
