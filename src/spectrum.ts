@@ -426,10 +426,14 @@ export class Spectrum {
       this.screenText.checkROMRoutines(pc, this.cpu.memory, this.cpu.bc);
       this.screenText.checkLDIRClear(pc, this.cpu.memory, this.cpu.de, this.cpu.bc);
 
-      // ROM trap: intercept LD-BYTES for instant tape loading
-      if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 && this.cpu.memory[0x0556] === 0x14) {
+      // ROM trap: intercept LD-BYTES for instant tape loading.
+      // Only trap when a ROM-loadable block is ahead; if only custom loader
+      // blocks remain (tone/pulses/pure-data), let the ROM execute its real
+      // LD-BYTES code so custom loaders can read EAR naturally.
+      if (this.tape.loaded && !this.tape.paused && this.cpu.pc === 0x0556 &&
+          this.cpu.memory[0x0556] === 0x14 && this.tape.hasRomBlock()) {
         trapTapeLoad(this.cpu, this.tape);
-        this.tape.skipBlock(); // advance player past the instant-loaded block
+        this.tape.skipBlock(); // advance player past the consumed block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
       } else if (this.diskMode === 'bios' && this.biosTrap &&
                  this.memory.currentROM === 2 && !this.memory.specialPaging &&

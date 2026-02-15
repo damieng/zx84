@@ -3,12 +3,16 @@
  *
  * Intercepts the standard LD-BYTES routine at 0x0556 and transfers block data
  * directly into memory, bypassing the real tape-timing loop.
+ *
+ * Returns true if a block was successfully loaded, false if loading failed
+ * (no block available, flag mismatch, or verify mode). The caller uses this
+ * to decide whether to advance the tape player past the loaded block.
  */
 
 import { Z80 } from './cores/z80.ts';
 import type { TapeDeck } from './formats/tap.ts';
 
-export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
+export function trapTapeLoad(cpu: Z80, tape: TapeDeck): boolean {
   // Expected flag byte is in A register
   const expectedFlag = cpu.a;
   // Carry flag: 1 = LOAD, 0 = VERIFY
@@ -18,6 +22,7 @@ export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
   let count = cpu.de;
 
   const block = tape.nextDataBlock();
+  let success = false;
 
   if (!block || block.flag !== expectedFlag) {
     // No block or flag mismatch — signal failure
@@ -25,6 +30,7 @@ export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
   } else if (!isLoad) {
     // VERIFY mode — just set success without copying
     cpu.setFlag(Z80.FLAG_C, true);
+    success = true;
   } else {
     // LOAD mode — copy block data into memory
     const len = Math.min(count, block.data.length);
@@ -36,6 +42,7 @@ export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
     cpu.ix = dest;
     cpu.de = count;
     cpu.setFlag(Z80.FLAG_C, true);
+    success = true;
   }
 
   // Pop return address (simulating RET from LD-BYTES)
@@ -43,4 +50,6 @@ export function trapTapeLoad(cpu: Z80, tape: TapeDeck): void {
   // Re-enable interrupts (LD-BYTES runs with DI)
   cpu.iff1 = true;
   cpu.iff2 = true;
+
+  return success;
 }

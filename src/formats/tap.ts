@@ -169,32 +169,74 @@ export class TapeDeck {
   }
 
   /**
-   * Return the next data block and advance past it, or null if finished.
-   * Skips non-data blocks, handling pause-0 and stop-if-48k stops.
-   * Used by the ROM trap in spectrum.ts.
+   * Return the next ROM-loadable data block and advance past it, or null.
+   * Only returns standard/turbo/tap DataBlocks — never pure-data, tone,
+   * pulses, or direct blocks (those are for EAR-reading custom loaders).
+   * Skips cosmetic and pause blocks. Stops scanning at custom loader blocks
+   * so the playback engine can feed them through EAR.
    */
   nextDataBlock(): DataBlock | null {
     while (this.position < this.blocks.length) {
       const block = this.blocks[this.position];
+
       if (block.kind === 'data') {
+        if (block.source === 'pure-data') {
+          // Pure data is for custom loaders reading EAR, not the ROM trap
+          return null;
+        }
         this.position++;
         return block;
       }
-      // Handle stop conditions
-      if (block.kind === 'pause' && block.duration === 0) {
-        this.paused = true;
-        this.position++;
+
+      // Custom loader blocks — stop here, don't scan past them
+      if (block.kind === 'tone' || block.kind === 'pulses' || block.kind === 'direct') {
         return null;
       }
-      if (block.kind === 'stop-if-48k' && this.is48K) {
-        this.paused = true;
+
+      // Pause: duration=0 means "stop tape"
+      if (block.kind === 'pause') {
+        if (block.duration === 0) {
+          this.paused = true;
+          this.position++;
+          return null;
+        }
+        // Non-zero pause: skip (ROM trap bypasses inter-block gaps)
         this.position++;
-        return null;
+        continue;
       }
-      // Skip non-data blocks
+
+      // Stop if 48K
+      if (block.kind === 'stop-if-48k') {
+        if (this.is48K) {
+          this.paused = true;
+          this.position++;
+          return null;
+        }
+        this.position++;
+        continue;
+      }
+
+      // Cosmetic / control blocks: skip
       this.position++;
     }
     return null;
+  }
+
+  /**
+   * Peek ahead: returns true if there's a ROM-loadable DataBlock before any
+   * custom loader blocks. Used to decide whether the ROM trap should fire
+   * (prevents busy-loop retries when only custom blocks remain).
+   */
+  hasRomBlock(): boolean {
+    for (let i = this.position; i < this.blocks.length; i++) {
+      const block = this.blocks[i];
+      if (block.kind === 'data') return block.source !== 'pure-data';
+      if (block.kind === 'tone' || block.kind === 'pulses' || block.kind === 'direct') return false;
+      if (block.kind === 'pause' && block.duration === 0) return false;
+      if (block.kind === 'stop-if-48k' && this.is48K) return false;
+      // cosmetic/pause blocks: continue scanning
+    }
+    return false;
   }
 
   /** Reset playback to the beginning */
