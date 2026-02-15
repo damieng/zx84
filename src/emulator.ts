@@ -36,7 +36,8 @@ export const turboMode = signal(false);
 export const tracing = signal(false);
 
 // Per-frame updated signals (written by bridge)
-export const regsHtml = signal('');
+export const regsHtml = signal('');  // legacy, unused — kept for type compat
+export const regsRev = signal(0);
 export const sysvarHtml = signal('');
 export const basicHtml = signal('');
 export const basicVarsHtml = signal('');

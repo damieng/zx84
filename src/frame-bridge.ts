@@ -6,7 +6,6 @@
  */
 
 import { batch } from '@preact/signals';
-import { Z80 } from '@/cores/z80.ts';
 import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
@@ -15,7 +14,7 @@ import * as settings from '@/store/settings.ts';
 import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
-  regsHtml, sysvarHtml, basicHtml, basicVarsHtml,
+  regsRev, sysvarHtml, basicHtml, basicVarsHtml,
   banksHtml, driveHtml, trapLogHtml, showTrapLog, disasmText,
   clockSpeedText,
   tapePosition, tapePaused, transcribeMode, transcribeText,
@@ -28,53 +27,6 @@ import {
 
 function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
 function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
-
-// ── Register rendering ──────────────────────────────────────────────────
-
-const FLAG_TIPS: Record<string, string> = {
-  Sign: 'Set if result is negative (bit 7 of result)',
-  Zero: 'Set if result is zero',
-  Half: 'Half-carry: set on carry from bit 3 to bit 4',
-  Prty: 'Parity/Overflow: set on even parity or arithmetic overflow',
-  Subt: 'Subtract: set if last operation was a subtraction',
-  Crry: 'Carry: set on carry from bit 7 or borrow',
-};
-
-function flagHtml(label: string, on: boolean): string {
-  const tip = FLAG_TIPS[label] || '';
-  return on
-    ? `<span class="flag-on" data-tip="${tip}">☑ ${label}</span>`
-    : `<span class="flag-off" data-tip="${tip}">☐ ${label}</span>`;
-}
-
-function renderRegs(cpu: Z80, tStatesPerFrame?: number): string {
-  const f = cpu.f;
-  const flags1 = [
-    flagHtml('Sign', (f & Z80.FLAG_S) !== 0),
-    flagHtml('Zero', (f & Z80.FLAG_Z) !== 0),
-  ].join(' ');
-  const flags2 = [
-    flagHtml('Half', (f & Z80.FLAG_H) !== 0),
-    flagHtml('Prty', (f & Z80.FLAG_PV) !== 0),
-  ].join(' ');
-  const flags3 = [
-    flagHtml('Subt', (f & Z80.FLAG_N) !== 0),
-    flagHtml('Crry', (f & Z80.FLAG_C) !== 0),
-  ].join(' ');
-
-  const iff = cpu.iff1 ? 'EI' : 'DI';
-  const halt = cpu.halted ? ' HALT' : '';
-
-  const r = (name: string, tip: string) => `<span class="reg-name" data-tip="${tip}">${name}</span>`;
-  return [
-    `${r('AF','Accumulator and Flags')}  ${hex16(cpu.af)}  ${r("AF'",'Shadow Accumulator and Flags')} ${hex16((cpu.a_ << 8) | cpu.f_)}   ${flags1}`,
-    `${r('BC','General-purpose register pair B and C')}  ${hex16(cpu.bc)}  ${r("BC'",'Shadow BC')} ${hex16((cpu.b_ << 8) | cpu.c_)}   ${flags2}`,
-    `${r('DE','General-purpose register pair D and E')}  ${hex16(cpu.de)}  ${r("DE'",'Shadow DE')} ${hex16((cpu.d_ << 8) | cpu.e_)}   ${flags3}`,
-    `${r('HL','General-purpose register pair H and L')}  ${hex16(cpu.hl)}  ${r("HL'",'Shadow HL')} ${hex16((cpu.h_ << 8) | cpu.l_)}   ${tStatesPerFrame != null ? `${r('T/F','T-states per frame')} ${tStatesPerFrame.toLocaleString()}` : ''}`,
-    `${r('IX','Index register X')}  ${hex16(cpu.ix)}  ${r('IY','Index register Y')}  ${hex16(cpu.iy)}   ${iff}  ${r('IM','Interrupt mode')}${cpu.im}${halt}`,
-    `${r('SP','Stack pointer')}  ${hex16(cpu.sp)}  ${r('PC','Program counter')}  ${hex16(cpu.pc)}   ${r('IR','Interrupt vector + Refresh counter')}  ${hex8(cpu.i)}${hex8(cpu.r)}`,
-  ].join('\n');
-}
 
 // ── System variables rendering ──────────────────────────────────────────
 
@@ -266,7 +218,7 @@ function updateDebugSignals(): void {
 export function updateRegsOnce(): void {
   if (!spectrum) return;
   batch(() => {
-    regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
+    regsRev.value++;
     updateDebugSignals();
     updateHardwareSignals(currentModel.value);
   });
@@ -442,7 +394,7 @@ export function onFrame(): void {
 
     // Registers — only if debugger pane is open
     if (!isCollapsed('disasm-panel')) {
-      regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
+      regsRev.value++;
 
       // Disassembly only when paused (breakpoint hit etc.)
       if (emulationPaused.value) {

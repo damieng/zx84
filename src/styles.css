@@ -570,17 +570,12 @@ input[type="range"]::-moz-range-thumb {
   font-family: monospace;
   font-size: 0.7rem;
 }
-.dev-error-tri {
-  font-size: 0.7rem;
-  color: #666;
-}
-.dev-error-tri.has-errors {
-  color: #e44;
-}
+.dev-errors-active { color: #e44; }
+.dev-errors-active .dev-label { color: #e44; }
 .pane .dev-row { color: #555; }
 .pane .dev-label { color: #888; }
-.pane .dev-error-tri { color: #aaa; }
-.pane .dev-error-tri.has-errors { color: #c22; }
+.pane .dev-errors-active { color: #c22; }
+.pane .dev-errors-active .dev-label { color: #c22; }
 
 /* Sound pane */
 

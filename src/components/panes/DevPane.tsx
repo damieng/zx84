@@ -47,9 +47,9 @@ export function DevPane() {
         <span class="dev-label">Heap</span>
         <span class="dev-value">{memoryUsage.value}</span>
       </div>
-      <div class="dev-row">
-        <span class={`dev-error-tri${errors > 0 ? ' has-errors' : ''}`}>&#9650;</span>
-        <span class="dev-value">{errors > 0 ? errors : ''}</span>
+      <div class={`dev-row${errors > 0 ? ' dev-errors-active' : ''}`}>
+        <span class="dev-label">Errors</span>
+        <span class="dev-value">{errors}</span>
       </div>
     </Pane>
   );

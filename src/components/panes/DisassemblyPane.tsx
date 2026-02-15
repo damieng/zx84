@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { Pane } from '@/components/Pane.tsx';
 import { RawHtml } from '@/components/RawHtml.tsx';
+import { Registers } from '@/components/Registers.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import {
   HiPlay, HiPause,
@@ -8,7 +9,7 @@ import {
   HiPencilSquare,
 } from 'react-icons/hi2';
 import {
-  disasmText, regsHtml, tracing, emulationPaused,
+  disasmText, tracing, emulationPaused,
   stepInto, stepOver, stepOut,
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
@@ -72,7 +73,7 @@ export function DisassemblyPane() {
 
   return (
     <Pane id="disasm-panel" label="Debugger" mono>
-      <RawHtml id="regs-output" html={regsHtml} />
+      <Registers />
       <div class="disasm-toolbar">
         <button
           title={paused ? 'Resume emulation' : 'Pause emulation'}
