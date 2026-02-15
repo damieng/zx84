@@ -1,6 +1,6 @@
 import { Pane } from '../Pane.tsx';
-import { volume, ayStereo, persistSetting } from '../../store/settings.ts';
-import { spectrum } from '../../store/emulator.ts';
+import { volume, ayMix, ayStereo, persistSetting } from '../../store/settings.ts';
+import { spectrum, applyDisplaySettings } from '../../store/emulator.ts';
 
 export function SoundPane() {
   return (
@@ -18,6 +18,21 @@ export function SoundPane() {
           }}
         />
         <span class="slider-value" id="volume-value">{volume.value}</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Mixer</span>
+        <span class="slider-end-label">Beep</span>
+        <input
+          type="range" id="ay-mix-slider" min="0" max="100"
+          value={ayMix.value}
+          onInput={(e) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            ayMix.value = v;
+            persistSetting('ay-mix', v);
+            applyDisplaySettings();
+          }}
+        />
+        <span class="slider-end-label">AY</span>
       </div>
       <div class="slider-row">
         <span class="slider-label">AY Channels</span>

@@ -421,6 +421,12 @@ canvas {
   flex-shrink: 0;
 }
 
+.slider-row .slider-end-label {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: #888;
+}
+
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;

@@ -95,6 +95,10 @@ export class Spectrum {
   /** Per-frame I/O activity counters */
   activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
 
+  /** Gain factors for AY/beeper balance (0.0–1.0, set from ayMix slider) */
+  beeperGain = 1.0;
+  ayGain = 1.0;
+
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
 
@@ -522,11 +526,11 @@ export class Spectrum {
         let left: number, right: number;
         if (is128kClass(this.model)) {
           const aySample = this.ay.generateSampleStereo();
-          left = aySample.left + beeperOut;
-          right = aySample.right + beeperOut;
+          left = aySample.left * this.ayGain + beeperOut * this.beeperGain;
+          right = aySample.right * this.ayGain + beeperOut * this.beeperGain;
         } else {
-          left = beeperOut;
-          right = beeperOut;
+          left = beeperOut * this.beeperGain;
+          right = beeperOut * this.beeperGain;
         }
 
         this.audio.pushSample(

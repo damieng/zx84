@@ -175,6 +175,9 @@ export function applyDisplaySettings(): void {
     spectrum.display.setCurvatureMode(settings.curvatureMode.value);
   }
   spectrum['audio'].setVolume(settings.volume.value / 100);
+  const mix = settings.ayMix.value / 100;
+  spectrum.beeperGain = Math.min(1, 2 * (1 - mix));
+  spectrum.ayGain = Math.min(1, 2 * mix);
   spectrum.subFrameRendering = settings.subFrameRendering.value;
 }
 

@@ -26,6 +26,7 @@ export const borderSize = signal(getSavedNumber('border-size', '2'));
 // ── Sound settings ──────────────────────────────────────────────────────
 
 export const volume = signal(getSavedNumber('volume', '70'));
+export const ayMix = signal(getSavedNumber('ay-mix', '50'));
 export const ayStereo = signal(getSaved('ay-stereo', 'ABC'));
 
 // ── Joystick settings ───────────────────────────────────────────────────
