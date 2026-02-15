@@ -8,6 +8,7 @@ import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import { FloppySound } from '@/plus3/floppy-sound.ts';
 import { Z80 } from '@/cores/z80.ts';
+import { PALETTES } from '@/cores/ula.ts';
 import { loadSNA, saveSNA } from '@/snapshot/sna.ts';
 import { loadZ80 } from '@/snapshot/z80format.ts';
 import { loadSZX, saveSZX } from '@/snapshot/szx.ts';
@@ -171,6 +172,7 @@ export function setCanvas(el: HTMLCanvasElement): void {
 export function applyDisplaySettings(): void {
   if (!spectrum) return;
   spectrum.setBorderSize(settings.borderSize.value as 0 | 1 | 2);
+  spectrum.ula.palette = PALETTES[settings.colorMap.value];
   if (spectrum.display) {
     spectrum.display.setScale(settings.scale.value);
     spectrum.display.setBrightness(settings.brightness.value / 50);

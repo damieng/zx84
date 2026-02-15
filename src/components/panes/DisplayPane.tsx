@@ -1,9 +1,9 @@
 import { Pane } from '@/components/Pane.tsx';
 import {
   scale, brightness, contrast, smoothing, curvature, scanlines,
-  maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, renderer, persistSetting,
+  maskType, dotPitch, curvatureMode, monitor, borderSize, subFrameRendering, renderer, colorMap, persistSetting,
 } from '@/store/settings.ts';
-import { spectrum, switchRenderer } from '@/emulator.ts';
+import { spectrum, switchRenderer, applyDisplaySettings } from '@/emulator.ts';
 
 interface MonitorPreset {
   maskType: number;
@@ -122,6 +122,19 @@ export function DisplayPane() {
         </label>
       </div>
       <div class="slider-row">
+        <span class="slider-label">Color map</span>
+        <select value={colorMap.value} onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value as 'basic' | 'measured' | 'vivid';
+          colorMap.value = v;
+          persistSetting('color-map', v);
+          applyDisplaySettings();
+        }}>
+          <option value="basic">Basic</option>
+          <option value="measured">Measured</option>
+          <option value="vivid">Vivid</option>
+        </select>
+      </div>
+      <div class="slider-row">
         <span class="slider-label">Precision</span>
         <select value={subFrameRendering.value ? 'scanline' : 'frame'} onChange={(e) => {
           const v = (e.target as HTMLSelectElement).value === 'scanline';
@@ -170,6 +183,8 @@ export function DisplayPane() {
         apply={(v) => spectrum?.display?.setBrightness(v / 50)} settingKey="brightness" />
       <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast}
         apply={(v) => spectrum?.display?.setContrast(v / 50)} settingKey="contrast" />
+      <SliderRow label="Scanlines" id="scanlines" min={0} max={100} sig={scanlines}
+        apply={(v) => spectrum?.display?.setScanlines(v / 100)} settingKey="scanlines" />
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing}
         apply={(v) => spectrum?.display?.setSmoothing(v / 100)} settingKey="smoothing" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature}
@@ -186,8 +201,6 @@ export function DisplayPane() {
           <option value="1">Cylindrical</option>
         </select>
       </div>
-      <SliderRow label="Scanlines" id="scanlines" min={0} max={100} sig={scanlines}
-        apply={(v) => spectrum?.display?.setScanlines(v / 100)} settingKey="scanlines" />
       <div class="slider-row">
         <span class="slider-label">Mask type</span>
         <select id="mask-type-select" value={maskType.value} onChange={(e) => {
@@ -203,8 +216,10 @@ export function DisplayPane() {
           <option value="4">LCD Grid</option>
         </select>
       </div>
+      {maskType.value !== 4 && maskType.value !== 0 && (
       <SliderRow label="Dot pitch" id="dot-pitch" min={10} max={40} sig={dotPitch}
         apply={(v) => spectrum?.display?.setDotPitch(v / 10)} settingKey="dot-pitch" />
+      )}
       </>)}
     </Pane>
   );

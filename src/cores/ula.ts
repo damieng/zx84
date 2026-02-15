@@ -10,28 +10,41 @@
 
 import { SpectrumKeyboard } from '@/keyboard.ts';
 
-// 16-color palette: normal (0-7) and bright (8-15)
-// RGBA values for each color
-const PALETTE: Uint32Array = new Uint32Array([
-  // Normal
-  0xFF000000, // 0: black
-  0xFFCD0000, // 1: blue
-  0xFF0000CD, // 2: red
-  0xFFCD00CD, // 3: magenta
-  0xFF00CD00, // 4: green
-  0xFFCDCD00, // 5: cyan
-  0xFF00CDCD, // 6: yellow
-  0xFFCDCDCD, // 7: white
-  // Bright
-  0xFF000000, // 8: black (bright)
-  0xFFFF0000, // 9: blue (bright)
-  0xFF0000FF, // 10: red (bright)
-  0xFFFF00FF, // 11: magenta (bright)
-  0xFF00FF00, // 12: green (bright)
-  0xFFFFFF00, // 13: cyan (bright)
-  0xFF00FFFF, // 14: yellow (bright)
-  0xFFFFFFFF, // 15: white (bright)
+// 16-color palettes: normal (0-7) and bright (8-15), ABGR uint32
+
+export type ColorMap = 'basic' | 'measured' | 'vivid';
+
+/** Basic palette — idealized 0xCD/0xFF values used by most emulators */
+const PALETTE_BASIC: Uint32Array = new Uint32Array([
+  0xFF000000, 0xFFCD0000, 0xFF0000CD, 0xFFCD00CD, // black, blue, red, magenta
+  0xFF00CD00, 0xFFCDCD00, 0xFF00CDCD, 0xFFCDCDCD, // green, cyan, yellow, white
+  0xFF000000, 0xFFFF0000, 0xFF0000FF, 0xFFFF00FF, // bright: black, blue, red, magenta
+  0xFF00FF00, 0xFFFFFF00, 0xFF00FFFF, 0xFFFFFFFF, // bright: green, cyan, yellow, white
 ]);
+
+/** Measured palette — derived from ULA resistor network (470Ω/220Ω into 75Ω load).
+ *  Normal ≈ 75% of bright, giving more visible separation between BRIGHT and non-BRIGHT. */
+const PALETTE_MEASURED: Uint32Array = new Uint32Array([
+  0xFF000000, 0xFFBF0000, 0xFF0000BF, 0xFFBF00BF, // black, blue, red, magenta
+  0xFF00BF00, 0xFFBFBF00, 0xFF00BFBF, 0xFFBFBFBF, // green, cyan, yellow, white
+  0xFF000000, 0xFFFF0000, 0xFF0000FF, 0xFFFF00FF, // bright: black, blue, red, magenta
+  0xFF00FF00, 0xFFFFFF00, 0xFF00FFFF, 0xFFFFFFFF, // bright: green, cyan, yellow, white
+]);
+
+/** Vivid palette — wider normal/bright gap (0xAA/0xFF ≈ 67%) designed for CRT
+ *  shader modes where scanlines and masks compress the visible dynamic range. */
+const PALETTE_VIVID: Uint32Array = new Uint32Array([
+  0xFF000000, 0xFFAA0000, 0xFF0000AA, 0xFFAA00AA, // black, blue, red, magenta
+  0xFF00AA00, 0xFFAAAA00, 0xFF00AAAA, 0xFFAAAAAA, // green, cyan, yellow, white
+  0xFF000000, 0xFFFF0000, 0xFF0000FF, 0xFFFF00FF, // bright: black, blue, red, magenta
+  0xFF00FF00, 0xFFFFFF00, 0xFF00FFFF, 0xFFFFFFFF, // bright: green, cyan, yellow, white
+]);
+
+export const PALETTES: Record<ColorMap, Uint32Array> = {
+  basic: PALETTE_BASIC,
+  measured: PALETTE_MEASURED,
+  vivid: PALETTE_VIVID,
+};
 
 export type BorderMode = 0 | 1 | 2; // 0=none, 1=small, 2=normal
 
@@ -68,6 +81,9 @@ export class ULA {
   /** Flash counter (toggles every 16 frames) */
   flashCounter = 0;
   flashState = false;
+
+  /** Active color palette */
+  palette: Uint32Array = PALETTE_BASIC;
 
   /** Reference to keyboard for port reads */
   keyboard: SpectrumKeyboard;
@@ -132,7 +148,7 @@ export class ULA {
       this.flashState = !this.flashState;
     }
 
-    const borderRGBA = PALETTE[this.borderColor];
+    const borderRGBA = this.palette[this.borderColor];
 
     // Fill entire buffer with border
     this.pixels32.fill(borderRGBA);
@@ -166,8 +182,8 @@ export class ULA {
           paper = tmp;
         }
 
-        const inkRGBA = PALETTE[ink];
-        const paperRGBA = PALETTE[paper];
+        const inkRGBA = this.palette[ink];
+        const paperRGBA = this.palette[paper];
 
         const px = this.borderLeft + (col << 3);
         const baseIdx = screenY * this.screenWidth + px;
@@ -196,7 +212,7 @@ export class ULA {
    */
   renderScanline(y: number, memory: Uint8Array, borderColor: number, vramOffset = 0): void {
     const screenY = y + this.borderTop;
-    const borderRGBA = PALETTE[borderColor];
+    const borderRGBA = this.palette[borderColor];
     const w = this.screenWidth;
     const rowStart = screenY * w;
 
@@ -231,8 +247,8 @@ export class ULA {
         paper = tmp;
       }
 
-      const inkRGBA = PALETTE[ink];
-      const paperRGBA = PALETTE[paper];
+      const inkRGBA = this.palette[ink];
+      const paperRGBA = this.palette[paper];
 
       const px = this.borderLeft + (col << 3);
       const baseIdx = rowStart + px;
@@ -247,7 +263,7 @@ export class ULA {
   /** Render a full-width border-only row (top/bottom border). */
   renderBorderLine(screenY: number, borderColor: number): void {
     if (screenY < 0 || screenY >= this.screenHeight) return;
-    const borderRGBA = PALETTE[borderColor];
+    const borderRGBA = this.palette[borderColor];
     const rowStart = screenY * this.screenWidth;
     for (let x = 0; x < this.screenWidth; x++) {
       this.pixels32[rowStart + x] = borderRGBA;
