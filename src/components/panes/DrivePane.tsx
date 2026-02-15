@@ -49,8 +49,8 @@ export function DrivePane() {
   const dual = dualDrives.value;
   const fileInputRefA = useRef<HTMLInputElement>(null);
   const fileInputRefB = useRef<HTMLInputElement>(null);
-  const nameA = currentDiskName;
-  const nameB = currentDiskNameB;
+  const nameA = currentDiskName.value;
+  const nameB = currentDiskNameB.value;
 
   return (
     <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel.value)}>
@@ -105,8 +105,8 @@ export function DrivePane() {
           />
         )}
       </div>
-      <DiskInfo unit={0} name={nameA} diskInfo={currentDiskInfo} />
-      {dual && <DiskInfo unit={1} name={nameB} diskInfo={currentDiskInfoB} />}
+      <DiskInfo unit={0} name={nameA} diskInfo={currentDiskInfo.value} />
+      {dual && <DiskInfo unit={1} name={nameB} diskInfo={currentDiskInfoB.value} />}
       <pre id="drive-output" dangerouslySetInnerHTML={{ __html: driveHtml.value }} />
       {showTrapLog.value && (
         <pre id="trap-log" dangerouslySetInnerHTML={{ __html: trapLogHtml.value }} />
