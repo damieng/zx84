@@ -1,121 +1,116 @@
 /**
  * ZX Spectrum BASIC parser and detokenizer.
  * Reads tokenized BASIC from memory and converts to readable text.
+ * Reference: Sinclair BASIC tokenized file format documentation
  */
 
-// Token table for ZX Spectrum BASIC (0x86-0xDF)
-// Based on ZX Spectrum 48K ROM disassembly
+// Token table for ZX Spectrum 48K/128K BASIC
+// Based on official ZX Spectrum character set documentation
 const TOKENS: Record<number, string> = {
-  // Functions (0x86-0xA4)
-  0x86: 'RND',
-  0x87: 'INKEY$',
-  0x88: 'PI',
-  0x89: 'FN',
-  0x8A: 'POINT',
-  0x8B: 'SCREEN$',
-  0x8C: 'ATTR',
-  0x8D: 'AT',
-  0x8E: 'TAB',
-  0x8F: 'VAL$',
-  0x90: 'CODE',
-  0x91: 'VAL',
-  0x92: 'LEN',
-  0x93: 'SIN',
-  0x94: 'COS',
-  0x95: 'TAN',
-  0x96: 'ASN',
-  0x97: 'ACS',
-  0x98: 'ATN',
-  0x99: 'LN',
-  0x9A: 'EXP',
-  0x9B: 'INT',
-  0x9C: 'SQR',
-  0x9D: 'SGN',
-  0x9E: 'ABS',
-  0x9F: 'PEEK',
-  0xA0: 'IN',
-  0xA1: 'USR',
-  0xA2: 'STR$',
-  0xA3: 'CHR$',
-  0xA4: 'NOT',
-  // Operators and Keywords (0xA5-0xDF)
-  0xA5: 'BIN',
-  0xA6: 'OR',
-  0xA7: 'AND',
-  0xA8: '<=',
-  0xA9: '>=',
-  0xAA: '<>',
-  0xAB: 'LINE',
-  0xAC: 'THEN',
-  0xAD: 'TO',
-  0xAE: 'STEP',
-  0xAF: 'DEF FN',
-  0xB0: 'CAT',
-  0xB1: 'FORMAT',
-  0xB2: 'MOVE',
-  0xB3: 'ERASE',
-  0xB4: 'OPEN #',
-  0xB5: 'CLOSE #',
-  0xB6: 'MERGE',
-  0xB7: 'VERIFY',
-  0xB8: 'BEEP',
-  0xB9: 'CIRCLE',
-  0xBA: 'INK',
-  0xBB: 'PAPER',
-  0xBC: 'FLASH',
-  0xBD: 'BRIGHT',
-  0xBE: 'INVERSE',
-  0xBF: 'OVER',
-  0xC0: 'OUT',
-  0xC1: 'LPRINT',
-  0xC2: 'LLIST',
-  0xC3: 'STOP',
-  0xC4: 'READ',
-  0xC5: 'DATA',
-  0xC6: 'RESTORE',
-  0xC7: 'NEW',
-  0xC8: 'BORDER',
-  0xC9: 'CONTINUE',
-  0xCA: 'DIM',
-  0xCB: 'REM',
-  0xCC: 'FOR',
-  0xCD: 'GO TO',
-  0xCE: 'GO SUB',
-  0xCF: 'INPUT',
-  0xD0: 'LOAD',
-  0xD1: 'LIST',
-  0xD2: 'LET',
-  0xD3: 'PAUSE',
-  0xD4: 'NEXT',
-  0xD5: 'POKE',
-  0xD6: 'PRINT',
-  0xD7: 'PLOT',
-  0xD8: 'RUN',
-  0xD9: 'SAVE',
-  0xDA: 'RANDOMIZE',
-  0xDB: 'IF',
-  0xDC: 'CLS',
-  0xDD: 'DRAW',
-  0xDE: 'CLEAR',
-  0xDF: 'RETURN',
-  0xE0: 'COPY',
-};
+  // 128K-only tokens
+  0xA3: 'SPECTRUM',
+  0xA4: 'PLAY',
 
-/**
- * Parse a ZX Spectrum 5-byte floating point number.
- * Returns a string representation (we don't need exact FP conversion, just display).
- */
-function parseFloatingPoint(data: Uint8Array, offset: number): string {
-  // ZX Spectrum FP format: 1 byte exponent + 4 bytes mantissa
-  // For display purposes, we'll just show the raw bytes in hex
-  // A full FP converter would be complex and isn't needed for viewing
-  const bytes = data.slice(offset, offset + 5);
-  return `{FP:${Array.from(bytes).map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('')}}`;
-}
+  // Standard tokens (0xA5-0xFF)
+  0xA5: 'RND',
+  0xA6: 'INKEY$',
+  0xA7: 'PI',
+  0xA8: 'FN',
+  0xA9: 'POINT',
+  0xAA: 'SCREEN$',
+  0xAB: 'ATTR',
+  0xAC: 'AT',
+  0xAD: 'TAB',
+  0xAE: 'VAL$',
+  0xAF: 'CODE',
+  0xB0: 'VAL',
+  0xB1: 'LEN',
+  0xB2: 'SIN',
+  0xB3: 'COS',
+  0xB4: 'TAN',
+  0xB5: 'ASN',
+  0xB6: 'ACS',
+  0xB7: 'ATN',
+  0xB8: 'LN',
+  0xB9: 'EXP',
+  0xBA: 'INT',
+  0xBB: 'SQR',
+  0xBC: 'SGN',
+  0xBD: 'ABS',
+  0xBE: 'PEEK',
+  0xBF: 'IN',
+  0xC0: 'USR',
+  0xC1: 'STR$',
+  0xC2: 'CHR$',
+  0xC3: 'NOT',
+  0xC4: 'BIN',
+  0xC5: 'OR',
+  0xC6: 'AND',
+  0xC7: '<=',
+  0xC8: '>=',
+  0xC9: '<>',
+  0xCA: 'LINE',
+  0xCB: 'THEN',
+  0xCC: 'TO',
+  0xCD: 'STEP',
+  0xCE: 'DEF FN',
+  0xCF: 'CAT',
+  0xD0: 'FORMAT',
+  0xD1: 'MOVE',
+  0xD2: 'ERASE',
+  0xD3: 'OPEN #',
+  0xD4: 'CLOSE #',
+  0xD5: 'MERGE',
+  0xD6: 'VERIFY',
+  0xD7: 'BEEP',
+  0xD8: 'CIRCLE',
+  0xD9: 'INK',
+  0xDA: 'PAPER',
+  0xDB: 'FLASH',
+  0xDC: 'BRIGHT',
+  0xDD: 'INVERSE',
+  0xDE: 'OVER',
+  0xDF: 'OUT',
+  0xE0: 'LPRINT',
+  0xE1: 'LLIST',
+  0xE2: 'STOP',
+  0xE3: 'READ',
+  0xE4: 'DATA',
+  0xE5: 'RESTORE',
+  0xE6: 'NEW',
+  0xE7: 'BORDER',
+  0xE8: 'CONTINUE',
+  0xE9: 'DIM',
+  0xEA: 'REM',
+  0xEB: 'FOR',
+  0xEC: 'GO TO',
+  0xED: 'GO SUB',
+  0xEE: 'INPUT',
+  0xEF: 'LOAD',
+  0xF0: 'LIST',
+  0xF1: 'LET',
+  0xF2: 'PAUSE',
+  0xF3: 'NEXT',
+  0xF4: 'POKE',
+  0xF5: 'PRINT',
+  0xF6: 'PLOT',
+  0xF7: 'RUN',
+  0xF8: 'SAVE',
+  0xF9: 'RANDOMIZE',
+  0xFA: 'IF',
+  0xFB: 'CLS',
+  0xFC: 'DRAW',
+  0xFD: 'CLEAR',
+  0xFE: 'RETURN',
+  0xFF: 'COPY',
+};
 
 /**
  * Detokenize a single BASIC line.
  * Returns the line as a string.
+ *
+ * Number format: ASCII digits + marker (0x0E=integral, 0x7E=floating) + 5 bytes binary
+ * We display the ASCII and skip the marker + binary data.
  */
 function detokenizeLine(data: Uint8Array, offset: number, lineEnd: number): string {
   let result = '';
@@ -125,35 +120,35 @@ function detokenizeLine(data: Uint8Array, offset: number, lineEnd: number): stri
     const byte = data[i];
 
     if (byte === 0x0D) {
-      // Line terminator
+      // Line terminator (NEWLINE)
       break;
-    } else if (byte === 0x0E) {
-      // Inline number: skip the 0x0E, parse 5-byte FP, continue with ASCII
+    } else if (byte === 0x0E || byte === 0x7E) {
+      // Number marker: 0x0E = integral, 0x7E = floating-point
+      // The ASCII representation is already in the output
+      // Skip this marker byte + following 5 bytes of binary number
       i++;
       if (i + 5 <= lineEnd) {
-        // The number is already in ASCII before the 0x0E marker
-        // Just skip the binary FP representation
         i += 5;
       }
-    } else if (byte >= 0x86 && byte <= 0xE0) {
-      // Token
+    } else if (byte >= 0xA3 && byte <= 0xFF) {
+      // BASIC token
       const token = TOKENS[byte];
       if (token) {
-        result += token;
+        result += token + ' ';
       } else {
         result += `[${byte.toString(16).toUpperCase()}]`;
       }
       i++;
     } else if (byte >= 0x20 && byte < 0x7F) {
-      // Printable ASCII
+      // Printable ASCII (including digits, letters, punctuation)
       result += String.fromCharCode(byte);
       i++;
     } else if (byte === 0x0A) {
-      // Newline within REM or string
+      // Embedded newline (in REM or string)
       result += '↵';
       i++;
     } else {
-      // Other control character - show as hex
+      // Other control character - show as hex for debugging
       result += `[${byte.toString(16).toUpperCase().padStart(2, '0')}]`;
       i++;
     }

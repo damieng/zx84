@@ -184,8 +184,10 @@ export function applyDisplaySettings(): void {
   spectrum.subFrameRendering = settings.subFrameRendering.value;
 }
 
-export function createMachine(): void {
-  if (!canvasEl) return;
+export function createMachine(): boolean {
+  console.log('[HMR] createMachine() called');
+
+  if (!canvasEl) return false;
   if (spectrum) {
     spectrum.destroy();
   }
@@ -200,10 +202,17 @@ export function createMachine(): void {
   speedFrameCount = 0;
   clockSpeedText.value = 'MHz';
 
+  let hmrRestored = false;
   if (romData) {
     spectrum.loadROM(romData);
     spectrum.reset();
-    spectrum.start();
+
+    // Try to restore HMR state before starting
+    hmrRestored = restoreHMRState();
+    console.log('[HMR] HMR restored:', hmrRestored);
+    if (!hmrRestored) {
+      spectrum.start();
+    }
   }
 
   // Apply saved AY stereo mode
@@ -236,6 +245,7 @@ export function createMachine(): void {
   });
 
   unpause();
+  return hmrRestored;
 }
 
 export function unpause(): void {
@@ -1357,11 +1367,14 @@ export async function init(): Promise<void> {
   if (entry) {
     romData = entry.data;
     setRomStatus('');
-    createMachine();
+    const hmrRestored = createMachine();
 
-    const last = await restoreLastFile();
-    if (last) {
-      await loadFile(last.data, last.name);
+    // Only restore last file if HMR state wasn't just restored
+    if (!hmrRestored) {
+      const last = await restoreLastFile();
+      if (last) {
+        await loadFile(last.data, last.name);
+      }
     }
   }
 }
@@ -1396,6 +1409,105 @@ export function setDiskMode(mode: 'fdc' | 'bios'): void {
 export function initAudio(): void {
   if (spectrum && !spectrum['audio'].running) {
     spectrum['audio'].init();
+  }
+}
+
+// ── HMR state preservation ──────────────────────────────────────────────
+
+const HMR_STATE_KEY = 'zx84-hmr-state';
+
+export function saveHMRState(): void {
+  console.log('[HMR] saveHMRState() called', { spectrum: !!spectrum, romData: !!romData });
+
+  if (!spectrum || !romData) {
+    console.warn('[HMR] saveHMRState() aborted - no spectrum or romData');
+    return;
+  }
+
+  try {
+    // Stop emulation temporarily
+    const wasPaused = emulationPaused.value;
+    if (!wasPaused) spectrum.stop();
+
+    // Save snapshot data
+    const snaData = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+    console.log('[HMR] SNA data created:', snaData.length, 'bytes');
+
+    // Convert to base64 for localStorage
+    const b64 = btoa(String.fromCharCode(...snaData));
+
+    // Save state bundle
+    const state = {
+      snapshot: b64,
+      model: currentModel.value,
+      timestamp: Date.now(),
+    };
+
+    localStorage.setItem(HMR_STATE_KEY, JSON.stringify(state));
+    console.log('[HMR] State saved to localStorage, size:', b64.length, 'chars');
+  } catch (err) {
+    console.error('[HMR] Failed to save HMR state:', err);
+  }
+}
+
+export function restoreHMRState(): boolean {
+  console.log('[HMR] restoreHMRState() called');
+
+  try {
+    const raw = localStorage.getItem(HMR_STATE_KEY);
+    if (!raw) {
+      console.log('[HMR] No saved state found in localStorage');
+      return false;
+    }
+
+    console.log('[HMR] Found saved state, parsing...');
+    const state = JSON.parse(raw);
+    const age = Date.now() - state.timestamp;
+
+    console.log('[HMR] State age:', age, 'ms');
+
+    // Only restore if less than 60 seconds old (avoid restoring stale state)
+    if (age > 60000) {
+      console.warn('[HMR] State too old, discarding');
+      localStorage.removeItem(HMR_STATE_KEY);
+      return false;
+    }
+
+    // Decode snapshot
+    const b64 = state.snapshot;
+    const binary = atob(b64);
+    const data = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      data[i] = binary.charCodeAt(i);
+    }
+
+    console.log('[HMR] Decoded snapshot:', data.length, 'bytes');
+
+    // Wait for spectrum to be ready
+    if (!spectrum || !romData) {
+      console.warn('[HMR] Spectrum not ready yet');
+      return false;
+    }
+
+    // Load snapshot
+    console.log('[HMR] Loading snapshot into spectrum...');
+    spectrum.stop();
+    spectrum.reset();
+    const result = loadSNA(data, spectrum.cpu, spectrum.memory);
+    spectrum.ula.borderColor = result.borderColor;
+    spectrum.cpu.memory = spectrum.memory.flat;
+    spectrum.start();
+
+    // Clean up
+    localStorage.removeItem(HMR_STATE_KEY);
+
+    console.log('[HMR] State restored successfully! PC:', result);
+    setStatus('HMR: State restored');
+    return true;
+  } catch (err) {
+    console.error('[HMR] Failed to restore HMR state:', err);
+    localStorage.removeItem(HMR_STATE_KEY);
+    return false;
   }
 }
 

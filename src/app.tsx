@@ -1,5 +1,6 @@
 /**
  * Root layout: sidebars, main screen, tooltip.
+ * HMR test 4
  */
 
 import { useEffect } from 'preact/hooks';
