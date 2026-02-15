@@ -43,6 +43,7 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
     if (!draggedPaneId) return;
+    e.stopPropagation();
     e.dataTransfer!.dropEffect = 'move';
 
     const sidebar = sidebarRef.current;
@@ -76,6 +77,7 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
 
   const onDrop = useCallback((e: DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!draggedPaneId) return;
 
     const sidebar = sidebarRef.current;

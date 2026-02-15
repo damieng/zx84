@@ -109,7 +109,7 @@ body {
   gap: 6px;
   position: relative;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
 }
 
@@ -214,6 +214,13 @@ body {
   font-family: var(--font-mono);
   line-height: var(--mono-line-height);
   font-variant-numeric: tabular-nums;
+}
+
+/* Hardware pane */
+#hardware-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* Model row: select + icon button inline */
