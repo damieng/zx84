@@ -91,7 +91,7 @@ export class UPD765A {
 
   // ── Disk image ─────────────────────────────────────────────────────
 
-  private disk: DskImage | null = null;
+  private disks: (DskImage | null)[] = [null, null, null, null];
 
   /** Per-drive Read ID cycling index */
   private idIndex = [0, 0, 0, 0];
@@ -124,8 +124,13 @@ export class UPD765A {
 
   // ── Public API ─────────────────────────────────────────────────────
 
-  /** Expose disk image for BIOS trap handler. */
-  get diskImage(): DskImage | null { return this.disk; }
+  /** Expose disk image for BIOS trap handler (drive A: only for compatibility). */
+  get diskImage(): DskImage | null { return this.disks[0]; }
+
+  /** Get disk image for a specific drive unit. */
+  getDiskImage(unit: number): DskImage | null {
+    return this.disks[unit & 3];
+  }
 
   /** Set the Present Cylinder Number for a drive (used by BIOS trap seek). */
   setTrack(unit: number, cyl: number): void { this.pcn[unit & 3] = cyl; }
@@ -138,18 +143,20 @@ export class UPD765A {
     this.latchFrames = 25;
   }
 
-  insertDisk(image: DskImage): void {
-    this.disk = image;
-    this.idIndex = [0, 0, 0, 0];
+  insertDisk(image: DskImage, unit: number = 0): void {
+    this.disks[unit & 3] = image;
+    this.idIndex[unit & 3] = 0;
   }
 
-  ejectDisk(): void {
-    this.disk = null;
+  ejectDisk(unit: number = 0): void {
+    this.disks[unit & 3] = null;
   }
 
   // ── State getters (for UI) ──────────────────────────────────────────
 
-  get currentTrack(): number { return this.pcn[0]; }
+  get currentUnit(): number { return this.exUnit; }
+
+  get currentTrack(): number { return this.pcn[this.exUnit]; }
 
   get currentSector(): number {
     if (this.phase === Phase.Execution) return this.exR;
@@ -332,7 +339,7 @@ export class UPD765A {
     // ST3: track 0 if pcn==0, two-side=1
     let st3 = unit | (head << 2) | 0x08; // bit 3 = two-side
     if (this.pcn[unit] === 0) st3 |= 0x10; // Track 0
-    if (this.disk) st3 |= 0x20; // bit 5 = ready
+    if (this.disks[unit]) st3 |= 0x20; // bit 5 = ready
     this.result([st3]);
   }
 
@@ -369,11 +376,12 @@ export class UPD765A {
 
   /** Look up the track at the current head position. */
   private getTrack(unit: number, head: number): DskTrack | null {
-    if (!this.disk) return null;
+    const disk = this.disks[unit];
+    if (!disk) return null;
     const cyl = this.pcn[unit];
-    if (cyl >= this.disk.numTracks) return null;
-    if (head >= this.disk.numSides) return null;
-    return this.disk.tracks[cyl][head];
+    if (cyl >= disk.numTracks) return null;
+    if (head >= disk.numSides) return null;
+    return disk.tracks[cyl][head];
   }
 
   /**

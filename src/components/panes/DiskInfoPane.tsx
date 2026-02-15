@@ -1,11 +1,4 @@
-import { Pane } from '@/components/Pane.tsx';
-import { diskInfoHtml, currentModel, currentDiskInfo } from '@/emulator.ts';
-import { isPlus3 } from '@/spectrum.ts';
-
+// Disk info now shown in Drives pane
 export function DiskInfoPane() {
-  return (
-    <Pane id="disk-info-panel" label="Disk" mono visible={isPlus3(currentModel.value) && !!currentDiskInfo}>
-      <pre id="disk-info-output" dangerouslySetInnerHTML={{ __html: diskInfoHtml.value }} />
-    </Pane>
-  );
+  return <></>;
 }

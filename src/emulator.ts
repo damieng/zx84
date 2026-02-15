@@ -80,6 +80,8 @@ export let romData: Uint8Array | null = null;
 export let floppySound: FloppySound | null = null;
 export let currentDiskInfo: DskImage | null = null;
 export let currentDiskName = '';
+export let currentDiskInfoB: DskImage | null = null;
+export let currentDiskNameB = '';
 export let canvasEl: HTMLCanvasElement | null = null;
 
 
@@ -228,6 +230,8 @@ export async function createMachine(): Promise<boolean> {
   // Floppy sound
   currentDiskInfo = null;
   currentDiskName = '';
+  currentDiskInfoB = null;
+  currentDiskNameB = '';
   if (isPlus3(model)) {
     if (!floppySound) floppySound = new FloppySound();
     floppySound.reset();
@@ -749,7 +753,7 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
       const image = parseDSK(data);
       currentDiskInfo = image;
       currentDiskName = filename;
-      spectrum.loadDisk(image);
+      spectrum.loadDisk(image, 0);
       setStatus(`Disk loaded: ${filename}`);
       persistLastFile(data, filename);
     } catch (e) {
@@ -921,13 +925,38 @@ export function ejectTape(): void {
   setStatus('Tape ejected');
 }
 
-export function ejectDisk(): void {
+export function ejectDisk(unit: number = 0): void {
   if (!spectrum) return;
-  if (spectrum.fdc) spectrum.fdc.ejectDisk();
-  currentDiskInfo = null;
-  currentDiskName = '';
-  diskInfoHtml.value = '';
-  setStatus('Disk ejected');
+  if (spectrum.fdc) spectrum.fdc.ejectDisk(unit);
+  if (unit === 0) {
+    currentDiskInfo = null;
+    currentDiskName = '';
+    diskInfoHtml.value = '';
+    setStatus('Disk A: ejected');
+  } else {
+    currentDiskInfoB = null;
+    currentDiskNameB = '';
+    setStatus('Disk B: ejected');
+  }
+}
+
+export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number): void {
+  if (!spectrum) { setStatus('Load a ROM first'); return; }
+  try {
+    const image = parseDSK(data);
+    if (unit === 0) {
+      currentDiskInfo = image;
+      currentDiskName = filename;
+    } else {
+      currentDiskInfoB = image;
+      currentDiskNameB = filename;
+    }
+    spectrum.loadDisk(image, unit);
+    setStatus(`Disk ${unit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
+    if (unit === 0) persistLastFile(data, filename);
+  } catch (e) {
+    setStatus(`DSK error: ${(e as Error).message}`);
+  }
 }
 
 function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }

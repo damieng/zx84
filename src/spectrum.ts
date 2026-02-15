@@ -669,8 +669,8 @@ export class Spectrum {
     this.tape.load(data);
   }
 
-  loadDisk(image: DskImage): void {
-    this.fdc.insertDisk(image);
+  loadDisk(image: DskImage, unit: number = 0): void {
+    this.fdc.insertDisk(image, unit);
   }
 
   getScreenText(): string {

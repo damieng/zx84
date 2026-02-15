@@ -45,6 +45,7 @@ export const fontName = signal(getSaved('font', ''));
 // ── Disk mode ───────────────────────────────────────────────────────────
 
 export const diskMode = signal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
+export const dualDrives = signal(getSaved('dual-drives', 'off') === 'on');
 
 // ── Tape settings ───────────────────────────────────────────────────────
 

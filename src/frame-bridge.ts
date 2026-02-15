@@ -12,10 +12,10 @@ import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
 import * as settings from '@/store/settings.ts';
 import {
-  spectrum, floppySound, currentDiskInfo, currentDiskName,
+  spectrum, floppySound,
   currentModel, emulationPaused, tracing,
   regsHtml, sysvarHtml, basicHtml, basicVarsHtml,
-  banksHtml, diskInfoHtml, driveHtml, trapLogHtml, showTrapLog, disasmText,
+  banksHtml, driveHtml, trapLogHtml, showTrapLog, disasmText,
   clockSpeedText,
   tapePosition, tapePaused, transcribeMode, transcribeText,
   ledKbd, ledKemp, ledEar, ledLoad, ledRst16, ledText,
@@ -200,20 +200,7 @@ function renderBanks(): string {
   return lines.join('\n');
 }
 
-function renderDiskInfoStr(): string {
-  if (!currentDiskInfo) return '';
-  const n = '<span class="reg-name">';
-  const e = '</span>';
-  const img = currentDiskInfo;
-  const t0 = img.tracks[0]?.[0];
-  const spt = t0 ? t0.sectors.length : 0;
-  return [
-    currentDiskName,
-    `${n}Sides${e} ${img.numSides}  ${n}Tracks${e} ${img.numTracks}  ${n}Sectors${e} ${spt}`,
-    `${n}Format${e} ${img.diskFormat}`,
-    `${n}Prot.${e}  ${img.protection || 'None'}`,
-  ].join('\n');
-}
+// Disk info now rendered directly in DrivePane component
 
 function renderDriveStr(): string {
   if (!spectrum) return '';
@@ -226,10 +213,18 @@ function renderDriveStr(): string {
   const head = fdc.currentHead;
   const sector = fdc.isExecuting ? fdc.currentSector.toString().padStart(2, '0') : '--';
   const operation = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
-  return [
+  const lines = [
     `${n}Motor${e}  ${motor}  ${n}Operation${e} ${operation}`,
     `${n}Head${e} ${head}  ${n}Track${e}  ${track}  ${n}Sector${e} ${sector}`,
-  ].join('\n');
+  ];
+
+  // Show unit info if dual drives enabled
+  if (settings.dualDrives.value && fdc.isExecuting) {
+    const unit = fdc.currentUnit;
+    lines.push(`${n}Unit${e} ${unit === 0 ? 'A:' : unit === 1 ? 'B:' : unit}`);
+  }
+
+  return lines.join('\n');
 }
 
 /** Update banks, disk info, drive status, and trap log signals. */
@@ -238,9 +233,6 @@ function updateHardwareSignals(model: SpectrumModel): void {
     banksHtml.value = renderBanks();
   }
   if (isPlus3(model)) {
-    if (currentDiskInfo) {
-      diskInfoHtml.value = renderDiskInfoStr();
-    }
     driveHtml.value = renderDriveStr();
     if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
       const entries = spectrum!.biosTrap.trapLog;
