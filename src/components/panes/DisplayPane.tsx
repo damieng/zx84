@@ -129,7 +129,6 @@ export function DisplayPane() {
             persistSetting('sub-frame-rendering', v ? 'on' : 'off');
             if (spectrum) {
               spectrum.subFrameRendering = v;
-              console.log(`[SubFrame] mode ${v ? 'ON' : 'OFF'}`);
             }
           }} />
         Sub-frame precision

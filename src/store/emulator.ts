@@ -517,6 +517,22 @@ export async function loadRomFiles(files: FileList): Promise<void> {
 
 // ── Snapshot loading ────────────────────────────────────────────────────
 
+/** Try to switch to a 128K-class ROM, returning false if none available. */
+async function ensure128kROM(): Promise<boolean> {
+  const models: SpectrumModel[] = ['128k', '+2', '+2a', '+3'];
+  for (const model of models) {
+    const entry = await restoreROM(model);
+    if (entry) {
+      currentModel.value = model;
+      romData = entry.data;
+      setRomStatus('');
+      createMachine();
+      return true;
+    }
+  }
+  return false;
+}
+
 async function applySnapshot(data: Uint8Array, filename: string): Promise<boolean> {
   if (!spectrum) {
     setStatus('Load a ROM first');
@@ -528,17 +544,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
   try {
     if (ext === 'sna') {
       if (data.length > 49179 && !is128kClass(currentModel.value)) {
-        const entry128 = await restoreROM('128k');
-        const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
-        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
-        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
-        if (entry) {
-          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
-          romData = entry.data;
-          setRomStatus('');
-          createMachine();
-        } else {
+        if (!await ensure128kROM()) {
           setStatus('128K SNA requires a 128K ROM — load one first');
           return false;
         }
@@ -557,31 +563,18 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       const result = loadZ80(data, spectrum.cpu, spectrum.memory);
 
       if (result.is128K && !is128kClass(currentModel.value)) {
-        const entry128 = await restoreROM('128k');
-        const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
-        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
-        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
-        if (entry) {
-          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
-          romData = entry.data;
-          setRomStatus('');
-          createMachine();
-          spectrum!.stop();
-          spectrum!.reset();
-          loadZ80(data, spectrum!.cpu, spectrum!.memory);
-          spectrum!.ula.borderColor = result.borderColor;
-          spectrum!.cpu.memory = spectrum!.memory.flat;
-          spectrum!.start();
-        } else {
+        if (!await ensure128kROM()) {
           setStatus('128K .z80 snapshot requires a 128K ROM — load one first');
           return false;
         }
-      } else {
-        spectrum.ula.borderColor = result.borderColor;
-        spectrum.cpu.memory = spectrum.memory.flat;
-        spectrum.start();
+        spectrum!.stop();
+        spectrum!.reset();
+        loadZ80(data, spectrum!.cpu, spectrum!.memory);
       }
+
+      spectrum!.ula.borderColor = result.borderColor;
+      spectrum!.cpu.memory = spectrum!.memory.flat;
+      spectrum!.start();
       setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
     } else if (ext === 'szx') {
       spectrum.stop();
@@ -589,23 +582,13 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       const result = await loadSZX(data, spectrum.cpu, spectrum.memory);
 
       if (result.is128K && !is128kClass(currentModel.value)) {
-        const entry128 = await restoreROM('128k');
-        const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
-        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
-        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
-        if (entry) {
-          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
-          romData = entry.data;
-          setRomStatus('');
-          createMachine();
-          spectrum!.stop();
-          spectrum!.reset();
-          await loadSZX(data, spectrum!.cpu, spectrum!.memory);
-        } else {
+        if (!await ensure128kROM()) {
           setStatus('128K .szx snapshot requires a 128K ROM — load one first');
           return false;
         }
+        spectrum!.stop();
+        spectrum!.reset();
+        await loadSZX(data, spectrum!.cpu, spectrum!.memory);
       }
 
       // Apply paging state for 128K
@@ -640,23 +623,13 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       const result = loadSP(data, spectrum.cpu, spectrum.memory);
 
       if (result.is128K && !is128kClass(currentModel.value)) {
-        const entry128 = await restoreROM('128k');
-        const entryPlus2 = entry128 ? null : await restoreROM('+2');
-        const entryPlus2a = (entry128 || entryPlus2) ? null : await restoreROM('+2a');
-        const entryPlus3 = (entry128 || entryPlus2 || entryPlus2a) ? null : await restoreROM('+3');
-        const entry = entry128 || entryPlus2 || entryPlus2a || entryPlus3;
-        if (entry) {
-          currentModel.value = entry128 ? '128k' : entryPlus2 ? '+2' : entryPlus2a ? '+2a' : '+3';
-          romData = entry.data;
-          setRomStatus('');
-          createMachine();
-          spectrum!.stop();
-          spectrum!.reset();
-          loadSP(data, spectrum!.cpu, spectrum!.memory);
-        } else {
+        if (!await ensure128kROM()) {
           setStatus('128K .sp snapshot requires a 128K ROM — load one first');
           return false;
         }
+        spectrum!.stop();
+        spectrum!.reset();
+        loadSP(data, spectrum!.cpu, spectrum!.memory);
       }
 
       // Apply paging state for 128K
@@ -910,9 +883,6 @@ export function toggleAutoRewind(): void {
   settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind.value ? 'on' : 'off');
 }
 
-// ── Auto-type ───────────────────────────────────────────────────────────
-
-
 // ── Per-frame bridge ────────────────────────────────────────────────────
 
 function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
@@ -1091,37 +1061,46 @@ function renderDriveStr(): string {
   ].join('\n');
 }
 
+/** Update banks, disk info, drive status, and trap log signals. */
+function updateHardwareSignals(model: SpectrumModel): void {
+  if (is128kClass(model)) {
+    banksHtml.value = renderBanks();
+  }
+  if (isPlus3(model)) {
+    if (currentDiskInfo) {
+      diskInfoHtml.value = renderDiskInfoStr();
+    }
+    driveHtml.value = renderDriveStr();
+    if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
+      const entries = spectrum!.biosTrap.trapLog;
+      trapLogHtml.value = entries.length > 0
+        ? entries.map(e =>
+            e.startsWith('UNTRAPPED')
+              ? `<span class="trap-warn">${e}</span>`
+              : e
+          ).join('\n')
+        : '<span style="color:#666">(no traps fired)</span>';
+      showTrapLog.value = true;
+    } else {
+      showTrapLog.value = false;
+    }
+  }
+}
+
+/** Update disassembly and system variable signals. */
+function updateDebugSignals(): void {
+  sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
+  const cpu = spectrum!.cpu;
+  const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
+  disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+}
+
 function updateRegsOnce(): void {
   if (!spectrum) return;
-  const model = currentModel.value;
   batch(() => {
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
-    sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
-    const cpu = spectrum!.cpu;
-    const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
-    if (is128kClass(model)) {
-      banksHtml.value = renderBanks();
-    }
-    if (isPlus3(model)) {
-      if (currentDiskInfo) {
-        diskInfoHtml.value = renderDiskInfoStr();
-      }
-      driveHtml.value = renderDriveStr();
-      if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
-        const entries = spectrum!.biosTrap.trapLog;
-        trapLogHtml.value = entries.length > 0
-          ? entries.map(e =>
-              e.startsWith('UNTRAPPED')
-                ? `<span class="trap-warn">${e}</span>`
-                : e
-            ).join('\n')
-          : '<span style="color:#666">(no traps fired)</span>';
-        showTrapLog.value = true;
-      } else {
-        showTrapLog.value = false;
-      }
-    }
+    updateDebugSignals();
+    updateHardwareSignals(currentModel.value);
   });
 }
 
@@ -1260,35 +1239,10 @@ function onFrame(): void {
 
     // Disassembly only when paused (breakpoint hit etc.)
     if (emulationPaused.value) {
-      sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
-      const cpu = spectrum!.cpu;
-      const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-      disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+      updateDebugSignals();
     }
 
-    if (is128kClass(model)) {
-      banksHtml.value = renderBanks();
-    }
-
-    if (isPlus3(model)) {
-      if (currentDiskInfo) {
-        diskInfoHtml.value = renderDiskInfoStr();
-      }
-      driveHtml.value = renderDriveStr();
-      if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
-        const entries = spectrum!.biosTrap.trapLog;
-        trapLogHtml.value = entries.length > 0
-          ? entries.map(e =>
-              e.startsWith('UNTRAPPED')
-                ? `<span class="trap-warn">${e}</span>`
-                : e
-            ).join('\n')
-          : '<span style="color:#666">(no traps fired)</span>';
-        showTrapLog.value = true;
-      } else {
-        showTrapLog.value = false;
-      }
-    }
+    updateHardwareSignals(model);
 
     // Transcribe overlay
     if (transcribeMode.value !== 'off') {
