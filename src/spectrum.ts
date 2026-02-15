@@ -547,24 +547,68 @@ export class Spectrum {
       this.ula.renderBorderLine(r, currentBorder);
     }
 
-    // Display lines 0..191 — replay VRAM writes up to each line's scan time
-    // The ULA fetches 32 columns over 128 T-states (4T per column), so writes
-    // that arrive during the active display portion (before lineTState + 128)
-    // can still affect columns the beam hasn't reached yet.
+    // Display lines 0..191 — replay VRAM writes with per-column accuracy.
+    // The ULA fetches column C's attribute at lineTState + C*4 + 2, so writes
+    // arriving mid-scanline are visible only for columns the beam hasn't reached.
+    const colAttrs = new Uint8Array(32);  // per-column attribute snapshots
+    const saved = new Uint8Array(32);     // pre-allocated save buffer
+    const writeTs = this.vramWriteTs;
+    const writeOff = this.vramWriteOff;
+    const writeVal = this.vramWriteVal;
+
     for (let y = 0; y < 192; y++) {
       const lineTState = cStart + y * tpl;
       const lineEnd = lineTState + 128;
-      // Apply all VRAM writes that arrive before the ULA finishes this line
-      while (writeIdx < writeCount && this.vramWriteTs[writeIdx] < lineEnd) {
-        shadow[this.vramWriteOff[writeIdx]] = this.vramWriteVal[writeIdx];
+
+      // Phase 1: apply all writes that happened before this line started
+      while (writeIdx < writeCount && writeTs[writeIdx] < lineTState) {
+        shadow[writeOff[writeIdx]] = writeVal[writeIdx];
         writeIdx++;
       }
+
       // Advance border color
       while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= lineTState) {
         currentBorder = this.borderChanges[borderIdx][1];
         borderIdx++;
       }
-      this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
+
+      // Phase 2: check for mid-line writes (during active display)
+      if (writeIdx < writeCount && writeTs[writeIdx] < lineEnd) {
+        // There are writes during this scanline — use per-column rendering.
+        const attrBase = 0x1800 + ((y >> 3) << 5);  // shadow offset for attrs
+
+        // Process mid-line writes column by column.  For each column C,
+        // apply all writes with ts < lineTState + C*4 + 2 (the ULA fetch time
+        // for column C's attribute), then snapshot the attribute value.
+        let midIdx = writeIdx;
+        for (let c = 0; c < 32; c++) {
+          const fetchTime = lineTState + c * 4 + 2;
+          while (midIdx < writeCount && writeTs[midIdx] < fetchTime) {
+            shadow[writeOff[midIdx]] = writeVal[midIdx];
+            midIdx++;
+          }
+          // Capture what the ULA sees for this column at its fetch time
+          colAttrs[c] = shadow[attrBase + c];
+        }
+
+        // Apply remaining mid-line writes (after last column fetch) to shadow
+        while (writeIdx < writeCount && writeTs[writeIdx] < lineEnd) {
+          shadow[writeOff[writeIdx]] = writeVal[writeIdx];
+          writeIdx++;
+        }
+
+        // Temporarily set per-column attributes and render
+        for (let c = 0; c < 32; c++) {
+          saved[c] = shadow[attrBase + c];
+          shadow[attrBase + c] = colAttrs[c];
+        }
+        this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
+        // Restore shadow attributes to final state for subsequent scanlines
+        for (let c = 0; c < 32; c++) shadow[attrBase + c] = saved[c];
+      } else {
+        // No mid-line writes — render directly
+        this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
+      }
     }
 
     // Bottom border
