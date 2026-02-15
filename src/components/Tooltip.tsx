@@ -2,15 +2,15 @@
  * Custom tooltip using event delegation on [data-tip].
  */
 
-import { useEffect, useRef } from 'preact/hooks';
+import { onMount, onCleanup } from 'solid-js';
 
 export function Tooltip() {
-  const elRef = useRef<HTMLDivElement>(null);
-  const timerRef = useRef(0);
-  const targetRef = useRef<HTMLElement | null>(null);
+  let elRef!: HTMLDivElement;
+  let timer = 0;
+  let targetEl: HTMLElement | null = null;
 
-  useEffect(() => {
-    const tooltipEl = elRef.current!;
+  onMount(() => {
+    const tooltipEl = elRef;
 
     function showTooltip(el: HTMLElement): void {
       const text = el.getAttribute('data-tip');
@@ -23,35 +23,35 @@ export function Tooltip() {
     }
 
     function hideTooltip(): void {
-      clearTimeout(timerRef.current);
-      timerRef.current = 0;
-      targetRef.current = null;
+      clearTimeout(timer);
+      timer = 0;
+      targetEl = null;
       tooltipEl.classList.remove('visible');
     }
 
     function onMouseover(e: MouseEvent): void {
       const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
-      if (!el) { if (targetRef.current) hideTooltip(); return; }
-      if (el === targetRef.current) return;
+      if (!el) { if (targetEl) hideTooltip(); return; }
+      if (el === targetEl) return;
       hideTooltip();
-      targetRef.current = el;
-      timerRef.current = window.setTimeout(() => showTooltip(el), 400);
+      targetEl = el;
+      timer = window.setTimeout(() => showTooltip(el), 400);
     }
 
     function onMouseout(e: MouseEvent): void {
       const el = (e.target as HTMLElement).closest?.('[data-tip]') as HTMLElement | null;
-      if (el === targetRef.current) hideTooltip();
+      if (el === targetEl) hideTooltip();
     }
 
     document.addEventListener('mouseover', onMouseover);
     document.addEventListener('mouseout', onMouseout);
 
-    return () => {
+    onCleanup(() => {
       document.removeEventListener('mouseover', onMouseover);
       document.removeEventListener('mouseout', onMouseout);
       hideTooltip();
-    };
-  }, []);
+    });
+  });
 
   return <div class="zx-tooltip" ref={elRef} />;
 }

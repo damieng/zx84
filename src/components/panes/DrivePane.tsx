@@ -1,18 +1,18 @@
-import { useRef } from 'preact/hooks';
+import { Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiFolderOpen, HiEllipsisVertical } from 'react-icons/hi2';
+import { HiOutlineFolderOpen, HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveHtml, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  setDiskMode, ejectDisk, loadDiskToUnit,
+  setDiskModeAction, ejectDisk, loadDiskToUnit,
 } from '@/emulator.ts';
-import { diskMode, dualDrives, persistSetting } from '@/store/settings.ts';
+import { diskMode, dualDrives, setDualDrives, persistSetting } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 
-function renderDiskInfo(img: DskImage): string {
+function renderDiskInfoStr(img: DskImage): string {
   const n = '<span class="reg-name">';
   const e = '</span>';
   const t0 = img.tracks[0]?.[0];
@@ -24,56 +24,52 @@ function renderDiskInfo(img: DskImage): string {
   ].join('\n');
 }
 
-function DiskInfo({ unit, name, diskInfo }: { unit: number; name: string; diskInfo: DskImage | null }) {
-  if (!name) return null;
-
+function DiskInfo(props: { unit: number; name: string; diskInfo: DskImage | null }) {
   return (
-    <div class="disk-section">
-      <div class="disk-name">
-        <span class="disk-label">{unit === 0 ? 'A:' : 'B:'}</span>
-        <span class="disk-name-text" title={name}>{name}</span>
-        <button class="tape-eject" title={`Eject disk ${unit === 0 ? 'A:' : 'B:'}`} onClick={() => ejectDisk(unit)}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-            <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
-          </svg>
-        </button>
+    <Show when={props.name}>
+      <div class="disk-section">
+        <div class="disk-name">
+          <span class="disk-label">{props.unit === 0 ? 'A:' : 'B:'}</span>
+          <span class="disk-name-text" title={props.name}>{props.name}</span>
+          <button class="tape-eject" title={`Eject disk ${props.unit === 0 ? 'A:' : 'B:'}`} onClick={() => ejectDisk(props.unit)}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
+            </svg>
+          </button>
+        </div>
+        <Show when={props.diskInfo}>
+          <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />
+        </Show>
       </div>
-      {diskInfo && (
-        <pre class="disk-info-output" dangerouslySetInnerHTML={{ __html: renderDiskInfo(diskInfo) }} />
-      )}
-    </div>
+    </Show>
   );
 }
 
 export function DrivePane() {
-  const mode = diskMode.value;
-  const dual = dualDrives.value;
-  const fileInputRefA = useRef<HTMLInputElement>(null);
-  const fileInputRefB = useRef<HTMLInputElement>(null);
-  const nameA = currentDiskName.value;
-  const nameB = currentDiskNameB.value;
+  let fileInputRefA!: HTMLInputElement;
+  let fileInputRefB!: HTMLInputElement;
 
   return (
-    <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel.value)}>
+    <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())}>
       <div class="drive-toolbar">
-        <button title="Open disk A:" onClick={() => fileInputRefA.current?.click()}><HiFolderOpen /> A:</button>
-        {dual && (
-          <button title="Open disk B:" onClick={() => fileInputRefB.current?.click()}><HiFolderOpen /> B:</button>
-        )}
+        <button title="Open disk A:" onClick={() => fileInputRefA?.click()}><HiOutlineFolderOpen /> A:</button>
+        <Show when={dualDrives()}>
+          <button title="Open disk B:" onClick={() => fileInputRefB?.click()}><HiOutlineFolderOpen /> B:</button>
+        </Show>
         <DropDownMenuButton
-          icon={<HiEllipsisVertical />}
+          icon={<HiOutlineEllipsisVertical />}
           title="Drive options"
           items={[
-            { value: 'fdc', label: 'Emulate 765 FDC', checked: mode === 'fdc' },
-            { value: 'bios', label: 'Trap +3DOS calls', checked: mode === 'bios' },
-            { value: 'dual', label: 'Enable B: drive', checked: dual },
+            { value: 'fdc', label: 'Emulate 765 FDC', checked: diskMode() === 'fdc' },
+            { value: 'bios', label: 'Trap +3DOS calls', checked: diskMode() === 'bios' },
+            { value: 'dual', label: 'Enable B: drive', checked: dualDrives() },
           ]}
           onSelect={(value) => {
             if (value === 'dual') {
-              dualDrives.value = !dual;
-              persistSetting('dual-drives', dualDrives.value ? 'on' : 'off');
+              setDualDrives(!dualDrives());
+              persistSetting('dual-drives', dualDrives() ? 'on' : 'off');
             } else {
-              setDiskMode(value as 'fdc' | 'bios');
+              setDiskModeAction(value as 'fdc' | 'bios');
             }
           }}
         />
@@ -90,7 +86,7 @@ export function DrivePane() {
             (e.target as HTMLInputElement).value = '';
           }}
         />
-        {dual && (
+        <Show when={dualDrives()}>
           <input
             type="file"
             ref={fileInputRefB}
@@ -104,14 +100,16 @@ export function DrivePane() {
               (e.target as HTMLInputElement).value = '';
             }}
           />
-        )}
+        </Show>
       </div>
-      <DiskInfo unit={0} name={nameA} diskInfo={currentDiskInfo.value} />
-      {dual && <DiskInfo unit={1} name={nameB} diskInfo={currentDiskInfoB.value} />}
+      <DiskInfo unit={0} name={currentDiskName()} diskInfo={currentDiskInfo()} />
+      <Show when={dualDrives()}>
+        <DiskInfo unit={1} name={currentDiskNameB()} diskInfo={currentDiskInfoB()} />
+      </Show>
       <RawHtml id="drive-output" html={driveHtml} />
-      {showTrapLog.value && (
+      <Show when={showTrapLog()}>
         <RawHtml id="trap-log" html={trapLogHtml} />
-      )}
+      </Show>
     </Pane>
   );
 }

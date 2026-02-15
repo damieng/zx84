@@ -2,7 +2,7 @@
  * Root layout: sidebars, main screen, tooltip.
  */
 
-import { useEffect } from 'preact/hooks';
+import { onMount, onCleanup, createEffect, type JSX } from 'solid-js';
 import { Sidebar } from '@/components/Sidebar.tsx';
 import { Screen } from '@/components/Screen.tsx';
 import { StatusBar } from '@/components/StatusBar.tsx';
@@ -25,15 +25,19 @@ import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
 import { DevPane } from '@/components/panes/DevPane.tsx';
 
 import { paneOrder } from '@/ui/panes.ts';
-import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling, gamepadConfigP1, gamepadConfigP2, saveGamepadConfig, persistSetting, type GamepadConfig, type GamepadBinding } from '@/store/settings.ts';
+import { joyP1, joyP2, joyMapP1, setJoyMapP1, joyMapP2, setJoyMapP2, needsGamepadPolling, gamepadConfigP1, gamepadConfigP2, saveGamepadConfig, persistSetting, type GamepadConfig, type GamepadBinding } from '@/store/settings.ts';
 import {
   spectrum, joyPressForType, initAudio, init, loadFile,
 } from '@/emulator.ts';
-import { configuringPlayer, configuringStep, configuringProgress } from '@/components/panes/JoystickPane.tsx';
+import {
+  configuringPlayer, setConfiguringPlayer,
+  configuringStep, setConfiguringStep,
+  setConfiguringProgress,
+} from '@/components/panes/JoystickPane.tsx';
 
 // ── Pane registry ───────────────────────────────────────────────────────
 
-const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
+const PANE_COMPONENTS: Record<string, () => JSX.Element> = {
   'hardware-panel': HardwarePane,
   'snapshot-panel': LoadSavePane,
   'joystick-panel': JoystickPane,
@@ -52,13 +56,15 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
 };
 
 function renderPanes(side: 'left' | 'right') {
-  const order = paneOrder.value;
-  return order
-    .filter(p => p.sidebar === side)
-    .map(p => {
-      const Component = PANE_COMPONENTS[p.id];
-      return Component ? <Component key={p.id} /> : null;
-    });
+  return () => {
+    const order = paneOrder();
+    return order
+      .filter(p => p.sidebar === side)
+      .map(p => {
+        const Component = PANE_COMPONENTS[p.id];
+        return Component ? <Component /> : null;
+      });
+  };
 }
 
 // ── Keyboard ────────────────────────────────────────────────────────────
@@ -89,12 +95,12 @@ function handleJoyKey(e: KeyboardEvent, pressed: boolean): boolean {
   const joyMapSelectors = [joyMapP1, joyMapP2];
   let handled = false;
   for (let p = 0; p < 2; p++) {
-    const mapMode = joyMapSelectors[p].value;
+    const mapMode = joyMapSelectors[p]();
     const keyMap = KEY_MAP_FOR_MODE[mapMode];
-    if (!keyMap || joySelectors[p].value === 'none') continue;
+    if (!keyMap || joySelectors[p]() === 'none') continue;
     const joyDir = keyMap[e.code];
     if (joyDir) {
-      joyPressForType(joyDir, pressed, joySelectors[p].value);
+      joyPressForType(joyDir, pressed, joySelectors[p]());
       setDpadHighlight(p, joyDir, pressed);
       handled = true;
     }
@@ -179,30 +185,34 @@ function configReset(): void {
   configPending = {};
   configStartTime = 0;
   configCandidate = null;
-  configuringProgress.value = 0;
+  setConfiguringProgress(0);
 }
 
-function advanceConfig(joyMapSelectors: typeof joyMapP1[]): void {
-  const p = configuringPlayer.value;
-  const currentStep = configuringStep.value;
+function advanceConfig(): void {
+  const p = configuringPlayer();
+  const currentStep = configuringStep();
   const idx = CONFIG_STEPS.indexOf(currentStep as any);
 
   configStartTime = 0;
   configCandidate = null;
-  configuringProgress.value = 0;
+  setConfiguringProgress(0);
 
   if (idx < CONFIG_STEPS.length - 1) {
     // Brief pause, then next step
-    configuringStep.value = '';
-    setTimeout(() => { configuringStep.value = CONFIG_STEPS[idx + 1]; }, 250);
+    setConfiguringStep('');
+    setTimeout(() => { setConfiguringStep(CONFIG_STEPS[idx + 1]); }, 250);
   } else {
     // All done — save configuration
     const finalConfig = configPending as GamepadConfig;
     saveGamepadConfig((p + 1) as 1 | 2, finalConfig);
-    joyMapSelectors[p].value = 'gamepad';
+    if (p === 0) {
+      setJoyMapP1('gamepad');
+    } else {
+      setJoyMapP2('gamepad');
+    }
     persistSetting(p === 0 ? 'joy-map-p1' : 'joy-map-p2', 'gamepad');
-    configuringPlayer.value = -1;
-    configuringStep.value = '';
+    setConfiguringPlayer(-1);
+    setConfiguringStep('');
     configPending = {};
   }
 }
@@ -216,22 +226,22 @@ function pollGamepads(): void {
   const gamepads = navigator.getGamepads();
 
   // ── Configuration mode ──────────────────────────────────────────────
-  if (configuringPlayer.value >= 0 && configuringStep.value) {
-    const p = configuringPlayer.value;
+  if (configuringPlayer() >= 0 && configuringStep()) {
+    const p = configuringPlayer();
     const gp = gamepads[p] ?? gamepads[0] ?? null;
     if (!gp) return;
 
-    const step = configuringStep.value;
+    const step = configuringStep();
 
     // Deadzone: just snapshot whatever the axes read right now after a timer
     if (step === 'deadzone') {
       if (!configStartTime) configStartTime = Date.now();
       const elapsed = Date.now() - configStartTime;
-      configuringProgress.value = Math.min(1, elapsed / DEADZONE_DURATION);
+      setConfiguringProgress(Math.min(1, elapsed / DEADZONE_DURATION));
 
       if (elapsed >= DEADZONE_DURATION) {
         configPending.deadzone = Array.from(gp.axes);
-        advanceConfig(joyMapSelectors);
+        advanceConfig();
       }
       return;
     }
@@ -245,31 +255,31 @@ function pollGamepads(): void {
       if (isBindingAlreadyUsed(input, configPending)) {
         configCandidate = null;
         configStartTime = 0;
-        configuringProgress.value = 0;
+        setConfiguringProgress(0);
         return;
       }
 
       if (configCandidate && bindingsEqual(input, configCandidate)) {
         // Still holding same input
         const elapsed = Date.now() - configStartTime;
-        configuringProgress.value = Math.min(1, elapsed / BIND_HOLD_DURATION);
+        setConfiguringProgress(Math.min(1, elapsed / BIND_HOLD_DURATION));
 
         if (elapsed >= BIND_HOLD_DURATION) {
           (configPending as any)[step] = input;
-          advanceConfig(joyMapSelectors);
+          advanceConfig();
         }
       } else {
         // New candidate
         configCandidate = input;
         configStartTime = Date.now();
-        configuringProgress.value = 0;
+        setConfiguringProgress(0);
       }
     } else {
       // Released — reset
       if (configCandidate) {
         configCandidate = null;
         configStartTime = 0;
-        configuringProgress.value = 0;
+        setConfiguringProgress(0);
       }
     }
 
@@ -287,14 +297,14 @@ function pollGamepads(): void {
     }
     if (!gp) continue;
 
-    const mapValue = joyMapSelectors[p].value;
+    const mapValue = joyMapSelectors[p]();
     if (mapValue !== 'gamepad') continue;
 
-    const config = (p === 0 ? gamepadConfigP1 : gamepadConfigP2).value;
+    const config = (p === 0 ? gamepadConfigP1 : gamepadConfigP2)();
     if (!config) continue;
 
     const prev = gamepadPrevState[p];
-    const mode = joySelectors[p].value;
+    const mode = joySelectors[p]();
 
     if (mode === 'none') {
       for (const dir of ['up', 'down', 'left', 'right', 'fire']) {
@@ -326,8 +336,11 @@ function pollGamepads(): void {
 }
 
 export function App() {
+  const leftPanes = renderPanes('left');
+  const rightPanes = renderPanes('right');
+
   // Register global keyboard/audio/drag-drop handlers
-  useEffect(() => {
+  onMount(() => {
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
     document.addEventListener('click', initAudio, { once: true });
@@ -345,32 +358,32 @@ export function App() {
     document.addEventListener('dragover', onDragOver);
     document.addEventListener('drop', onDrop);
 
-    return () => {
+    onCleanup(() => {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
       document.removeEventListener('click', initAudio);
       document.removeEventListener('dragover', onDragOver);
       document.removeEventListener('drop', onDrop);
-    };
-  }, []);
+    });
+  });
 
-  // Gamepad polling loop
-  useEffect(() => {
-    if (!needsGamepadPolling.value && configuringPlayer.value < 0) return;
+  // Gamepad polling loop — auto-tracks needsGamepadPolling() and configuringPlayer()
+  createEffect(() => {
+    if (!needsGamepadPolling() && configuringPlayer() < 0) return;
     let rafId = 0;
     function loop() {
       pollGamepads();
       rafId = requestAnimationFrame(loop);
     }
     rafId = requestAnimationFrame(loop);
-    return () => {
+    onCleanup(() => {
       cancelAnimationFrame(rafId);
       configReset();
-    };
-  }, [needsGamepadPolling.value, configuringPlayer.value]);
+    });
+  });
 
   // Init emulator on mount
-  useEffect(() => { init(); }, []);
+  onMount(() => { init(); });
 
   return (
     <>
@@ -383,7 +396,7 @@ export function App() {
           </h1>
         </div>
       }>
-        {renderPanes('left')}
+        {leftPanes()}
       </Sidebar>
 
       <div id="main">
@@ -393,7 +406,7 @@ export function App() {
       </div>
 
       <Sidebar id="right-sidebar" side="right">
-        {renderPanes('right')}
+        {rightPanes()}
       </Sidebar>
 
       <Tooltip />

@@ -1,5 +1,5 @@
 import { defineConfig, Plugin } from 'vite';
-import preact from '@preact/preset-vite';
+import solidPlugin from 'vite-plugin-solid';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 import obfuscatorPlugin from 'rollup-plugin-obfuscator';
@@ -60,7 +60,7 @@ function hmrFreezePlugin(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [
     hmrFreezePlugin(),
-    preact(),
+    solidPlugin(),
     ...(mode === 'production' ? [
       viteCompression({ algorithm: 'gzip', threshold: 1024 }),
       viteCompression({ algorithm: 'brotliCompress', threshold: 1024, ext: '.br' }),

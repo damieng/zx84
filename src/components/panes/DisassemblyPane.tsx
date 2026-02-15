@@ -1,13 +1,13 @@
-import { useRef, useEffect, useCallback } from 'preact/hooks';
+import { Show, onMount, onCleanup } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { RawHtml } from '@/components/RawHtml.tsx';
 import { Registers } from '@/components/Registers.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import {
-  HiPlay, HiPause,
-  HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
-  HiPencilSquare,
-} from 'react-icons/hi2';
+  HiOutlinePlay, HiOutlinePause,
+  HiOutlineArrowDownRight, HiOutlineArrowTrendingDown, HiOutlineArrowUpRight,
+  HiOutlinePencilSquare,
+} from 'solid-icons/hi';
 import {
   disasmText, tracing, emulationPaused,
   stepInto, stepOver, stepOut,
@@ -15,7 +15,6 @@ import {
   togglePause, toggleBreakpoint, runTo,
 } from '@/emulator.ts';
 
-/** Find the data-addr from a click target inside .disasm-output */
 function addrFromEvent(e: MouseEvent): number | null {
   const line = (e.target as HTMLElement).closest('.d-line');
   if (!line) return null;
@@ -24,18 +23,16 @@ function addrFromEvent(e: MouseEvent): number | null {
 }
 
 export function DisassemblyPane() {
-  const isTracing = tracing.value;
-  const paused = emulationPaused.value;
-  const outputRef = useRef<HTMLElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const setOutputRef = useCallback((el: HTMLElement | null) => { outputRef.current = el; }, []);
+  let outputRef: HTMLElement | undefined;
+  let menuRef!: HTMLDivElement;
 
-  // Close context menu on any click
-  useEffect(() => {
-    function close() { if (menuRef.current) menuRef.current.style.display = 'none'; }
+  function setOutputRef(el: HTMLElement | null) { outputRef = el ?? undefined; }
+
+  onMount(() => {
+    function close() { if (menuRef) menuRef.style.display = 'none'; }
     document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, []);
+    onCleanup(() => document.removeEventListener('click', close));
+  });
 
   function onDblClick(e: MouseEvent) {
     const addr = addrFromEvent(e);
@@ -46,9 +43,9 @@ export function DisassemblyPane() {
     const addr = addrFromEvent(e);
     if (addr == null) return;
     e.preventDefault();
-    const menu = menuRef.current;
-    if (!menu) return;
-    const rect = outputRef.current!.getBoundingClientRect();
+    const menu = menuRef;
+    if (!menu || !outputRef) return;
+    const rect = outputRef.getBoundingClientRect();
     menu.style.left = `${e.clientX - rect.left}px`;
     menu.style.top = `${e.clientY - rect.top}px`;
     menu.style.display = 'block';
@@ -56,18 +53,16 @@ export function DisassemblyPane() {
   }
 
   function onMenuRunTo() {
-    const menu = menuRef.current;
-    if (!menu) return;
-    const addr = Number(menu.dataset.addr);
-    menu.style.display = 'none';
+    if (!menuRef) return;
+    const addr = Number(menuRef.dataset.addr);
+    menuRef.style.display = 'none';
     runTo(addr);
   }
 
   function onMenuToggleBp() {
-    const menu = menuRef.current;
-    if (!menu) return;
-    const addr = Number(menu.dataset.addr);
-    menu.style.display = 'none';
+    if (!menuRef) return;
+    const addr = Number(menuRef.dataset.addr);
+    menuRef.style.display = 'none';
     toggleBreakpoint(addr);
   }
 
@@ -76,34 +71,16 @@ export function DisassemblyPane() {
       <Registers />
       <div class="disasm-toolbar">
         <button
-          title={paused ? 'Resume emulation' : 'Pause emulation'}
-          class={paused ? 'active' : ''}
+          title={emulationPaused() ? 'Resume emulation' : 'Pause emulation'}
+          class={emulationPaused() ? 'active' : ''}
           onClick={togglePause}
-        >{paused ? <HiPlay /> : <HiPause />}</button>
-        <button
-          title="Step Into (execute one instruction)"
-          onClick={stepInto}
-          disabled={!paused}
-        ><HiArrowDownRight /></button>
-        <button
-          title="Step Over (execute, stepping over CALLs)"
-          onClick={stepOver}
-          disabled={!paused}
-        ><HiArrowTrendingDown /></button>
-        <button
-          title="Step Out (run until RET)"
-          onClick={stepOut}
-          disabled={!paused}
-        ><HiArrowUpRight /></button>
-        {isTracing ? (
-          <button
-            class="active"
-            title="Stop tracing and copy to clipboard"
-            onClick={stopTrace}
-          >Stop</button>
-        ) : (
+        >{emulationPaused() ? <HiOutlinePlay /> : <HiOutlinePause />}</button>
+        <button title="Step Into (execute one instruction)" onClick={stepInto} disabled={!emulationPaused()}><HiOutlineArrowDownRight /></button>
+        <button title="Step Over (execute, stepping over CALLs)" onClick={stepOver} disabled={!emulationPaused()}><HiOutlineArrowTrendingDown /></button>
+        <button title="Step Out (run until RET)" onClick={stepOut} disabled={!emulationPaused()}><HiOutlineArrowUpRight /></button>
+        <Show when={tracing()} fallback={
           <DropDownMenuButton
-            icon={<HiPencilSquare />}
+            icon={<HiOutlinePencilSquare />}
             title="Start tracing (copies to clipboard on stop)"
             items={[
               { value: 'full', label: 'Full' },
@@ -112,32 +89,29 @@ export function DisassemblyPane() {
               { value: 'loopanalysis', label: 'Loop' },
             ]}
             onSelect={(mode) => {
-              if (mode === 'loopanalysis') {
-                copyCpuState();
-              } else {
-                startTrace(mode as 'full' | 'contention' | 'portio');
-              }
+              if (mode === 'loopanalysis') copyCpuState();
+              else startTrace(mode as 'full' | 'contention' | 'portio');
             }}
           />
-        )}
+        }>
+          <button class="active" title="Stop tracing and copy to clipboard" onClick={stopTrace}>Stop</button>
+        </Show>
       </div>
-      {paused && (
-        <>
-          <RawHtml
-            tag="div"
-            class="disasm-output"
-            style="position:relative"
-            html={disasmText}
-            innerRef={setOutputRef}
-            onDblClick={onDblClick}
-            onContextMenu={onContextMenu}
-          />
-          <div ref={menuRef} class="disasm-ctx-menu" style="display:none">
-            <div class="disasm-ctx-item" onClick={onMenuRunTo}>Run to here</div>
-            <div class="disasm-ctx-item" onClick={onMenuToggleBp}>Toggle breakpoint</div>
-          </div>
-        </>
-      )}
+      <Show when={emulationPaused()}>
+        <RawHtml
+          tag="div"
+          class="disasm-output"
+          style="position:relative"
+          html={disasmText}
+          innerRef={setOutputRef}
+          onDblClick={onDblClick}
+          onContextMenu={onContextMenu}
+        />
+        <div ref={menuRef} class="disasm-ctx-menu" style="display:none">
+          <div class="disasm-ctx-item" onClick={onMenuRunTo}>Run to here</div>
+          <div class="disasm-ctx-item" onClick={onMenuToggleBp}>Toggle breakpoint</div>
+        </div>
+      </Show>
     </Pane>
   );
 }

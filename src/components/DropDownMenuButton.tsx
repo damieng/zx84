@@ -1,5 +1,5 @@
-import type { ComponentChildren } from 'preact';
-import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
+import type { JSX } from 'solid-js';
+import { createSignal, createEffect, Show, onCleanup } from 'solid-js';
 
 export interface MenuItem {
   value: string;
@@ -9,26 +9,27 @@ export interface MenuItem {
 }
 
 interface Props {
-  icon: ComponentChildren;
+  icon: JSX.Element;
   title?: string;
   items: MenuItem[];
   onSelect: (value: string) => void;
 }
 
-export function DropDownMenuButton({ icon, title, items, onSelect }: Props) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+export function DropDownMenuButton(props: Props) {
+  const [open, setOpen] = createSignal(false);
+  const [pos, setPos] = createSignal({ top: 0, left: 0 });
+  let btnRef!: HTMLButtonElement;
+  let menuRef!: HTMLDivElement;
 
-  const close = useCallback(() => setOpen(false), []);
+  function close() { setOpen(false); }
 
   // Close on click outside or Escape
-  useEffect(() => {
-    if (!open) return;
+  createEffect(() => {
+    if (!open()) return;
     function onMouseDown(e: MouseEvent) {
       if (
-        menuRef.current && !menuRef.current.contains(e.target as Node) &&
-        btnRef.current && !btnRef.current.contains(e.target as Node)
+        menuRef && !menuRef.contains(e.target as Node) &&
+        btnRef && !btnRef.contains(e.target as Node)
       ) close();
     }
     function onKey(e: KeyboardEvent) {
@@ -36,22 +37,21 @@ export function DropDownMenuButton({ icon, title, items, onSelect }: Props) {
     }
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKey);
-    return () => {
+    onCleanup(() => {
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKey);
-    };
-  }, [open, close]);
+    });
+  });
 
   // Position the menu using fixed positioning to escape overflow:hidden parents
-  const [pos, setPos] = useState({ top: 0, left: 0 });
-  useEffect(() => {
-    if (!open || !btnRef.current) return;
-    const rect = btnRef.current.getBoundingClientRect();
+  createEffect(() => {
+    if (!open() || !btnRef) return;
+    const rect = btnRef.getBoundingClientRect();
     setPos({ top: rect.bottom + 2, left: rect.left });
-  }, [open]);
+  });
 
   function handleClick(item: MenuItem) {
-    onSelect(item.value);
+    props.onSelect(item.value);
     // Checkable items stay open (they're toggles); action items close
     if (item.checked === undefined) {
       close();
@@ -63,31 +63,30 @@ export function DropDownMenuButton({ icon, title, items, onSelect }: Props) {
       <button
         ref={btnRef}
         class="ddmenu-btn"
-        title={title}
-        onClick={() => setOpen(!open)}
+        title={props.title}
+        onClick={() => setOpen(!open())}
       >
-        {icon}
+        {props.icon}
       </button>
-      {open && (
+      <Show when={open()}>
         <div
           ref={menuRef}
           class="ddmenu"
-          style={{ top: `${pos.top}px`, left: `${pos.left}px` }}
+          style={{ top: `${pos().top}px`, left: `${pos().left}px` }}
         >
-          {items.map((item) => (
+          {props.items.map((item) => (
             <div
-              key={item.value}
               class="ddmenu-item"
               onClick={() => handleClick(item)}
             >
               {item.checked !== undefined && (
-                <span class="ddmenu-check">{item.checked ? '✓' : ''}</span>
+                <span class="ddmenu-check">{item.checked ? '\u2713' : ''}</span>
               )}
               <span>{item.label}</span>
             </div>
           ))}
         </div>
-      )}
+      </Show>
     </>
   );
 }

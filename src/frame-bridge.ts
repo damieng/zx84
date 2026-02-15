@@ -5,7 +5,7 @@
  * LED/clock/font updates, and the onFrame callback.
  */
 
-import { batch } from '@preact/signals';
+import { batch } from 'solid-js';
 import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
@@ -14,13 +14,14 @@ import * as settings from '@/store/settings.ts';
 import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
-  regsRev, sysvarRev, basicHtml, basicVarsHtml,
-  banksHtml, driveHtml, trapLogHtml, showTrapLog, disasmText,
-  clockSpeedText,
-  tapePosition, tapePaused, transcribeMode, transcribeText,
-  ledKbd, ledKemp, ledEar, ledLoad, ledRst16, ledText,
-  ledBeep, ledAy, ledDsk, ledRainbow,
-  setStatus, getPendingRunTo, clearPendingRunTo,
+  setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
+  setBanksHtml, setDriveHtml, setTrapLogHtml, setShowTrapLog, setDisasmText,
+  setClockSpeedText,
+  setTapePosition, tapePaused, setTapePaused, transcribeMode, setTranscribeText,
+  setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedRst16, setLedText,
+  setLedBeep, setLedAy, setLedDsk, setLedRainbow,
+  setStatus, setEmulationPaused, setTracing,
+  getPendingRunTo, clearPendingRunTo,
 } from '@/emulator.ts';
 
 // ── Hex formatting ──────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ function hex16(v: number): string { return v.toString(16).toUpperCase().padStart
 function renderBanks(): string {
   if (!spectrum) return '';
   const mem = spectrum.memory;
-  const model = currentModel.value;
+  const model = currentModel();
   const n = '<span class="reg-name">';
   const e = '</span>';
   const plus2a = isPlus2AClass(model);
@@ -110,7 +111,7 @@ function renderDriveStr(): string {
   ];
 
   // Show unit info if dual drives enabled
-  if (settings.dualDrives.value && fdc.isExecuting) {
+  if (settings.dualDrives() && fdc.isExecuting) {
     const unit = fdc.currentUnit;
     lines.push(`${n}Unit${e} ${unit === 0 ? 'A:' : unit === 1 ? 'B:' : unit}`);
   }
@@ -121,22 +122,22 @@ function renderDriveStr(): string {
 /** Update banks, disk info, drive status, and trap log signals. */
 function updateHardwareSignals(model: SpectrumModel): void {
   if (is128kClass(model)) {
-    banksHtml.value = renderBanks();
+    setBanksHtml(renderBanks());
   }
   if (isPlus3(model)) {
-    driveHtml.value = renderDriveStr();
+    setDriveHtml(renderDriveStr());
     if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
       const entries = spectrum!.biosTrap.trapLog;
-      trapLogHtml.value = entries.length > 0
+      setTrapLogHtml(entries.length > 0
         ? entries.map(e =>
             e.startsWith('UNTRAPPED')
               ? `<span class="trap-warn">${e}</span>`
               : e
           ).join('\n')
-        : '<span style="color:#666">(no traps fired)</span>';
-      showTrapLog.value = true;
+        : '<span style="color:#666">(no traps fired)</span>');
+      setShowTrapLog(true);
     } else {
-      showTrapLog.value = false;
+      setShowTrapLog(false);
     }
   }
 }
@@ -145,20 +146,20 @@ function updateHardwareSignals(model: SpectrumModel): void {
 
 /** Update disassembly, system variables, BASIC listing, and variables signals. */
 function updateDebugSignals(): void {
-  sysvarRev.value++;
-  basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
-  basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
+  setSysvarRev(v => v + 1);
+  setBasicHtml(parseBasicProgram(spectrum!.cpu.memory));
+  setBasicVarsHtml(parseBasicVariables(spectrum!.cpu.memory));
   const cpu = spectrum!.cpu;
   const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-  disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+  setDisasmText(formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints));
 }
 
 export function updateRegsOnce(): void {
   if (!spectrum) return;
   batch(() => {
-    regsRev.value++;
+    setRegsRev(v => v + 1);
     updateDebugSignals();
-    updateHardwareSignals(currentModel.value);
+    updateHardwareSignals(currentModel());
   });
 }
 
@@ -176,7 +177,7 @@ export function resetSpeedTracking(): void {
   speedLastTime = performance.now();
   speedLastTStates = 0;
   speedFrameCount = 0;
-  clockSpeedText.value = 'MHz';
+  setClockSpeedText('MHz');
 }
 
 function updateClockSpeed(): void {
@@ -191,7 +192,7 @@ function updateClockSpeed(): void {
   speedLastTStates = spectrum.cpu.tStates;
   if (elapsed > 0) {
     const mhz = (tStates / elapsed) / 1_000_000;
-    clockSpeedText.value = `${mhz.toFixed(2)} MHz`;
+    setClockSpeedText(`${mhz.toFixed(2)} MHz`);
   }
 }
 
@@ -221,7 +222,7 @@ export interface FontEntry {
 }
 
 export function updateFontPreview(): { type: 'custom'; data: Uint8Array } | { type: 'rom'; data: Uint8Array } | null {
-  const id = settings.fontName.value;
+  const id = settings.fontName();
 
   if (id) {
     const entries = loadFontStore();
@@ -284,12 +285,12 @@ export function onFrame(): void {
   updateClockSpeed();
 
   const a = spectrum.activity;
-  const model = currentModel.value;
+  const model = currentModel();
 
   // Check if a breakpoint fired this frame
   if (spectrum.breakpointHit >= 0) {
     spectrum.stop();
-    emulationPaused.value = true;
+    setEmulationPaused(true);
     const addr = spectrum.breakpointHit;
     if (getPendingRunTo() === addr) {
       spectrum.breakpoints.delete(addr);
@@ -301,44 +302,44 @@ export function onFrame(): void {
   }
 
   // Sync tracing signal if trace auto-stopped (buffer full)
-  if (tracing.value && !spectrum.tracing) {
+  if (tracing() && !spectrum.tracing) {
     const text = spectrum.stopTrace();
-    tracing.value = false;
+    setTracing(false);
     navigator.clipboard.writeText(text);
     setStatus(`Trace auto-stopped and copied (${text.split('\n').length.toLocaleString()} lines)`);
   }
 
   batch(() => {
-    ledKbd.value = a.ulaReads > 0;
-    ledKemp.value = a.kempstonReads > 0;
-    ledEar.value = a.earReads > 100;
-    ledLoad.value = a.tapeLoads > 0;
-    ledBeep.value = a.beeperToggled;
-    ledAy.value = a.ayWrites > 5;
-    ledDsk.value = a.fdcAccesses > 0;
-    ledRainbow.value = a.attrWrites > 768;
+    setLedKbd(a.ulaReads > 0);
+    setLedKemp(a.kempstonReads > 0);
+    setLedEar(a.earReads > 100);
+    setLedLoad(a.tapeLoads > 0);
+    setLedBeep(a.beeperToggled);
+    setLedAy(a.ayWrites > 5);
+    setLedDsk(a.fdcAccesses > 0);
+    setLedRainbow(a.attrWrites > 768);
 
     // Transcribe mode LEDs
-    ledRst16.value = transcribeMode.value === 'rst16' || a.rst16Calls > 0;
-    ledText.value = transcribeMode.value === 'text';
+    setLedRst16(transcribeMode() === 'rst16' || a.rst16Calls > 0);
+    setLedText(transcribeMode() === 'text');
 
     // Tape position + pause state (pause may change via ROM trap auto-unpause)
     if (spectrum!.tape.loaded) {
-      tapePosition.value = spectrum!.tape.position;
-      if (tapePaused.value !== spectrum!.tape.paused) {
-        tapePaused.value = spectrum!.tape.paused;
+      setTapePosition(spectrum!.tape.position);
+      if (tapePaused() !== spectrum!.tape.paused) {
+        setTapePaused(spectrum!.tape.paused);
       }
     }
 
     // Registers — only if debugger pane is open
     if (!isCollapsed('disasm-panel')) {
-      regsRev.value++;
+      setRegsRev(v => v + 1);
 
       // Disassembly only when paused (breakpoint hit etc.)
-      if (emulationPaused.value) {
+      if (emulationPaused()) {
         const cpu = spectrum!.cpu;
         const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-        disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+        setDisasmText(formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints));
       }
     }
 
@@ -347,22 +348,22 @@ export function onFrame(): void {
     if (now - _lastSlowUpdate > 1000) {
       _lastSlowUpdate = now;
       if (!isCollapsed('sysvar-panel')) {
-        sysvarRev.value++;
+        setSysvarRev(v => v + 1);
       }
       if (!isCollapsed('basic-panel')) {
-        basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
+        setBasicHtml(parseBasicProgram(spectrum!.cpu.memory));
       }
       if (!isCollapsed('basic-vars-panel')) {
-        basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
+        setBasicVarsHtml(parseBasicVariables(spectrum!.cpu.memory));
       }
     }
 
     updateHardwareSignals(model);
 
     // Transcribe overlay
-    if (transcribeMode.value !== 'off') {
-      if (transcribeMode.value === 'text') {
-        transcribeText.value = spectrum!.ocrScreen();
+    if (transcribeMode() !== 'off') {
+      if (transcribeMode() === 'text') {
+        setTranscribeText(spectrum!.ocrScreen());
       } else {
         const grid = spectrum!.screenGrid;
         let text = '';
@@ -373,7 +374,7 @@ export function onFrame(): void {
           }
           if (row < 23) text += '\n';
         }
-        transcribeText.value = text;
+        setTranscribeText(text);
       }
     }
   });

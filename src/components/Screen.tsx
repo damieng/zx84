@@ -2,65 +2,61 @@
  * Canvas wrapper for the emulator display + transcribe overlay.
  */
 
-import { useRef, useEffect } from 'preact/hooks';
+import { createEffect } from 'solid-js';
 import { setCanvas, spectrum, transcribeMode, transcribeText } from '@/emulator.ts';
 import { renderer } from '@/store/settings.ts';
 
 export function Screen() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayRef = useRef<HTMLPreElement>(null);
-  const natSizeRef = useRef({ w: 0, h: 0 });
+  let canvasRef!: HTMLCanvasElement;
+  let overlayRef!: HTMLPreElement;
+  let natSize = { w: 0, h: 0 };
 
-  const rendererType = renderer.value;
-
-  useEffect(() => {
-    if (canvasRef.current) {
-      setCanvas(canvasRef.current);
-    }
-  }, [rendererType]);
+  // When renderer changes, re-register canvas
+  createEffect(() => {
+    renderer(); // track
+    if (canvasRef) setCanvas(canvasRef);
+  });
 
   // Position the transcribe overlay
-  useEffect(() => {
-    const mode = transcribeMode.value;
+  createEffect(() => {
+    const mode = transcribeMode();
     if (mode === 'off') {
-      // Clear cached measurement so it's remeasured next time
-      natSizeRef.current = { w: 0, h: 0 };
+      natSize = { w: 0, h: 0 };
       return;
     }
-    if (!spectrum || !overlayRef.current || !canvasRef.current) return;
+    if (!spectrum || !overlayRef || !canvasRef) return;
 
-    const ov = overlayRef.current;
-    const scale = spectrum.display!.scale;
+    const ov = overlayRef;
+    const scl = spectrum.display!.scale;
     const borderPx = (spectrum.ula.screenWidth - 256) / 2;
-    const offsetLeft = borderPx * scale + 2;
-    const offsetTop = borderPx * scale + 2;
-    const targetW = 256 * scale;
-    const targetH = 192 * scale;
+    const offsetLeft = borderPx * scl + 2;
+    const offsetTop = borderPx * scl + 2;
+    const targetW = 256 * scl;
+    const targetH = 192 * scl;
 
     ov.style.left = offsetLeft + 'px';
     ov.style.top = offsetTop + 'px';
 
-    if (!natSizeRef.current.w) {
-      // Need actual text content to measure — skip if empty
+    // Also track text to re-measure
+    void transcribeText();
+
+    if (!natSize.w) {
       if (!ov.textContent || ov.textContent.length < 32) return;
       ov.style.transform = 'none';
-      natSizeRef.current.w = ov.scrollWidth || 1;
-      natSizeRef.current.h = ov.scrollHeight || 1;
+      natSize.w = ov.scrollWidth || 1;
+      natSize.h = ov.scrollHeight || 1;
     }
-    ov.style.transform = `scale(${targetW / natSizeRef.current.w},${targetH / natSizeRef.current.h})`;
+    ov.style.transform = `scale(${targetW / natSize.w},${targetH / natSize.h})`;
   });
 
-  const mode = transcribeMode.value;
-  const active = mode !== 'off';
-  const text = transcribeText.value;
   return (
     <div id="screen-wrap">
-      <canvas id="screen" key={rendererType} ref={canvasRef} class={active ? 'dimmed' : ''} />
+      <canvas id="screen" ref={canvasRef} class={transcribeMode() !== 'off' ? 'dimmed' : ''} />
       <pre
         id="transcribe-overlay"
         ref={overlayRef}
-        class={active ? 'active' : ''}
-      >{text}</pre>
+        class={transcribeMode() !== 'off' ? 'active' : ''}
+      >{transcribeText()}</pre>
     </div>
   );
 }

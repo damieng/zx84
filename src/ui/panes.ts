@@ -2,7 +2,7 @@
  * Pane order and collapse state, persisted to localStorage.
  */
 
-import { signal } from '@preact/signals';
+import { createSignal } from 'solid-js';
 
 export interface PanePosition {
   id: string;
@@ -60,37 +60,37 @@ function loadCollapsed(): Set<string> {
 
 // ── Signals ─────────────────────────────────────────────────────────────
 
-export const paneOrder = signal<PanePosition[]>(loadPaneOrder());
-export const collapsedPanes = signal<Set<string>>(loadCollapsed());
+export const [paneOrder, _setPaneOrder] = createSignal<PanePosition[]>(loadPaneOrder());
+export const [collapsedPanes, _setCollapsedPanes] = createSignal<Set<string>>(loadCollapsed());
 
 // ── Actions ─────────────────────────────────────────────────────────────
 
 export function savePaneOrder(): void {
-  try { localStorage.setItem(ORDER_KEY, JSON.stringify(paneOrder.value)); } catch { /* */ }
+  try { localStorage.setItem(ORDER_KEY, JSON.stringify(paneOrder())); } catch { /* */ }
 }
 
 export function setPaneOrder(order: PanePosition[]): void {
-  paneOrder.value = order;
+  _setPaneOrder(order);
   savePaneOrder();
 }
 
 export function toggleCollapsed(id: string): void {
-  const set = new Set(collapsedPanes.value);
+  const set = new Set(collapsedPanes());
   if (set.has(id)) {
     set.delete(id);
   } else {
     set.add(id);
   }
-  collapsedPanes.value = set;
+  _setCollapsedPanes(set);
   try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...set])); } catch { /* */ }
 }
 
 export function isCollapsed(id: string): boolean {
-  return collapsedPanes.value.has(id);
+  return collapsedPanes().has(id);
 }
 
 export function movePaneTo(paneId: string, targetSidebar: 'left' | 'right', beforeId: string | null): void {
-  const order = paneOrder.value.filter(p => p.id !== paneId);
+  const order = paneOrder().filter(p => p.id !== paneId);
   const entry: PanePosition = { id: paneId, sidebar: targetSidebar };
 
   if (beforeId) {

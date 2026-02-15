@@ -1,29 +1,28 @@
-import { useRef, useEffect } from 'preact/hooks';
+import { onMount, onCleanup } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
-import { HiFolderOpen, HiArrowDownTray } from 'react-icons/hi2';
+import { HiOutlineFolderOpen, HiOutlineArrowDownTray } from 'solid-icons/hi';
 import { loadFile, saveSnapshot, saveScreenshot, saveRAM } from '@/emulator.ts';
 
 export function LoadSavePane() {
-  const snapInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  let snapInputRef!: HTMLInputElement;
+  let menuRef!: HTMLDivElement;
+  let saveButtonRef!: HTMLButtonElement;
 
-  // Close menu on any click outside
-  useEffect(() => {
+  onMount(() => {
     function close(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
-          !saveButtonRef.current?.contains(e.target as Node)) {
-        menuRef.current.style.display = 'none';
+      if (menuRef && !menuRef.contains(e.target as Node) &&
+          !saveButtonRef?.contains(e.target as Node)) {
+        menuRef.style.display = 'none';
       }
     }
     document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, []);
+    onCleanup(() => document.removeEventListener('click', close));
+  });
 
   function toggleMenu(e: MouseEvent) {
     e.stopPropagation();
-    const menu = menuRef.current;
-    const button = saveButtonRef.current;
+    const menu = menuRef;
+    const button = saveButtonRef;
     if (!menu || !button) return;
 
     if (menu.style.display === 'block') {
@@ -41,7 +40,7 @@ export function LoadSavePane() {
 
   function handleSave(action: () => void) {
     return () => {
-      if (menuRef.current) menuRef.current.style.display = 'none';
+      if (menuRef) menuRef.style.display = 'none';
       action();
     };
   }
@@ -49,8 +48,8 @@ export function LoadSavePane() {
   return (
     <Pane id="snapshot-panel" label="Load / Save">
       <div id="snap-row">
-        <button id="snap-load-btn" title="Load file" onClick={() => snapInputRef.current?.click()}>
-          <HiFolderOpen /> Load
+        <button id="snap-load-btn" title="Load file" onClick={() => snapInputRef?.click()}>
+          <HiOutlineFolderOpen /> Load
         </button>
         <button
           ref={saveButtonRef}
@@ -58,7 +57,7 @@ export function LoadSavePane() {
           title="Save..."
           onClick={toggleMenu}
         >
-          <HiArrowDownTray /> Save
+          <HiOutlineArrowDownTray /> Save
         </button>
         <div ref={menuRef} class="save-menu" style="display:none">
           <div class="save-menu-item" onClick={handleSave(() => saveSnapshot('sna'))}>Snapshot (.sna)</div>

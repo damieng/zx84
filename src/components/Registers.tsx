@@ -1,10 +1,10 @@
 /**
  * CPU register & flag display.
- * Builds the DOM once, then updates text nodes directly via signal subscription.
- * Preact never re-renders this component after mount — zero VDOM churn.
+ * Builds the DOM once, then updates text nodes directly via createEffect.
+ * Solid never re-renders this component after mount — zero DOM churn.
  */
 
-import { useRef, useEffect } from 'preact/hooks';
+import { createEffect, onMount, onCleanup } from 'solid-js';
 import { spectrum, regsRev } from '@/emulator.ts';
 import { Z80 } from '@/cores/z80.ts';
 
@@ -43,7 +43,7 @@ function makeSlot(): Text {
   return document.createTextNode('');
 }
 
-/** Create a flag span: ☑/☐ + label */
+/** Create a flag span: check/unchecked + label */
 function makeFlag(label: string, tip: string): { el: HTMLSpanElement; update: (f: number, mask: number) => void } {
   const el = document.createElement('span');
   el.dataset.tip = tip;
@@ -63,19 +63,10 @@ function makeFlag(label: string, tip: string): { el: HTMLSpanElement; update: (f
 }
 
 export function Registers() {
-  const ref = useRef<HTMLPreElement>(null);
-  const slotsRef = useRef<{
-    af: Text; af_: Text; bc: Text; bc_: Text; de: Text; de_: Text;
-    hl: Text; hl_: Text; ix: Text; iy: Text; sp: Text; pc: Text;
-    ir: Text; tpf: Text; iff: Text; im: Text; halt: Text;
-    fSign: ReturnType<typeof makeFlag>; fZero: ReturnType<typeof makeFlag>;
-    fHalf: ReturnType<typeof makeFlag>; fPrty: ReturnType<typeof makeFlag>;
-    fSubt: ReturnType<typeof makeFlag>; fCrry: ReturnType<typeof makeFlag>;
-  } | null>(null);
+  let ref!: HTMLPreElement;
 
-  useEffect(() => {
-    const pre = ref.current;
-    if (!pre) return;
+  onMount(() => {
+    const pre = ref;
 
     // Build DOM structure once
     const s = {
@@ -90,7 +81,6 @@ export function Registers() {
       fSubt: makeFlag('Subt', 'Subtract: set if last operation was a subtraction'),
       fCrry: makeFlag('Crry', 'Carry: set on carry from bit 7 or borrow'),
     };
-    slotsRef.current = s;
 
     const t = (str: string) => document.createTextNode(str);
 
@@ -136,7 +126,8 @@ export function Registers() {
     let pHL = -1, pHL_ = -1, pIX = -1, pIY = -1, pSP = -1, pPC = -1;
     let pIR = -1, pTPF = '', pIFF = '', pIM = '', pHALT = '';
 
-    const unsub = regsRev.subscribe(() => {
+    createEffect(() => {
+      regsRev(); // track the signal
       const cpu = spectrum?.cpu;
       if (!cpu) return;
       pAF = set16(s.af, cpu.af, pAF);
@@ -166,11 +157,10 @@ export function Registers() {
       s.fCrry.update(f, Z80.FLAG_C);
     });
 
-    return () => {
-      unsub();
+    onCleanup(() => {
       pre.textContent = '';
-    };
-  }, []);
+    });
+  });
 
   return <pre id="regs-output" ref={ref} />;
 }

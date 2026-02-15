@@ -1,17 +1,12 @@
-import { useRef, useCallback } from 'preact/hooks';
-import { useSignal } from '@preact/signals';
+import { createSignal } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
-import { HiArrowDownTray, HiXMark } from 'react-icons/hi2';
-import { fontName, persistSetting } from '@/store/settings.ts';
-import {
-  setStatus, loadFontStore, saveFontStore, spectrum,
-} from '@/emulator.ts';
+import { HiOutlineArrowDownTray, HiOutlineXMark } from 'solid-icons/hi';
+import { fontName, setFontName, persistSetting } from '@/store/settings.ts';
+import { setStatus, loadFontStore, saveFontStore, spectrum } from '@/emulator.ts';
 import type { FontEntry } from '@/emulator.ts';
 
-// Standard ZX Spectrum © symbol (character 127) – last char in the 96-char font
 const COPYRIGHT_SIG = [0x3C, 0x42, 0x99, 0xA1, 0xA1, 0x99, 0x42, 0x3C];
 
-/** Extract unique non-blank 8-byte tiles from the 32×24 screen bitmap */
 function extractScreenTiles(mem: Uint8Array): Set<string> {
   const tiles = new Set<string>();
   for (let cr = 0; cr < 24; cr++) {
@@ -31,7 +26,6 @@ function extractScreenTiles(mem: Uint8Array): Set<string> {
   return tiles;
 }
 
-/** Key for an 8-byte slot in memory */
 function tileKey(mem: Uint8Array, offset: number): string {
   return `${mem[offset]},${mem[offset+1]},${mem[offset+2]},${mem[offset+3]},${mem[offset+4]},${mem[offset+5]},${mem[offset+6]},${mem[offset+7]}`;
 }
@@ -57,17 +51,13 @@ function getActiveFilename(): string {
 
 function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void {
   const cols = 32, rows = 3;
-  const w = cols * 8;
-  const h = rows * 8;
-  cvs.width = w;
-  cvs.height = h;
+  const w = cols * 8; const h = rows * 8;
+  cvs.width = w; cvs.height = h;
   const ctx = cvs.getContext('2d')!;
   const img = ctx.createImageData(w, h);
   const d = img.data;
-
   for (let c = 0; c < 96; c++) {
-    const col = c % cols;
-    const row = (c / cols) | 0;
+    const col = c % cols; const row = (c / cols) | 0;
     const off = c * 8;
     for (let py = 0; py < 8; py++) {
       const byte = fontData[off + py];
@@ -86,26 +76,23 @@ function saveCh8(entry: FontEntry): void {
   const data = b64ToBytes(entry.data);
   const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
+  const a = document.createElement('a'); a.href = url;
   a.download = `${entry.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.ch8`;
-  a.click();
-  URL.revokeObjectURL(url);
+  a.click(); URL.revokeObjectURL(url);
 }
 
 export function FontPane() {
-  const fontInputRef = useRef<HTMLInputElement>(null);
-  const rev = useSignal(0);    // bump to re-render after store changes
+  let fontInputRef!: HTMLInputElement;
+  const [rev, setRev] = createSignal(0);
 
-  void rev.value;  // subscribe to re-render signal
-  const entries = loadFontStore();
+  const entries = () => { void rev(); return loadFontStore(); };
 
-  function bump() { rev.value++; }
+  function bump() { setRev(v => v + 1); }
 
   function removeEntry(id: string) {
     const store = loadFontStore();
     saveFontStore(store.filter(e => e.id !== id));
-    if (fontName.value === id) { fontName.value = ''; persistSetting('font', ''); }
+    if (fontName() === id) { setFontName(''); persistSetting('font', ''); }
     bump();
   }
 
@@ -123,7 +110,6 @@ export function FontPane() {
     console.log('Active file:', filename || '(none)');
     console.log('Existing fonts:', existingIds.size);
 
-    // Strategy 1: CHARS system variable
     const lo = mem[0x5C36], hi = mem[0x5C37];
     let charsAddr = lo | (hi << 8);
     console.group('[CHARS] System variable');
@@ -131,40 +117,29 @@ export function FontPane() {
     if (charsAddr === 0) { charsAddr = 0x3C00; console.log('Zero — defaulting to', charsAddr); }
     const charsFont = charsAddr + 256;
     console.log(`Font start: ${charsAddr} + 256 = ${charsFont}`);
-    if (charsFont + 768 > 65536) {
-      console.log('Out of range, skipping');
-    } else if (charsFont < RAM_START) {
-      console.log(`In ROM (< ${RAM_START}), skipping`);
-    } else {
+    if (charsFont + 768 > 65536) { console.log('Out of range, skipping'); }
+    else if (charsFont < RAM_START) { console.log(`In ROM (< ${RAM_START}), skipping`); }
+    else {
       const spaceBytes = Array.from(mem.slice(charsFont, charsFont + 8));
       const spaceBlank = spaceBytes.every(b => b === 0);
       console.log('Space bytes:', spaceBytes.join(', '), spaceBlank ? '✓ blank' : '✗ not blank');
       if (spaceBlank) {
         const id = `chars:${charsFont}`;
-        if (existingIds.has(id) || existingAddrs.has(charsFont)) {
-          console.log('Already captured:', id);
-        } else {
+        if (existingIds.has(id) || existingAddrs.has(charsFont)) { console.log('Already captured:', id); }
+        else {
           console.log('✓ Captured:', id);
-          added.push({
-            id, label: filename || 'CHARS', address: charsFont,
-            technique: 'chars', data: bytesToB64(mem.slice(charsFont, charsFont + 768)),
-          });
-          existingIds.add(id);
-          existingAddrs.add(charsFont);
+          added.push({ id, label: filename || 'CHARS', address: charsFont, technique: 'chars', data: bytesToB64(mem.slice(charsFont, charsFont + 768)) });
+          existingIds.add(id); existingAddrs.add(charsFont);
         }
       }
     }
     console.groupEnd();
 
-    // Strategy 2: scan RAM for © signature (offset 760 within 768-byte font)
     console.group('[COPYR] © signature scan');
-    let copyrHits = 0;
-    let copyrValidated = 0;
+    let copyrHits = 0, copyrValidated = 0;
     for (let addr = Math.max(RAM_START, 760); addr <= 65536 - 8; addr++) {
       let match = true;
-      for (let j = 0; j < 8; j++) {
-        if (mem[addr + j] !== COPYRIGHT_SIG[j]) { match = false; break; }
-      }
+      for (let j = 0; j < 8; j++) { if (mem[addr + j] !== COPYRIGHT_SIG[j]) { match = false; break; } }
       if (!match) continue;
       copyrHits++;
       const fontStart = addr - 760;
@@ -174,38 +149,28 @@ export function FontPane() {
       if (!spaceBlank) { console.log(`© at ${addr} → font at ${fontStart}, space: [${spaceBytes.join(',')}] ✗`); continue; }
       copyrValidated++;
       const id = `copyr:${fontStart}`;
-      if (existingIds.has(id) || existingAddrs.has(fontStart)) {
-        console.log(`© at ${addr} → font at ${fontStart} ✓ (already captured)`);
-      } else {
+      if (existingIds.has(id) || existingAddrs.has(fontStart)) { console.log(`© at ${addr} → font at ${fontStart} ✓ (already captured)`); }
+      else {
         console.log(`© at ${addr} → font at ${fontStart} ✓ Captured`);
-        added.push({
-          id, label: filename || '© scan', address: fontStart,
-          technique: 'copyr', data: bytesToB64(mem.slice(fontStart, fontStart + 768)),
-        });
-        existingIds.add(id);
-        existingAddrs.add(fontStart);
+        added.push({ id, label: filename || '© scan', address: fontStart, technique: 'copyr', data: bytesToB64(mem.slice(fontStart, fontStart + 768)) });
+        existingIds.add(id); existingAddrs.add(fontStart);
       }
     }
     console.log(`Signature hits: ${copyrHits}, validated: ${copyrValidated}`);
     console.groupEnd();
 
-    // Strategy 3: SCGRAB – match screen tiles against candidate font regions
     console.group('[SCGRAB] Screen tile scan');
     const screenTiles = extractScreenTiles(mem);
     console.log(`Unique non-blank screen tiles: ${screenTiles.size}`);
-    if (screenTiles.size < 15) {
-      console.log('Need ≥15 tiles, skipping SCGRAB');
-    } else {
-      let spaceCandidates = 0;
-      let bestMatches = 0;
-      let bestAddr = -1;
+    if (screenTiles.size < 15) { console.log('Need ≥15 tiles, skipping SCGRAB'); }
+    else {
+      let spaceCandidates = 0, bestMatches = 0, bestAddr = -1;
       for (let fontStart = RAM_START; fontStart + 768 <= 65536; fontStart++) {
         const id = `scgrab:${fontStart}`;
         if (existingIds.has(id) || existingAddrs.has(fontStart)) continue;
         if (tileKey(mem, fontStart) !== BLANK_KEY) continue;
         spaceCandidates++;
-        let valid = true;
-        let matches = 0;
+        let valid = true, matches = 0;
         for (let s = 1; s < 96; s++) {
           const off = fontStart + s * 8;
           const key = tileKey(mem, off);
@@ -215,27 +180,21 @@ export function FontPane() {
         if (matches > bestMatches) { bestMatches = matches; bestAddr = fontStart; }
         if (!valid || matches < 15) continue;
         console.log(`✓ Font at ${fontStart}: ${matches}/95 slots match screen tiles`);
-        added.push({
-          id, label: filename || 'SCGRAB', address: fontStart,
-          technique: 'scgrab', data: bytesToB64(mem.slice(fontStart, fontStart + 768)),
-        });
-        existingIds.add(id);
-        existingAddrs.add(fontStart);
+        added.push({ id, label: filename || 'SCGRAB', address: fontStart, technique: 'scgrab', data: bytesToB64(mem.slice(fontStart, fontStart + 768)) });
+        existingIds.add(id); existingAddrs.add(fontStart);
       }
       console.log(`Space-start candidates: ${spaceCandidates}, best match: ${bestMatches} tiles at ${bestAddr}`);
     }
     console.groupEnd();
 
     if (added.length === 0) {
-      console.log('[FontHunt] No new fonts found');
-      console.groupEnd();
-      setStatus('No new fonts found in RAM');
-      return;
+      console.log('[FontHunt] No new fonts found'); console.groupEnd();
+      setStatus('No new fonts found in RAM'); return;
     }
     const updated = [...store, ...added];
     saveFontStore(updated);
-    fontName.value = added[added.length - 1].id;
-    persistSetting('font', fontName.value);
+    setFontName(added[added.length - 1].id);
+    persistSetting('font', fontName());
     console.log(`[FontHunt] Total found: ${added.length} —`, added.map(e => `${e.technique}:${e.address}`).join(', '));
     console.groupEnd();
     setStatus(`Found ${added.length} font${added.length > 1 ? 's' : ''}`);
@@ -245,38 +204,30 @@ export function FontPane() {
   return (
     <Pane id="font-panel" label="Fonts">
       <div id="font-row">
-        <button id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef.current?.click()}>Load</button>
+        <button id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef?.click()}>Load</button>
         <button id="font-search-btn" title="Hunt fonts in RAM" onClick={huntFonts}>Hunt</button>
         <button id="font-clear-btn" title="Clear all fonts" onClick={() => {
-          saveFontStore([]);
-          fontName.value = '';
-          persistSetting('font', '');
-          bump();
+          saveFontStore([]); setFontName(''); persistSetting('font', ''); bump();
           setStatus('Font list cleared');
         }}>Clear</button>
       </div>
       <div id="font-list">
-        {entries.map(entry => (
+        {entries().map(entry => (
           <div
-            key={entry.id}
-            class={`font-entry${fontName.value === entry.id ? ' active' : ''}`}
-            onClick={() => { fontName.value = entry.id; persistSetting('font', entry.id); }}
+            class={`font-entry${fontName() === entry.id ? ' active' : ''}`}
+            onClick={() => { setFontName(entry.id); persistSetting('font', entry.id); }}
           >
             <div class="font-entry-header">
               <span class="font-entry-label">{entry.label}</span>
-              <span class="font-entry-addr">
-                {entry.address != null ? entry.address : ''}
-              </span>
+              <span class="font-entry-addr">{entry.address != null ? entry.address : ''}</span>
               <span class="font-entry-actions">
-                <button title="Save .ch8" onClick={(e) => { e.stopPropagation(); saveCh8(entry); }}><HiArrowDownTray /></button>
-                <button title="Remove" onClick={(e) => { e.stopPropagation(); removeEntry(entry.id); }}><HiXMark /></button>
+                <button title="Save .ch8" onClick={(e) => { e.stopPropagation(); saveCh8(entry); }}><HiOutlineArrowDownTray /></button>
+                <button title="Remove" onClick={(e) => { e.stopPropagation(); removeEntry(entry.id); }}><HiOutlineXMark /></button>
               </span>
             </div>
             <canvas
               class="font-entry-preview"
-              ref={useCallback((cvs: HTMLCanvasElement | null) => {
-                if (cvs) renderFontToCanvas(cvs, b64ToBytes(entry.data));
-              }, [entry.data])}
+              ref={(cvs) => { if (cvs) renderFontToCanvas(cvs, b64ToBytes(entry.data)); }}
             />
           </div>
         ))}
@@ -292,18 +243,13 @@ export function FontPane() {
           const reader = new FileReader();
           reader.onload = () => {
             const data = new Uint8Array(reader.result as ArrayBuffer);
-            if (data.length !== 768) {
-              setStatus(`Font must be 768 bytes (got ${data.length})`);
-              (e.target as HTMLInputElement).value = '';
-              return;
-            }
+            if (data.length !== 768) { setStatus(`Font must be 768 bytes (got ${data.length})`); (e.target as HTMLInputElement).value = ''; return; }
             const label = file.name.replace(/\.[^.]+$/, '');
             const id = `file:${label}:${Date.now()}`;
             const store = loadFontStore();
             store.push({ id, label, address: null, technique: 'file', data: bytesToB64(data) });
             saveFontStore(store);
-            fontName.value = id;
-            persistSetting('font', id);
+            setFontName(id); persistSetting('font', id);
             setStatus(`Font "${label}" loaded`);
             (e.target as HTMLInputElement).value = '';
             bump();

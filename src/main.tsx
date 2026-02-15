@@ -1,16 +1,16 @@
 /**
  * ZX84 - ZX Spectrum Emulator
- * Entry point: render Preact app, HMR dispose.
+ * Entry point: render Solid app, HMR dispose.
  * Test 2
  */
 
-import { render } from 'preact';
+import { render } from 'solid-js/web';
 import { App } from '@/app.tsx';
 import { destroy, saveHMRState } from '@/emulator.ts';
 import '@/styles.css';
 
 const root = document.getElementById('app')!;
-render(<App />, root);
+const dispose = render(() => <App />, root);
 
 // ── Vite HMR cleanup ─────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     saveHMRState();
     destroy();
-    render(null, root);
+    dispose();
   });
   import.meta.hot.accept();
 }

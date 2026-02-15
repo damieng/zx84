@@ -1,52 +1,51 @@
 /**
  * Renders a signal's HTML into a DOM element via ref,
- * bypassing Preact's VDOM diffing entirely.
+ * bypassing Solid's rendering entirely.
  * Use this for frequently-updating HTML (registers, sysvars, etc.)
  * to avoid allocating VNodes/closures every frame.
  */
 
-import { useRef, useEffect } from 'preact/hooks';
-import type { Signal } from '@preact/signals';
+import { createEffect, onMount, onCleanup } from 'solid-js';
+import type { Accessor } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 
 interface RawHtmlProps {
   tag?: string;
   id?: string;
   class?: string;
   style?: string;
-  html: Signal<string>;
+  html: Accessor<string>;
   onDblClick?: (e: MouseEvent) => void;
   onContextMenu?: (e: MouseEvent) => void;
   innerRef?: (el: HTMLElement | null) => void;
 }
 
-export function RawHtml({ tag = 'pre', id, class: cls, style, html, onDblClick, onContextMenu, innerRef }: RawHtmlProps) {
-  const ref = useRef<HTMLElement>(null);
+export function RawHtml(props: RawHtmlProps) {
+  let ref!: HTMLElement;
 
-  useEffect(() => {
-    if (innerRef) innerRef(ref.current);
-  }, [innerRef]);
+  onMount(() => {
+    if (props.innerRef) props.innerRef(ref);
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    // Subscribe to signal changes and update DOM directly
-    const unsub = html.subscribe((value) => {
-      el.innerHTML = value;
+    if (props.onDblClick) ref.addEventListener('dblclick', props.onDblClick as EventListener);
+    if (props.onContextMenu) ref.addEventListener('contextmenu', props.onContextMenu as EventListener);
+
+    onCleanup(() => {
+      if (props.onDblClick) ref.removeEventListener('dblclick', props.onDblClick as EventListener);
+      if (props.onContextMenu) ref.removeEventListener('contextmenu', props.onContextMenu as EventListener);
     });
-    return unsub;
-  }, [html]);
+  });
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (onDblClick) el.addEventListener('dblclick', onDblClick as EventListener);
-    if (onContextMenu) el.addEventListener('contextmenu', onContextMenu as EventListener);
-    return () => {
-      if (onDblClick) el.removeEventListener('dblclick', onDblClick as EventListener);
-      if (onContextMenu) el.removeEventListener('contextmenu', onContextMenu as EventListener);
-    };
-  }, [onDblClick, onContextMenu]);
+  createEffect(() => {
+    if (ref) ref.innerHTML = props.html();
+  });
 
-  const Tag = tag as any;
-  return <Tag ref={ref} id={id} class={cls} style={style} />;
+  return (
+    <Dynamic
+      component={(props.tag || 'pre') as any}
+      ref={(el: HTMLElement) => { ref = el; }}
+      id={props.id}
+      class={props.class}
+      style={props.style}
+    />
+  );
 }

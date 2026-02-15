@@ -2,15 +2,14 @@
  * Sidebar container that renders ordered panes and handles DnD drop zone.
  */
 
-import { type ComponentChildren } from 'preact';
-import { useCallback, useRef } from 'preact/hooks';
+import type { JSX } from 'solid-js';
 import { movePaneTo } from '@/ui/panes.ts';
 
 interface SidebarProps {
   id: string;
   side: 'left' | 'right';
-  children: ComponentChildren;
-  extra?: ComponentChildren;
+  children?: JSX.Element;
+  extra?: JSX.Element;
 }
 
 // Shared drag state
@@ -19,10 +18,10 @@ let draggedPaneId: string | null = null;
 const dropIndicator = document.createElement('div');
 dropIndicator.className = 'drop-indicator';
 
-export function Sidebar({ id, side, children, extra }: SidebarProps) {
-  const sidebarRef = useRef<HTMLDivElement>(null);
+export function Sidebar(props: SidebarProps) {
+  let sidebarRef!: HTMLDivElement;
 
-  const onDragStart = useCallback((e: DragEvent) => {
+  function onDragStart(e: DragEvent) {
     const pane = (e.target as HTMLElement).closest('.pane') as HTMLElement;
     if (!pane) return;
     if (!pane.dataset.dragFromLabel) { e.preventDefault(); return; }
@@ -31,22 +30,22 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
     pane.classList.add('dragging');
     e.dataTransfer!.effectAllowed = 'move';
     e.dataTransfer!.setData('text/plain', pane.id);
-  }, []);
+  }
 
-  const onDragEnd = useCallback((e: DragEvent) => {
+  function onDragEnd(e: DragEvent) {
     const pane = (e.target as HTMLElement).closest('.pane') as HTMLElement;
     if (pane) pane.classList.remove('dragging');
     draggedPaneId = null;
     dropIndicator.remove();
-  }, []);
+  }
 
-  const onDragOver = useCallback((e: DragEvent) => {
+  function onDragOver(e: DragEvent) {
     e.preventDefault();
     if (!draggedPaneId) return;
     e.stopPropagation();
     e.dataTransfer!.dropEffect = 'move';
 
-    const sidebar = sidebarRef.current;
+    const sidebar = sidebarRef;
     if (!sidebar) return;
 
     const panes = Array.from(sidebar.querySelectorAll(':scope > .pane'));
@@ -66,35 +65,31 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
     } else {
       sidebar.appendChild(dropIndicator);
     }
-  }, []);
+  }
 
-  const onDragLeave = useCallback((e: DragEvent) => {
-    const sidebar = sidebarRef.current;
-    if (sidebar && !sidebar.contains(e.relatedTarget as Node)) {
+  function onDragLeave(e: DragEvent) {
+    if (!sidebarRef.contains(e.relatedTarget as Node)) {
       dropIndicator.remove();
     }
-  }, []);
+  }
 
-  const onDrop = useCallback((e: DragEvent) => {
+  function onDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedPaneId) return;
-
-    const sidebar = sidebarRef.current;
-    if (!sidebar) return;
 
     // Figure out which pane we're inserting before
     const indicatorNext = dropIndicator.nextElementSibling;
     const beforeId = indicatorNext?.classList.contains('pane') ? indicatorNext.id : null;
 
-    // Move in the signal store (Preact re-render handles DOM)
-    movePaneTo(draggedPaneId, side, beforeId);
+    // Move in the signal store (Solid re-render handles DOM)
+    movePaneTo(draggedPaneId, props.side, beforeId);
     dropIndicator.remove();
-  }, [side]);
+  }
 
   return (
     <div
-      id={id}
+      id={props.id}
       class="sidebar"
       ref={sidebarRef}
       onDragStart={onDragStart}
@@ -103,8 +98,8 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {extra}
-      {children}
+      {props.extra}
+      {props.children}
     </div>
   );
 }

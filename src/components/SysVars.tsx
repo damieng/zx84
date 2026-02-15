@@ -1,25 +1,25 @@
 /**
  * System variables display.
  * Builds DOM once, updates text nodes directly via sysvarRev signal.
- * Zero VDOM churn, cached previous values to skip unchanged writes.
+ * Zero DOM churn, cached previous values to skip unchanged writes.
  */
 
-import { useRef, useEffect } from 'preact/hooks';
+import { createEffect, onCleanup } from 'solid-js';
 import { spectrum, sysvarRev, currentModel } from '@/emulator.ts';
 import { is128kClass, isPlus2AClass } from '@/spectrum.ts';
 
-// Pre-built hex lookup tables (shared with Registers via separate instances — tiny cost)
+// Pre-built hex lookup tables
 const HEX8: string[] = new Array(256);
 for (let i = 0; i < 256; i++) HEX8[i] = i.toString(16).toUpperCase().padStart(2, '0');
 const HEX16: string[] = new Array(65536);
 for (let i = 0; i < 65536; i++) HEX16[i] = i.toString(16).toUpperCase().padStart(4, '0');
 
-/** Sysvar row definition: [name, tip, address, width (8 or 16), specialGetter?] */
+/** Sysvar row definition */
 interface SysVarDef {
   name: string;
   tip: string;
   addr: number;
-  width: 8 | 16 | 'pair' | 'char';  // pair = "xx,xx", char = single char
+  width: 8 | 16 | 'pair' | 'char';
 }
 
 // Row pairs: left sysvar, right sysvar
@@ -74,7 +74,7 @@ interface SlotInfo {
   prev: number;
 }
 
-function makeLabel(name: string, tip: string): HTMLSpanElement {
+function makeLabelEl(name: string, tip: string): HTMLSpanElement {
   const el = document.createElement('span');
   el.className = 'reg-name';
   el.dataset.tip = tip;
@@ -107,11 +107,10 @@ function buildRow(pre: HTMLElement, left: SysVarDef, right: SysVarDef): [SlotInf
   const lSlot = document.createTextNode('');
   const rSlot = document.createTextNode('');
 
-  // Left: "NAME   value"  (name padded to 7, value right-aligned in 5)
   pre.append(
-    makeLabel(padName(left.name), left.tip), t(' '), lSlot,
+    makeLabelEl(padName(left.name), left.tip), t(' '), lSlot,
     t('       '),
-    makeLabel(padName(right.name), right.tip), t(' '), rSlot,
+    makeLabelEl(padName(right.name), right.tip), t(' '), rSlot,
     t('\n'),
   );
 
@@ -122,13 +121,15 @@ function buildRow(pre: HTMLElement, left: SysVarDef, right: SysVarDef): [SlotInf
 }
 
 export function SysVars() {
-  const ref = useRef<HTMLPreElement>(null);
+  let ref!: HTMLPreElement;
 
-  useEffect(() => {
-    const pre = ref.current;
+  // Rebuild DOM when model changes
+  createEffect(() => {
+    const model = currentModel(); // track
+    const pre = ref;
     if (!pre) return;
+    pre.textContent = ''; // clear previous content
 
-    const model = currentModel.value;
     const is128k = is128kClass(model);
     const isPlus2A = isPlus2AClass(model);
 
@@ -145,7 +146,8 @@ export function SysVars() {
     // Remove trailing newline
     if (pre.lastChild) pre.removeChild(pre.lastChild);
 
-    const unsub = sysvarRev.subscribe(() => {
+    createEffect(() => {
+      sysvarRev(); // track
       const mem = spectrum?.cpu?.memory;
       if (!mem) return;
       for (const slot of slots) {
@@ -157,11 +159,10 @@ export function SysVars() {
       }
     });
 
-    return () => {
-      unsub();
+    onCleanup(() => {
       pre.textContent = '';
-    };
-  }, [currentModel.value]);
+    });
+  });
 
   return <pre id="sysvar-output" ref={ref} />;
 }

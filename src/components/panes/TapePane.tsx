@@ -1,22 +1,17 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { createEffect, Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiFolderOpen, HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
+import { HiOutlineFolderOpen, HiOutlineBackward, HiOutlinePlay, HiOutlinePause, HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   tapeLoaded, tapeName, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile,
 } from '@/emulator.ts';
-import { tapeAutoRewind, tapeCollapseBlocks } from '@/store/settings.ts';
+import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
 import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
-const HEADER_TYPES: Record<number, string> = {
-  0: 'Program',
-  1: 'Number array',
-  2: 'Character array',
-  3: 'Bytes',
-};
+const HEADER_TYPES: Record<number, string> = { 0: 'Program', 1: 'Number array', 2: 'Character array', 3: 'Bytes' };
 
 function sourceTag(block: DataBlock): string {
   if (block.source === 'standard') return ' [STD]';
@@ -39,7 +34,6 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
     case 'data': {
       const tag = sourceTag(block);
       const timing = block.source !== 'tap' ? dataTimingDetail(block) : '';
-
       if (block.source !== 'pure-data' && block.flag === 0x00 && block.data.length >= 15) {
         const typeId = block.data[0];
         const typeName = HEADER_TYPES[typeId] ?? `Type ${typeId}`;
@@ -47,19 +41,13 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
         for (let i = 1; i <= 10; i++) filename += String.fromCharCode(block.data[i]);
         const dataLen = block.data[11] | (block.data[12] << 8);
         const param1 = block.data[13] | (block.data[14] << 8);
-
-        // Check if next block is matching data
         const nextBlock = blocks[index + 1];
         const hasMatchingData = nextBlock && nextBlock.kind === 'data' && nextBlock.flag === 0xFF && nextBlock.data.length === dataLen;
-
         let displayType = typeName;
         if (hasMatchingData && collapseBlocks) {
           if (typeId === 0) displayType = 'PROGRAM';
-          else if (typeId === 3) {
-            displayType = (dataLen === 6912 && param1 === 16384) ? 'SCREEN$' : 'CODE';
-          }
+          else if (typeId === 3) displayType = (dataLen === 6912 && param1 === 16384) ? 'SCREEN$' : 'CODE';
         }
-
         const line = (hasMatchingData && collapseBlocks)
           ? `${index}: ${displayType} "${filename.trimEnd()}"${tag}`
           : `${index}: Header "${filename.trimEnd()}"${tag}`;
@@ -69,104 +57,65 @@ function parseTapeBlockMeta(block: TapeBlock, index: number, blocks: TapeBlock[]
         if (timing) detail += `\n${timing}`;
         return { line, detail, hidden: false, control: false };
       }
-
-      // Check if this is a data block following a matching header
       if (collapseBlocks) {
         const prevBlock = blocks[index - 1];
         if (prevBlock && prevBlock.kind === 'data' && prevBlock.flag === 0x00 && prevBlock.data.length >= 15) {
           const headerDataLen = prevBlock.data[11] | (prevBlock.data[12] << 8);
-          if (block.data.length === headerDataLen) {
-            return { line: '', detail: '', hidden: true, control: false };
-          }
+          if (block.data.length === headerDataLen) return { line: '', detail: '', hidden: true, control: false };
         }
       }
-
       const size = block.data.length;
-      let detail = '';
-      if (timing) detail = timing;
+      let detail = ''; if (timing) detail = timing;
       return { line: `${index}: Data ${size} bytes${tag}`, detail, hidden: false, control: false };
     }
-
-    case 'tone':
-      return { line: `${index}: Pure Tone`, detail: `${block.pulseLen}T × ${block.count} pulses`, hidden: false, control: true };
-
-    case 'pulses':
-      return { line: `${index}: Pulse Sequence`, detail: `${block.lengths.length} pulses`, hidden: false, control: true };
-
-    case 'direct':
-      return { line: `${index}: Direct Recording`, detail: `${block.tStatesPerSample}T/sample, ${block.data.length} bytes, pause=${block.pause}ms`, hidden: false, control: true };
-
-    case 'pause':
-      return {
-        line: block.duration === 0 ? `${index}: Stop the tape` : `${index}: Pause ${block.duration}ms`,
-        detail: '', hidden: false, control: true,
-      };
-
-    case 'set-level':
-      return { line: `${index}: Set Level ${block.level}`, detail: '', hidden: false, control: true };
-
-    case 'stop-if-48k':
-      return { line: `${index}: Stop if 48K`, detail: '', hidden: false, control: true };
-
-    case 'group-start':
-      return { line: `${index}: ▸ ${block.name}`, detail: '', hidden: false, control: true };
-
-    case 'group-end':
-      return { line: '', detail: '', hidden: true, control: true };
-
-    case 'text':
-      return { line: `${index}: ${block.text}`, detail: '', hidden: false, control: true };
-
-    case 'archive-info':
-      return {
-        line: `${index}: Archive Info`,
-        detail: block.entries.map(e => e.text).join(', '),
-        hidden: false, control: true,
-      };
+    case 'tone': return { line: `${index}: Pure Tone`, detail: `${block.pulseLen}T × ${block.count} pulses`, hidden: false, control: true };
+    case 'pulses': return { line: `${index}: Pulse Sequence`, detail: `${block.lengths.length} pulses`, hidden: false, control: true };
+    case 'direct': return { line: `${index}: Direct Recording`, detail: `${block.tStatesPerSample}T/sample, ${block.data.length} bytes, pause=${block.pause}ms`, hidden: false, control: true };
+    case 'pause': return { line: block.duration === 0 ? `${index}: Stop the tape` : `${index}: Pause ${block.duration}ms`, detail: '', hidden: false, control: true };
+    case 'set-level': return { line: `${index}: Set Level ${block.level}`, detail: '', hidden: false, control: true };
+    case 'stop-if-48k': return { line: `${index}: Stop if 48K`, detail: '', hidden: false, control: true };
+    case 'group-start': return { line: `${index}: ▸ ${block.name}`, detail: '', hidden: false, control: true };
+    case 'group-end': return { line: '', detail: '', hidden: true, control: true };
+    case 'text': return { line: `${index}: ${block.text}`, detail: '', hidden: false, control: true };
+    case 'archive-info': return { line: `${index}: Archive Info`, detail: block.entries.map(e => e.text).join(', '), hidden: false, control: true };
   }
 }
 
 export function TapePane() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const blocks = tapeBlocks.value;
-  const pos = tapePosition.value;
-  const paused = tapePaused.value;
-  const loaded = tapeLoaded.value;
-  const name = tapeName.value;
-  const autoRewind = tapeAutoRewind.value;
-  const collapseBlocks = tapeCollapseBlocks.value;
+  let containerRef!: HTMLDivElement;
+  let fileInputRef!: HTMLInputElement;
 
   // Auto-scroll current block into view
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const current = containerRef.current.querySelector('.tape-block.current') as HTMLElement;
+  createEffect(() => {
+    tapePosition(); // track
+    if (!containerRef) return;
+    const current = containerRef.querySelector('.tape-block.current') as HTMLElement;
     if (current) current.scrollIntoView({ block: 'nearest' });
-  }, [pos]);
+  });
 
   return (
     <Pane id="tape-panel" label="Tape" mono>
       <div id="tape-controls">
-        <button title="Open tape" onClick={() => fileInputRef.current?.click()}><HiFolderOpen /></button>
-        <button title="Rewind" onClick={tapeRewind}><HiBackward /></button>
+        <button title="Open tape" onClick={() => fileInputRef?.click()}><HiOutlineFolderOpen /></button>
+        <button title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
         <button
-          title={paused ? 'Resume' : 'Pause'}
-          class={paused ? 'active' : ''}
+          title={tapePaused() ? 'Resume' : 'Pause'}
+          class={tapePaused() ? 'active' : ''}
           onClick={tapeTogglePause}
-        >{paused ? <HiPlay /> : <HiPause />}</button>
+        >{tapePaused() ? <HiOutlinePlay /> : <HiOutlinePause />}</button>
         <DropDownMenuButton
-          icon={<HiEllipsisVertical />}
+          icon={<HiOutlineEllipsisVertical />}
           title="Tape options"
           items={[
-            { value: 'auto-rewind', label: 'Auto-rewind', checked: autoRewind },
-            { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: collapseBlocks },
+            { value: 'auto-rewind', label: 'Auto-rewind', checked: tapeAutoRewind() },
+            { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: tapeCollapseBlocks() },
           ]}
           onSelect={(value) => {
             if (value === 'auto-rewind') {
               toggleAutoRewind();
             } else if (value === 'collapse-blocks') {
-              tapeCollapseBlocks.value = !tapeCollapseBlocks.value;
-              persistSetting('tape-collapse-blocks', tapeCollapseBlocks.value ? 'on' : 'off');
+              setTapeCollapseBlocks(!tapeCollapseBlocks());
+              persistSetting('tape-collapse-blocks', tapeCollapseBlocks() ? 'on' : 'off');
             }
           }}
         />
@@ -184,29 +133,29 @@ export function TapePane() {
           }}
         />
       </div>
-      {loaded && (
+      <Show when={tapeLoaded()}>
         <div id="tape-name">
-          <span class="tape-name-text" title={name}>{name}</span>
+          <span class="tape-name-text" title={tapeName()}>{tapeName()}</span>
           <button class="tape-eject" title="Eject tape" onClick={ejectTape}>
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
               <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
             </svg>
           </button>
         </div>
-      )}
+      </Show>
       <div id="tape-blocks" class="mono-block" ref={containerRef}>
-        {!loaded ? (
+        {!tapeLoaded() ? (
           <div class="tape-empty">No tape loaded</div>
         ) : (
-          blocks.map((block, i) => {
-            const meta = parseTapeBlockMeta(block, i, blocks, collapseBlocks);
+          tapeBlocks().map((block, i) => {
+            const meta = parseTapeBlockMeta(block, i, tapeBlocks(), tapeCollapseBlocks());
             if (meta.hidden) return null;
-            const className = `tape-block${i < pos ? ' played' : ''}${i === pos ? ' current' : ''}${meta.control ? ' control' : ''}`;
+            const className = `tape-block${i < tapePosition() ? ' played' : ''}${i === tapePosition() ? ' current' : ''}${meta.control ? ' control' : ''}`;
             return (
-              <div key={i} class={className} onClick={() => tapeSetPosition(i)}>
+              <div class={className} onClick={() => tapeSetPosition(i)}>
                 {meta.line}
-                {meta.detail && meta.detail.split('\n').map((line, j) => (
-                  <div key={j} class="tb-detail">{line}</div>
+                {meta.detail && meta.detail.split('\n').map((line) => (
+                  <div class="tb-detail">{line}</div>
                 ))}
               </div>
             );

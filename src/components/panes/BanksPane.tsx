@@ -5,7 +5,7 @@ import { is128kClass } from '@/spectrum.ts';
 
 export function BanksPane() {
   return (
-    <Pane id="banks-panel" label="Memory Layout" mono visible={is128kClass(currentModel.value)}>
+    <Pane id="banks-panel" label="Memory Layout" mono visible={is128kClass(currentModel())}>
       <RawHtml id="banks-output" html={banksHtml} />
     </Pane>
   );

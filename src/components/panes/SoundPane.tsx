@@ -1,5 +1,5 @@
 import { Pane } from '@/components/Pane.tsx';
-import { volume, ayMix, ayStereo, persistSetting } from '@/store/settings.ts';
+import { volume, setVolume, ayMix, setAyMix, ayStereo, setAyStereo, persistSetting } from '@/store/settings.ts';
 import { spectrum, applyDisplaySettings } from '@/emulator.ts';
 
 export function SoundPane() {
@@ -9,25 +9,25 @@ export function SoundPane() {
         <span class="slider-label">Volume</span>
         <input
           type="range" id="volume-slider" min="0" max="100"
-          value={volume.value}
+          value={volume()}
           onInput={(e) => {
             const v = Number((e.target as HTMLInputElement).value);
-            volume.value = v;
+            setVolume(v);
             if (spectrum) spectrum['audio'].setVolume(v / 100);
             persistSetting('volume', v);
           }}
         />
-        <span class="slider-value" id="volume-value">{volume.value}</span>
+        <span class="slider-value" id="volume-value">{volume()}</span>
       </div>
       <div class="slider-row">
         <span class="slider-label">Mixer</span>
         <span class="slider-end-label">Beep</span>
         <input
           type="range" id="ay-mix-slider" min="0" max="100"
-          value={ayMix.value}
+          value={ayMix()}
           onInput={(e) => {
             const v = Number((e.target as HTMLInputElement).value);
-            ayMix.value = v;
+            setAyMix(v);
             persistSetting('ay-mix', v);
             applyDisplaySettings();
           }}
@@ -38,10 +38,10 @@ export function SoundPane() {
         <span class="slider-label">AY Channels</span>
         <select
           id="ay-stereo-select"
-          value={ayStereo.value}
+          value={ayStereo()}
           onChange={(e) => {
             const mode = (e.target as HTMLSelectElement).value as 'MONO' | 'ABC' | 'BCA' | 'CBA';
-            ayStereo.value = mode;
+            setAyStereo(mode);
             if (spectrum) spectrum.ay.setStereoMode(mode);
             persistSetting('ay-stereo', mode);
           }}

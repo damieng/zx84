@@ -2,7 +2,7 @@
  * Machine lifecycle: spectrum instance, ROM management, model switching.
  */
 
-import { signal, batch } from '@preact/signals';
+import { createSignal, batch } from 'solid-js';
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
@@ -28,63 +28,63 @@ export type { FontEntry } from '@/frame-bridge.ts';
 
 // ── State ───────────────────────────────────────────────────────────────
 
-export const statusText = signal('Load a ROM to start');
-export const romStatusText = signal('');
-export const currentModel = signal<SpectrumModel>(loadSavedModel() ?? '128k');
-export const emulationPaused = signal(false);
-export const turboMode = signal(false);
-export const tracing = signal(false);
+export const [statusText, setStatusText] = createSignal('Load a ROM to start');
+export const [romStatusText, setRomStatusText] = createSignal('');
+export const [currentModel, setCurrentModel] = createSignal<SpectrumModel>(loadSavedModel() ?? '128k');
+export const [emulationPaused, setEmulationPaused] = createSignal(false);
+export const [turboMode, setTurboMode] = createSignal(false);
+export const [tracing, setTracing] = createSignal(false);
 
 // Per-frame updated signals (written by bridge)
-export const regsHtml = signal('');  // legacy, unused — kept for type compat
-export const regsRev = signal(0);
-export const sysvarHtml = signal('');  // legacy
-export const sysvarRev = signal(0);
-export const basicHtml = signal('');
-export const basicVarsHtml = signal('');
-export const banksHtml = signal('');
-export const diskInfoHtml = signal('');
-export const driveHtml = signal('');
-export const trapLogHtml = signal('');
-export const showTrapLog = signal(false);
-export const disasmText = signal('');
+export const [regsHtml, setRegsHtml] = createSignal('');  // legacy, unused — kept for type compat
+export const [regsRev, setRegsRev] = createSignal(0);
+export const [sysvarHtml, setSysvarHtml] = createSignal('');  // legacy
+export const [sysvarRev, setSysvarRev] = createSignal(0);
+export const [basicHtml, setBasicHtml] = createSignal('');
+export const [basicVarsHtml, setBasicVarsHtml] = createSignal('');
+export const [banksHtml, setBanksHtml] = createSignal('');
+export const [diskInfoHtml, setDiskInfoHtml] = createSignal('');
+export const [driveHtml, setDriveHtml] = createSignal('');
+export const [trapLogHtml, setTrapLogHtml] = createSignal('');
+export const [showTrapLog, setShowTrapLog] = createSignal(false);
+export const [disasmText, setDisasmText] = createSignal('');
 
 // LED states
-export const ledKbd = signal(false);
-export const ledKemp = signal(false);
-export const ledEar = signal(false);
-export const ledLoad = signal(false);
-export const ledRst16 = signal(false);
-export const ledText = signal(false);
-export const ledBeep = signal(false);
-export const ledAy = signal(false);
-export const ledDsk = signal(false);
-export const ledRainbow = signal(false);
+export const [ledKbd, setLedKbd] = createSignal(false);
+export const [ledKemp, setLedKemp] = createSignal(false);
+export const [ledEar, setLedEar] = createSignal(false);
+export const [ledLoad, setLedLoad] = createSignal(false);
+export const [ledRst16, setLedRst16] = createSignal(false);
+export const [ledText, setLedText] = createSignal(false);
+export const [ledBeep, setLedBeep] = createSignal(false);
+export const [ledAy, setLedAy] = createSignal(false);
+export const [ledDsk, setLedDsk] = createSignal(false);
+export const [ledRainbow, setLedRainbow] = createSignal(false);
 
 // Clock speed display
-export const clockSpeedText = signal('MHz');
+export const [clockSpeedText, setClockSpeedText] = createSignal('MHz');
 
 // Tape signals
-export const tapeLoaded = signal(false);
-export const tapeName = signal('');
-export const tapeBlocks = signal<TapeBlock[]>([]);
-export const tapePosition = signal(0);
-export const tapePaused = signal(true);
-export const tapePlaying = signal(false);
+export const [tapeLoaded, setTapeLoaded] = createSignal(false);
+export const [tapeName, setTapeName] = createSignal('');
+export const [tapeBlocks, setTapeBlocks] = createSignal<TapeBlock[]>([]);
+export const [tapePosition, setTapePosition] = createSignal(0);
+export const [tapePaused, setTapePaused] = createSignal(true);
+export const [tapePlaying, setTapePlaying] = createSignal(false);
 
 // Transcribe mode
-export const transcribeMode = signal<'off' | 'rst16' | 'text'>('off');
-export const transcribeText = signal('');
+export const [transcribeMode, setTranscribeMode] = createSignal<'off' | 'rst16' | 'text'>('off');
+export const [transcribeText, setTranscribeText] = createSignal('');
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
 
 export let spectrum: Spectrum | null = null;
 export let romData: Uint8Array | null = null;
 export let floppySound: FloppySound | null = null;
-export const currentDiskInfo = signal<DskImage | null>(null);
-export const currentDiskName = signal('');
-export const currentDiskInfoB = signal<DskImage | null>(null);
-export const currentDiskNameB = signal('');
+export const [currentDiskInfo, setCurrentDiskInfo] = createSignal<DskImage | null>(null);
+export const [currentDiskName, setCurrentDiskName] = createSignal('');
+export const [currentDiskInfoB, setCurrentDiskInfoB] = createSignal<DskImage | null>(null);
+export const [currentDiskNameB, setCurrentDiskNameB] = createSignal('');
 export let canvasEl: HTMLCanvasElement | null = null;
 
 
@@ -154,11 +154,11 @@ function saveModel(model: SpectrumModel): void {
 // ── Actions ─────────────────────────────────────────────────────────────
 
 export function setStatus(msg: string): void {
-  statusText.value = msg;
+  setStatusText(msg);
 }
 
 export function setRomStatus(msg: string): void {
-  romStatusText.value = msg;
+  setRomStatusText(msg);
 }
 
 export function setCanvas(el: HTMLCanvasElement): void {
@@ -167,7 +167,7 @@ export function setCanvas(el: HTMLCanvasElement): void {
     // Swap display without rebuilding machine (e.g. renderer switch)
     const w = spectrum.ula.screenWidth;
     const h = spectrum.ula.screenHeight;
-    spectrum.display = settings.renderer.value === 'canvas'
+    spectrum.display = settings.renderer() === 'canvas'
       ? new CanvasRenderer(el, w, h)
       : new WebGLRenderer(el, w, h);
     applyDisplaySettings();
@@ -176,24 +176,24 @@ export function setCanvas(el: HTMLCanvasElement): void {
 
 export function applyDisplaySettings(): void {
   if (!spectrum) return;
-  spectrum.setBorderSize(settings.borderSize.value as 0 | 1 | 2);
-  spectrum.ula.palette = PALETTES[settings.colorMap.value];
+  spectrum.setBorderSize(settings.borderSize() as 0 | 1 | 2);
+  spectrum.ula.palette = PALETTES[settings.colorMap()];
   if (spectrum.display) {
-    spectrum.display.setScale(settings.scale.value);
-    spectrum.display.setBrightness(settings.brightness.value / 50);
-    spectrum.display.setContrast(settings.contrast.value / 50);
-    spectrum.display.setSmoothing(settings.smoothing.value / 100);
-    spectrum.display.setCurvature(settings.curvature.value / 100 * 0.15);
-    spectrum.display.setScanlines(settings.scanlines.value / 100);
-    spectrum.display.setMaskType(settings.maskType.value);
-    spectrum.display.setDotPitch(settings.dotPitch.value / 10);
-    spectrum.display.setCurvatureMode(settings.curvatureMode.value);
+    spectrum.display.setScale(settings.scale());
+    spectrum.display.setBrightness(settings.brightness() / 50);
+    spectrum.display.setContrast(settings.contrast() / 50);
+    spectrum.display.setSmoothing(settings.smoothing() / 100);
+    spectrum.display.setCurvature(settings.curvature() / 100 * 0.15);
+    spectrum.display.setScanlines(settings.scanlines() / 100);
+    spectrum.display.setMaskType(settings.maskType());
+    spectrum.display.setDotPitch(settings.dotPitch() / 10);
+    spectrum.display.setCurvatureMode(settings.curvatureMode());
   }
-  spectrum['audio'].setVolume(settings.volume.value / 100);
-  const mix = settings.ayMix.value / 100;
+  spectrum['audio'].setVolume(settings.volume() / 100);
+  const mix = settings.ayMix() / 100;
   spectrum.beeperGain = Math.min(1, 2 * (1 - mix));
   spectrum.ayGain = Math.min(1, 2 * mix);
-  spectrum.subFrameRendering = settings.subFrameRendering.value;
+  spectrum.subFrameRendering = settings.subFrameRendering();
 }
 
 export async function createMachine(): Promise<boolean> {
@@ -203,14 +203,14 @@ export async function createMachine(): Promise<boolean> {
   const savedTapeBlocks = spectrum ? [...spectrum.tape.blocks] : null;
   const savedTapePos = spectrum ? spectrum.tape.position : 0;
   const savedTapePaused = spectrum ? spectrum.tape.paused : true;
-  const savedTapeName = tapeName.value;
+  const savedTapeName = tapeName();
 
   if (spectrum) {
     spectrum.destroy();
   }
 
-  const model = currentModel.value;
-  spectrum = new Spectrum(model, canvasEl, settings.renderer.value);
+  const model = currentModel();
+  spectrum = new Spectrum(model, canvasEl, settings.renderer());
   spectrum.onStatus = (msg: string) => setStatus(msg);
   spectrum.onFrame = onFrame;
   applyDisplaySettings();
@@ -229,19 +229,19 @@ export async function createMachine(): Promise<boolean> {
   }
 
   // Apply saved AY stereo mode
-  const savedAyStereo = settings.ayStereo.value as 'MONO' | 'ABC' | 'BCA' | 'CBA';
+  const savedAyStereo = settings.ayStereo() as 'MONO' | 'ABC' | 'BCA' | 'CBA';
   spectrum.ay.setStereoMode(savedAyStereo);
 
   // Apply saved disk mode for +3
   if (isPlus3(model)) {
-    spectrum.diskMode = settings.diskMode.value;
+    spectrum.diskMode = settings.diskMode();
   }
 
   // Floppy sound
-  currentDiskInfo.value = null;
-  currentDiskName.value = '';
-  currentDiskInfoB.value = null;
-  currentDiskNameB.value = '';
+  setCurrentDiskInfo(null);
+  setCurrentDiskName('');
+  setCurrentDiskInfoB(null);
+  setCurrentDiskNameB('');
   if (isPlus3(model)) {
     if (!floppySound) floppySound = new FloppySound();
     floppySound.reset();
@@ -256,22 +256,22 @@ export async function createMachine(): Promise<boolean> {
     spectrum.tape.position = savedTapePos;
     spectrum.tape.paused = savedTapePaused;
     batch(() => {
-      tapeLoaded.value = true;
-      tapeName.value = savedTapeName;
-      tapeBlocks.value = [...savedTapeBlocks];
-      tapePosition.value = savedTapePos;
-      tapePaused.value = savedTapePaused;
-      tapePlaying.value = false;
-      turboMode.value = false;
+      setTapeLoaded(true);
+      setTapeName(savedTapeName);
+      setTapeBlocks([...savedTapeBlocks]);
+      setTapePosition(savedTapePos);
+      setTapePaused(savedTapePaused);
+      setTapePlaying(false);
+      setTurboMode(false);
     });
   } else {
     batch(() => {
-      tapeLoaded.value = false;
-      tapeBlocks.value = [];
-      tapePosition.value = 0;
-      tapePaused.value = true;
-      tapePlaying.value = false;
-      turboMode.value = false;
+      setTapeLoaded(false);
+      setTapeBlocks([]);
+      setTapePosition(0);
+      setTapePaused(true);
+      setTapePlaying(false);
+      setTurboMode(false);
     });
   }
 
@@ -284,33 +284,33 @@ export function createMachineSync(): void {
 }
 
 export function unpause(): void {
-  emulationPaused.value = false;
+  setEmulationPaused(false);
 }
 
 function clearDebugPanels(): void {
-  disasmText.value = '';
-  sysvarHtml.value = '';
-  basicHtml.value = '';
-  basicVarsHtml.value = '';
+  setDisasmText('');
+  setSysvarHtml('');
+  setBasicHtml('');
+  setBasicVarsHtml('');
 }
 
 export function togglePause(): void {
   if (!spectrum) return;
-  if (emulationPaused.value) {
+  if (emulationPaused()) {
     clearDebugPanels();
     spectrum.start();
   } else {
     spectrum.stop();
     updateRegsOnce();
   }
-  emulationPaused.value = !emulationPaused.value;
+  setEmulationPaused(!emulationPaused());
 }
 
 export function stepInto(): void {
   if (!spectrum) return;
-  if (!emulationPaused.value) {
+  if (!emulationPaused()) {
     spectrum.stop();
-    emulationPaused.value = true;
+    setEmulationPaused(true);
   }
   spectrum.cpu.step();
   updateRegsOnce();
@@ -318,9 +318,9 @@ export function stepInto(): void {
 
 export function stepOver(): void {
   if (!spectrum) return;
-  if (!emulationPaused.value) {
+  if (!emulationPaused()) {
     spectrum.stop();
-    emulationPaused.value = true;
+    setEmulationPaused(true);
   }
   const cpu = spectrum.cpu;
   const op = cpu.memory[cpu.pc];
@@ -357,9 +357,9 @@ export function stepOver(): void {
 
 export function stepOut(): void {
   if (!spectrum) return;
-  if (!emulationPaused.value) {
+  if (!emulationPaused()) {
     spectrum.stop();
-    emulationPaused.value = true;
+    setEmulationPaused(true);
   }
   const cpu = spectrum.cpu;
   const targetSP = cpu.sp + 2; // SP after RET pops return address
@@ -375,21 +375,21 @@ export function resetMachine(): void {
   floppySound?.reset();
   if (spectrum) {
     spectrum.turbo = false;
-    turboMode.value = false;
+    setTurboMode(false);
     spectrum.tape.rewind();
     spectrum.tape.paused = true;
-    tapePaused.value = true;
+    setTapePaused(true);
     spectrum.reset();
     if (romData) spectrum.start();
     batch(() => {
-      tapeLoaded.value = spectrum!.tape.loaded;
-      tapeBlocks.value = [...spectrum!.tape.blocks];
-      tapePosition.value = 0;
+      setTapeLoaded(spectrum!.tape.loaded);
+      setTapeBlocks([...spectrum!.tape.blocks]);
+      setTapePosition(0);
     });
     unpause();
   }
-  if (transcribeMode.value !== 'off') {
-    transcribeMode.value = 'off';
+  if (transcribeMode() !== 'off') {
+    setTranscribeMode('off');
   }
   clearLastFile();
 }
@@ -397,7 +397,7 @@ export function resetMachine(): void {
 export function toggleTurbo(): void {
   if (!spectrum) return;
   spectrum.turbo = !spectrum.turbo;
-  turboMode.value = spectrum.turbo;
+  setTurboMode(spectrum.turbo);
   forceSpeedUpdate();
 }
 
@@ -421,10 +421,10 @@ export function runTo(addr: number): void {
   if (!wasSet) {
     pendingRunTo = addr;
   }
-  if (emulationPaused.value) {
+  if (emulationPaused()) {
     clearDebugPanels();
     spectrum.start();
-    emulationPaused.value = false;
+    setEmulationPaused(false);
   }
 }
 
@@ -477,13 +477,13 @@ export type TraceMode = 'full' | 'contention' | 'portio';
 export function startTrace(mode: TraceMode = 'full'): void {
   if (!spectrum) return;
   spectrum.startTrace(mode);
-  tracing.value = true;
+  setTracing(true);
 }
 
 export function stopTrace(): void {
   if (!spectrum) return;
   const text = spectrum.stopTrace();
-  tracing.value = false;
+  setTracing(false);
   navigator.clipboard.writeText(text);
   const lines = text.split('\n').length;
   setStatus(`Trace copied to clipboard (${lines.toLocaleString()} lines)`);
@@ -492,7 +492,7 @@ export function stopTrace(): void {
 // ── Model switching ─────────────────────────────────────────────────────
 
 export async function switchModel(model: SpectrumModel): Promise<void> {
-  currentModel.value = model;
+  setCurrentModel(model);
   saveModel(model);
 
   let entry = await restoreROM(model);
@@ -516,9 +516,9 @@ export async function applyROM(data: Uint8Array, fileLabel: string): Promise<voi
 
   let detectedModel: SpectrumModel;
   if (data.length >= 65536) {
-    detectedModel = isPlus2AClass(currentModel.value) ? currentModel.value : '+2a';
+    detectedModel = isPlus2AClass(currentModel()) ? currentModel() : '+2a';
   } else if (data.length >= 32768) {
-    detectedModel = is128kClass(currentModel.value) ? currentModel.value : '128k';
+    detectedModel = is128kClass(currentModel()) ? currentModel() : '128k';
   } else if (data.length >= 16384) {
     detectedModel = '48k';
   } else {
@@ -526,7 +526,7 @@ export async function applyROM(data: Uint8Array, fileLabel: string): Promise<voi
     return;
   }
 
-  currentModel.value = detectedModel;
+  setCurrentModel(detectedModel);
   saveModel(detectedModel);
 
   await persistROM(detectedModel, data, fileLabel);
@@ -577,7 +577,7 @@ async function ensure128kROM(): Promise<boolean> {
   for (const model of models) {
     const entry = await restoreROM(model);
     if (entry) {
-      currentModel.value = model;
+      setCurrentModel(model);
       romData = entry.data;
       setRomStatus('');
       await createMachine();
@@ -597,7 +597,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
 
   try {
     if (ext === 'sna') {
-      if (data.length > 49179 && !is128kClass(currentModel.value)) {
+      if (data.length > 49179 && !is128kClass(currentModel())) {
         if (!await ensure128kROM()) {
           setStatus('128K SNA requires a 128K ROM — load one first');
           return false;
@@ -616,7 +616,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       spectrum.reset();
       const result = loadZ80(data, spectrum.cpu, spectrum.memory);
 
-      if (result.is128K && !is128kClass(currentModel.value)) {
+      if (result.is128K && !is128kClass(currentModel())) {
         if (!await ensure128kROM()) {
           setStatus('128K .z80 snapshot requires a 128K ROM — load one first');
           return false;
@@ -635,7 +635,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       spectrum.reset();
       const result = await loadSZX(data, spectrum.cpu, spectrum.memory);
 
-      if (result.is128K && !is128kClass(currentModel.value)) {
+      if (result.is128K && !is128kClass(currentModel())) {
         if (!await ensure128kROM()) {
           setStatus('128K .szx snapshot requires a 128K ROM — load one first');
           return false;
@@ -651,7 +651,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
         spectrum!.memory.currentBank = result.port7FFD & 0x07;
         spectrum!.memory.currentROM = (result.port7FFD >> 4) & 1;
         spectrum!.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
-        if (isPlus2AClass(currentModel.value)) {
+        if (isPlus2AClass(currentModel())) {
           spectrum!.memory.port1FFD = result.port1FFD;
           spectrum!.memory.specialPaging = (result.port1FFD & 1) !== 0;
         }
@@ -676,7 +676,7 @@ async function applySnapshot(data: Uint8Array, filename: string): Promise<boolea
       spectrum.reset();
       const result = loadSP(data, spectrum.cpu, spectrum.memory);
 
-      if (result.is128K && !is128kClass(currentModel.value)) {
+      if (result.is128K && !is128kClass(currentModel())) {
         if (!await ensure128kROM()) {
           setStatus('128K .sp snapshot requires a 128K ROM — load one first');
           return false;
@@ -745,12 +745,12 @@ export function applyTape(data: Uint8Array, filename: string): void {
 
   // Update UI signals after machine state is settled
   batch(() => {
-    tapeLoaded.value = true;
-    tapeName.value = filename;
-    tapeBlocks.value = [...blocks];
-    tapePosition.value = 0;
-    tapePaused.value = true;
-    tapePlaying.value = true;
+    setTapeLoaded(true);
+    setTapeName(filename);
+    setTapeBlocks([...blocks]);
+    setTapePosition(0);
+    setTapePaused(true);
+    setTapePlaying(true);
   });
 
   unpause();
@@ -777,8 +777,8 @@ export async function loadFile(data: Uint8Array, filename: string): Promise<void
     if (!spectrum) { setStatus('Load a ROM first'); return; }
     try {
       const image = parseDSK(data);
-      currentDiskInfo.value = image;
-      currentDiskName.value = filename;
+      setCurrentDiskInfo(image);
+      setCurrentDiskName(filename);
       spectrum.loadDisk(image, 0);
       setStatus(`Disk loaded: ${filename}`);
       persistLastFile(data, filename);
@@ -843,12 +843,12 @@ function downloadFile(data: Uint8Array, filename: string): void {
 export function saveSnapshot(format: 'sna' | 'z80' = 'sna'): void {
   if (!spectrum) { setStatus('No machine running'); return; }
 
-  const wasPaused = emulationPaused.value;
+  const wasPaused = emulationPaused();
   if (!wasPaused) spectrum.stop();
 
   // For now, .z80 saves as .sna (full .z80 writer not yet implemented)
   const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
-  const model = is128kClass(currentModel.value) ? '128k' : '48k';
+  const model = is128kClass(currentModel()) ? '128k' : '48k';
   const ext = format === 'z80' ? 'sna' : format; // TODO: implement .z80 writer
   const filename = `zx84-${model}.${ext}`;
 
@@ -886,7 +886,7 @@ export function saveScreenshot(format: 'png' | 'scr'): void {
 export function saveRAM(): void {
   if (!spectrum) { setStatus('No machine running'); return; }
 
-  const wasPaused = emulationPaused.value;
+  const wasPaused = emulationPaused();
   if (!wasPaused) spectrum.stop();
 
   // Check if RAM is at 0x0000 (special paging mode on +2A/+3)
@@ -906,36 +906,36 @@ export function saveRAM(): void {
 export function tapeRewind(): void {
   if (!spectrum) return;
   spectrum.tape.rewind();
-  tapePosition.value = 0;
+  setTapePosition(0);
 }
 
 export function tapePrev(): void {
   if (!spectrum) return;
   if (spectrum.tape.position > 0) spectrum.tape.position--;
-  tapePosition.value = spectrum.tape.position;
+  setTapePosition(spectrum.tape.position);
 }
 
 export function tapeTogglePause(): void {
   if (!spectrum) return;
   spectrum.tape.paused = !spectrum.tape.paused;
-  tapePaused.value = spectrum.tape.paused;
+  setTapePaused(spectrum.tape.paused);
 }
 
 export function tapeNext(): void {
   if (!spectrum) return;
   if (spectrum.tape.position < spectrum.tape.blocks.length) spectrum.tape.position++;
-  tapePosition.value = spectrum.tape.position;
+  setTapePosition(spectrum.tape.position);
 }
 
 export function tapeSetPosition(pos: number): void {
   if (!spectrum) return;
   spectrum.tape.position = pos;
-  tapePosition.value = pos;
+  setTapePosition(pos);
 }
 
 export function toggleAutoRewind(): void {
-  settings.tapeAutoRewind.value = !settings.tapeAutoRewind.value;
-  settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind.value ? 'on' : 'off');
+  settings.setTapeAutoRewind(!settings.tapeAutoRewind());
+  settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind() ? 'on' : 'off');
 }
 
 export function ejectTape(): void {
@@ -943,11 +943,11 @@ export function ejectTape(): void {
   spectrum.tape.blocks = [];
   spectrum.tape.position = 0;
   spectrum.tape.paused = true;
-  tapeLoaded.value = false;
-  tapeName.value = '';
-  tapeBlocks.value = [];
-  tapePosition.value = 0;
-  tapePaused.value = true;
+  setTapeLoaded(false);
+  setTapeName('');
+  setTapeBlocks([]);
+  setTapePosition(0);
+  setTapePaused(true);
   setStatus('Tape ejected');
 }
 
@@ -955,13 +955,13 @@ export function ejectDisk(unit: number = 0): void {
   if (!spectrum) return;
   if (spectrum.fdc) spectrum.fdc.ejectDisk(unit);
   if (unit === 0) {
-    currentDiskInfo.value = null;
-    currentDiskName.value = '';
-    diskInfoHtml.value = '';
+    setCurrentDiskInfo(null);
+    setCurrentDiskName('');
+    setDiskInfoHtml('');
     setStatus('Disk A: ejected');
   } else {
-    currentDiskInfoB.value = null;
-    currentDiskNameB.value = '';
+    setCurrentDiskInfoB(null);
+    setCurrentDiskNameB('');
     setStatus('Disk B: ejected');
   }
 }
@@ -971,11 +971,11 @@ export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number)
   try {
     const image = parseDSK(data);
     if (unit === 0) {
-      currentDiskInfo.value = image;
-      currentDiskName.value = filename;
+      setCurrentDiskInfo(image);
+      setCurrentDiskName(filename);
     } else {
-      currentDiskInfoB.value = image;
-      currentDiskNameB.value = filename;
+      setCurrentDiskInfoB(image);
+      setCurrentDiskNameB(filename);
     }
     spectrum.loadDisk(image, unit);
     setStatus(`Disk ${unit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
@@ -1052,7 +1052,7 @@ export function joyPressForType(dir: string, pressed: boolean, mode: string): vo
 // ── Init ────────────────────────────────────────────────────────────────
 
 export async function init(): Promise<void> {
-  const model = currentModel.value;
+  const model = currentModel();
 
   let entry = await restoreROM(model);
   if (!entry) entry = await fetchDefaultROM(model);
@@ -1075,24 +1075,24 @@ export async function init(): Promise<void> {
 // ── Transcribe ──────────────────────────────────────────────────────────
 
 export function toggleTranscribeMode(mode: 'rst16' | 'text'): void {
-  if (transcribeMode.value === mode) {
-    transcribeMode.value = 'off';
+  if (transcribeMode() === mode) {
+    setTranscribeMode('off');
   } else {
-    transcribeMode.value = mode;
+    setTranscribeMode(mode);
   }
 }
 
 // ── Renderer switching ──────────────────────────────────────────────────
 
 export function switchRenderer(mode: 'webgl' | 'canvas'): void {
-  settings.renderer.value = mode;
+  settings.setRenderer(mode);
   settings.persistSetting('renderer', mode);
 }
 
 // ── Disk mode change ────────────────────────────────────────────────────
 
-export function setDiskMode(mode: 'fdc' | 'bios'): void {
-  settings.diskMode.value = mode;
+export function setDiskModeAction(mode: 'fdc' | 'bios'): void {
+  settings.setDiskMode(mode);
   if (spectrum) spectrum.diskMode = mode;
   settings.persistSetting('disk-mode', mode);
 }
@@ -1114,7 +1114,7 @@ export function saveHMRState(): void {
 
   try {
     // Stop emulation temporarily
-    const wasPaused = emulationPaused.value;
+    const wasPaused = emulationPaused();
     if (!wasPaused) spectrum.stop();
 
     // Save snapshot data as SZX
@@ -1133,7 +1133,7 @@ export function saveHMRState(): void {
     // Save state bundle
     const state = {
       snapshot: b64,
-      model: currentModel.value,
+      model: currentModel(),
       timestamp: Date.now(),
     };
 
@@ -1179,7 +1179,7 @@ export async function restoreHMRState(): Promise<boolean> {
       spectrum.memory.currentBank = result.port7FFD & 0x07;
       spectrum.memory.currentROM = (result.port7FFD >> 4) & 1;
       spectrum.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
-      if (isPlus2AClass(currentModel.value)) {
+      if (isPlus2AClass(currentModel())) {
         spectrum.memory.port1FFD = result.port1FFD;
         spectrum.memory.specialPaging = (result.port1FFD & 1) !== 0;
       }

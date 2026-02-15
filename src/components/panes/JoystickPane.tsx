@@ -1,127 +1,126 @@
+import { createSignal, Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
-import { HiChevronUp, HiChevronDown, HiChevronLeft, HiChevronRight } from 'react-icons/hi2';
-import { joyP1, joyP2, joyMapP1, joyMapP2, persistSetting, gamepadConfigP1, gamepadConfigP2 } from '@/store/settings.ts';
+import { HiOutlineChevronUp, HiOutlineChevronDown, HiOutlineChevronLeft, HiOutlineChevronRight } from 'solid-icons/hi';
+import { joyP1, joyP2, joyMapP1, joyMapP2, setJoyP1, setJoyP2, setJoyMapP1, setJoyMapP2, persistSetting, gamepadConfigP1, gamepadConfigP2, setGamepadConfigP1, setGamepadConfigP2 } from '@/store/settings.ts';
 import { joyPressForType } from '@/emulator.ts';
-import { signal } from '@preact/signals';
 
 // Configuration mode state
-export const configuringPlayer = signal<number>(-1); // -1 = not configuring, 0 = P1, 1 = P2
-export const configuringStep = signal<string>(''); // 'deadzone', 'up', 'down', 'left', 'right', 'fire'
-export const configuringProgress = signal<number>(0); // 0–1 progress
+export const [configuringPlayer, setConfiguringPlayer] = createSignal<number>(-1);
+export const [configuringStep, setConfiguringStep] = createSignal<string>('');
+export const [configuringProgress, setConfiguringProgress] = createSignal<number>(0);
 
 function cancelConfiguration(): void {
-  configuringPlayer.value = -1;
-  configuringStep.value = '';
-  configuringProgress.value = 0;
+  setConfiguringPlayer(-1);
+  setConfiguringStep('');
+  setConfiguringProgress(0);
 }
 
-function DpadButton({ dir, playerIdx }: { dir: string; playerIdx: number }) {
+function DpadButton(props: { dir: string; playerIdx: number }) {
   const selectors = [joyP1, joyP2];
   const icons: Record<string, any> = {
-    up: HiChevronUp, down: HiChevronDown, left: HiChevronLeft, right: HiChevronRight,
+    up: HiOutlineChevronUp, down: HiOutlineChevronDown, left: HiOutlineChevronLeft, right: HiOutlineChevronRight,
   };
-  const Icon = icons[dir];
+  const Icon = icons[props.dir];
 
   const onPress = (e: Event) => {
     e.preventDefault();
     (e.target as HTMLElement).classList.add('pressed');
-    joyPressForType(dir, true, selectors[playerIdx].value);
+    joyPressForType(props.dir, true, selectors[props.playerIdx]());
   };
   const onRelease = (e: Event) => {
     e.preventDefault();
     (e.target as HTMLElement).classList.remove('pressed');
-    joyPressForType(dir, false, selectors[playerIdx].value);
+    joyPressForType(props.dir, false, selectors[props.playerIdx]());
   };
   const onLeave = (e: Event) => {
     (e.target as HTMLElement).classList.remove('pressed');
-    joyPressForType(dir, false, selectors[playerIdx].value);
+    joyPressForType(props.dir, false, selectors[props.playerIdx]());
   };
 
-  const isActive = configuringPlayer.value === playerIdx && configuringStep.value === dir;
-  const progress = isActive ? configuringProgress.value : 0;
+  const isActive = () => configuringPlayer() === props.playerIdx && configuringStep() === props.dir;
+  const progress = () => isActive() ? configuringProgress() : 0;
 
-  const configStyle = isActive ? {
-    background: progress > 0
-      ? `conic-gradient(from 0deg, #3399ff ${progress * 360}deg, #e0e0e0 ${progress * 360}deg)`
+  const configStyle = () => isActive() ? {
+    background: progress() > 0
+      ? `conic-gradient(from 0deg, #3399ff ${progress() * 360}deg, #e0e0e0 ${progress() * 360}deg)`
       : undefined,
   } : undefined;
 
-  const className = [
+  const className = () => [
     'joy-btn',
-    dir === 'fire' ? 'joy-fire' : '',
-    isActive ? (progress > 0 ? 'joy-config-holding' : 'joy-config-waiting') : '',
+    props.dir === 'fire' ? 'joy-fire' : '',
+    isActive() ? (progress() > 0 ? 'joy-config-holding' : 'joy-config-waiting') : '',
   ].filter(Boolean).join(' ');
 
   return (
     <div
-      class={className}
-      data-dir={dir}
+      class={className()}
+      data-dir={props.dir}
       onMouseDown={onPress}
       onMouseUp={onRelease}
       onMouseLeave={onLeave}
       onTouchStart={onPress}
       onTouchEnd={onRelease}
       onTouchCancel={onLeave}
-      style={configStyle}
-    >{dir === 'fire' ? 'F1' : <Icon />}</div>
+      style={configStyle()}
+    >{props.dir === 'fire' ? 'F1' : <Icon />}</div>
   );
 }
 
-function DeadZoneIndicator({ playerIdx }: { playerIdx: number }) {
-  const isActive = configuringPlayer.value === playerIdx && configuringStep.value === 'deadzone';
-  const progress = isActive ? configuringProgress.value : 0;
+function DeadZoneIndicator(props: { playerIdx: number }) {
+  const isActive = () => configuringPlayer() === props.playerIdx && configuringStep() === 'deadzone';
+  const progress = () => isActive() ? configuringProgress() : 0;
 
-  const className = [
+  const className = () => [
     'joy-deadzone',
-    isActive ? (progress > 0 ? 'joy-config-holding' : 'joy-config-waiting') : '',
+    isActive() ? (progress() > 0 ? 'joy-config-holding' : 'joy-config-waiting') : '',
   ].filter(Boolean).join(' ');
 
-  const style = isActive && progress > 0 ? {
-    background: `conic-gradient(from 0deg, #3399ff ${progress * 360}deg, #e0e0e0 ${progress * 360}deg)`,
+  const style = () => isActive() && progress() > 0 ? {
+    background: `conic-gradient(from 0deg, #3399ff ${progress() * 360}deg, #e0e0e0 ${progress() * 360}deg)`,
   } : undefined;
 
-  return <div class={className} data-dir="deadzone" style={style} />;
+  return <div class={className()} data-dir="deadzone" style={style()} />;
 }
 
-function JoyColumn({ playerIdx, label }: { playerIdx: number; label: string }) {
-  const joySel = playerIdx === 0 ? joyP1 : joyP2;
-  const joyMapSel = playerIdx === 0 ? joyMapP1 : joyMapP2;
-  const gamepadConfig = playerIdx === 0 ? gamepadConfigP1 : gamepadConfigP2;
-  const joyKey = playerIdx === 0 ? 'joy-p1' : 'joy-p2';
-  const mapKey = playerIdx === 0 ? 'joy-map-p1' : 'joy-map-p2';
+function JoyColumn(props: { playerIdx: number; label: string }) {
+  const joySel = () => props.playerIdx === 0 ? joyP1 : joyP2;
+  const setJoySel = () => props.playerIdx === 0 ? setJoyP1 : setJoyP2;
+  const joyMapSel = () => props.playerIdx === 0 ? joyMapP1 : joyMapP2;
+  const setJoyMapSel = () => props.playerIdx === 0 ? setJoyMapP1 : setJoyMapP2;
+  const gamepadConfig = () => props.playerIdx === 0 ? gamepadConfigP1 : gamepadConfigP2;
+  const joyKey = () => props.playerIdx === 0 ? 'joy-p1' : 'joy-p2';
+  const mapKey = () => props.playerIdx === 0 ? 'joy-map-p1' : 'joy-map-p2';
 
-  const hasGamepadConfig = gamepadConfig.value !== null;
+  const hasGamepadConfig = () => gamepadConfig()() !== null;
 
   const handleMapChange = (e: Event) => {
     const newValue = (e.target as HTMLSelectElement).value;
 
-    // Cancel any ongoing configuration for this player
-    if (configuringPlayer.value === playerIdx) {
+    if (configuringPlayer() === props.playerIdx) {
       cancelConfiguration();
     }
 
     if (newValue === 'gamepad-configure') {
-      // Clear existing config and start configuration mode
-      if (playerIdx === 0) gamepadConfigP1.value = null;
-      else gamepadConfigP2.value = null;
+      if (props.playerIdx === 0) setGamepadConfigP1(null);
+      else setGamepadConfigP2(null);
 
-      configuringPlayer.value = playerIdx;
-      configuringStep.value = 'deadzone';
-      configuringProgress.value = 0;
-      // Show as gamepad in dropdown during config
-      joyMapSel.value = 'gamepad';
+      setConfiguringPlayer(props.playerIdx);
+      setConfiguringStep('deadzone');
+      setConfiguringProgress(0);
+      setJoyMapSel()('gamepad');
     } else {
-      joyMapSel.value = newValue;
-      persistSetting(mapKey, newValue);
+      setJoyMapSel()(newValue);
+      persistSetting(mapKey(), newValue);
     }
   };
 
   return (
     <div class="joy-column">
-      <label>{label}
-        <select id={joyKey} value={joySel.value} onChange={(e) => {
-          joySel.value = (e.target as HTMLSelectElement).value;
-          persistSetting(joyKey, joySel.value);
+      <label>{props.label}
+        <select id={joyKey()} value={joySel()()} onChange={(e) => {
+          setJoySel()((e.target as HTMLSelectElement).value);
+          persistSetting(joyKey(), joySel()());
         }}>
           <option value="kempston">Kempston</option>
           <option value="cursor">Cursor</option>
@@ -131,23 +130,23 @@ function JoyColumn({ playerIdx, label }: { playerIdx: number; label: string }) {
         </select>
       </label>
       <label>Map
-        <select id={`joy-map-${label.toLowerCase()}`} value={joyMapSel.value} onChange={handleMapChange}>
+        <select id={`joy-map-${props.label.toLowerCase()}`} value={joyMapSel()()} onChange={handleMapChange}>
           <option value="none">No mapping</option>
           <option value="keys">Cursor keys</option>
           <option value="wasd">WASD + Space</option>
-          {hasGamepadConfig && <option value="gamepad">Gamestick</option>}
+          <Show when={hasGamepadConfig()}><option value="gamepad">Gamestick</option></Show>
           <option value="gamepad-configure">Configure Gamestick</option>
         </select>
       </label>
-      <div class="joy-dpad" data-player={playerIdx + 1}>
-        <DpadButton dir="fire" playerIdx={playerIdx} />
-        <DpadButton dir="up" playerIdx={playerIdx} />
+      <div class="joy-dpad" data-player={props.playerIdx + 1}>
+        <DpadButton dir="fire" playerIdx={props.playerIdx} />
+        <DpadButton dir="up" playerIdx={props.playerIdx} />
         <div class="joy-spacer" />
-        <DpadButton dir="left" playerIdx={playerIdx} />
-        <DeadZoneIndicator playerIdx={playerIdx} />
-        <DpadButton dir="right" playerIdx={playerIdx} />
+        <DpadButton dir="left" playerIdx={props.playerIdx} />
+        <DeadZoneIndicator playerIdx={props.playerIdx} />
+        <DpadButton dir="right" playerIdx={props.playerIdx} />
         <div class="joy-spacer" />
-        <DpadButton dir="down" playerIdx={playerIdx} />
+        <DpadButton dir="down" playerIdx={props.playerIdx} />
         <div class="joy-spacer" />
       </div>
     </div>

@@ -2,7 +2,7 @@
  * Persisted display/sound/joystick settings as signals.
  */
 
-import { signal, computed } from '@preact/signals';
+import { createSignal, createMemo } from 'solid-js';
 import { getSaved, setSaved } from '@/store/persistence.ts';
 
 // ── Display settings ────────────────────────────────────────────────────
@@ -11,32 +11,32 @@ function getSavedNumber(key: string, fallback: string): number {
   return Number(getSaved(key, fallback));
 }
 
-export const scale = signal(getSavedNumber('scale', '2'));
-export const brightness = signal(getSavedNumber('brightness', '0'));
-export const contrast = signal(getSavedNumber('contrast', '50'));
-export const smoothing = signal(getSavedNumber('smoothing', '0'));
-export const curvature = signal(getSavedNumber('curvature', '0'));
-export const scanlines = signal(getSavedNumber('scanlines', '0'));
-export const maskType = signal(getSavedNumber('mask-type', '0'));
-export const dotPitch = signal(getSavedNumber('dot-pitch', '10'));
-export const curvatureMode = signal(getSavedNumber('curvature-mode', '0'));
-export const monitor = signal(getSaved('monitor', 'raw'));
-export const borderSize = signal(getSavedNumber('border-size', '2'));
-export const renderer = signal(getSaved('renderer', 'webgl') as 'webgl' | 'canvas');
-export const colorMap = signal(getSaved('color-map', 'measured') as 'basic' | 'measured' | 'vivid');
+export const [scale, setScale] = createSignal(getSavedNumber('scale', '2'));
+export const [brightness, setBrightness] = createSignal(getSavedNumber('brightness', '0'));
+export const [contrast, setContrast] = createSignal(getSavedNumber('contrast', '50'));
+export const [smoothing, setSmoothing] = createSignal(getSavedNumber('smoothing', '0'));
+export const [curvature, setCurvature] = createSignal(getSavedNumber('curvature', '0'));
+export const [scanlines, setScanlines] = createSignal(getSavedNumber('scanlines', '0'));
+export const [maskType, setMaskType] = createSignal(getSavedNumber('mask-type', '0'));
+export const [dotPitch, setDotPitch] = createSignal(getSavedNumber('dot-pitch', '10'));
+export const [curvatureMode, setCurvatureMode] = createSignal(getSavedNumber('curvature-mode', '0'));
+export const [monitor, setMonitor] = createSignal(getSaved('monitor', 'raw'));
+export const [borderSize, setBorderSize] = createSignal(getSavedNumber('border-size', '2'));
+export const [renderer, setRenderer] = createSignal(getSaved('renderer', 'webgl') as 'webgl' | 'canvas');
+export const [colorMap, setColorMap] = createSignal(getSaved('color-map', 'measured') as 'basic' | 'measured' | 'vivid');
 
 // ── Sound settings ──────────────────────────────────────────────────────
 
-export const volume = signal(getSavedNumber('volume', '70'));
-export const ayMix = signal(getSavedNumber('ay-mix', '50'));
-export const ayStereo = signal(getSaved('ay-stereo', 'ABC'));
+export const [volume, setVolume] = createSignal(getSavedNumber('volume', '70'));
+export const [ayMix, setAyMix] = createSignal(getSavedNumber('ay-mix', '50'));
+export const [ayStereo, setAyStereo] = createSignal(getSaved('ay-stereo', 'ABC'));
 
 // ── Joystick settings ───────────────────────────────────────────────────
 
-export const joyP1 = signal(getSaved('joy-p1', 'kempston'));
-export const joyP2 = signal(getSaved('joy-p2', 'sinclair2'));
-export const joyMapP1 = signal(getSaved('joy-map-p1', 'none'));
-export const joyMapP2 = signal(getSaved('joy-map-p2', 'none'));
+export const [joyP1, setJoyP1] = createSignal(getSaved('joy-p1', 'kempston'));
+export const [joyP2, setJoyP2] = createSignal(getSaved('joy-p2', 'sinclair2'));
+export const [joyMapP1, setJoyMapP1] = createSignal(getSaved('joy-map-p1', 'none'));
+export const [joyMapP2, setJoyMapP2] = createSignal(getSaved('joy-map-p2', 'none'));
 
 // ── Gamepad configuration ───────────────────────────────────────────────
 
@@ -62,40 +62,40 @@ function loadGamepadConfig(player: 1 | 2): GamepadConfig | null {
   }
 }
 
-export const gamepadConfigP1 = signal<GamepadConfig | null>(loadGamepadConfig(1));
-export const gamepadConfigP2 = signal<GamepadConfig | null>(loadGamepadConfig(2));
+export const [gamepadConfigP1, setGamepadConfigP1] = createSignal<GamepadConfig | null>(loadGamepadConfig(1));
+export const [gamepadConfigP2, setGamepadConfigP2] = createSignal<GamepadConfig | null>(loadGamepadConfig(2));
 
 export function saveGamepadConfig(player: 1 | 2, config: GamepadConfig): void {
   if (player === 1) {
-    gamepadConfigP1.value = config;
+    setGamepadConfigP1(config);
   } else {
-    gamepadConfigP2.value = config;
+    setGamepadConfigP2(config);
   }
   setSaved(`gamepad-config-p${player}`, JSON.stringify(config));
 }
 
 // ── Font settings ───────────────────────────────────────────────────────
 
-export const fontName = signal(getSaved('font', ''));
+export const [fontName, setFontName] = createSignal(getSaved('font', ''));
 
 // ── Disk mode ───────────────────────────────────────────────────────────
 
-export const diskMode = signal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
-export const dualDrives = signal(getSaved('dual-drives', 'off') === 'on');
+export const [diskMode, setDiskMode] = createSignal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
+export const [dualDrives, setDualDrives] = createSignal(getSaved('dual-drives', 'off') === 'on');
 
 // ── Tape settings ───────────────────────────────────────────────────────
 
-export const tapeAutoRewind = signal(getSaved('tape-auto-rewind', 'on') === 'on');
-export const tapeCollapseBlocks = signal(getSaved('tape-collapse-blocks', 'on') === 'on');
+export const [tapeAutoRewind, setTapeAutoRewind] = createSignal(getSaved('tape-auto-rewind', 'on') === 'on');
+export const [tapeCollapseBlocks, setTapeCollapseBlocks] = createSignal(getSaved('tape-collapse-blocks', 'on') === 'on');
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 
-export const subFrameRendering = signal(getSaved('sub-frame-rendering', 'off') === 'on');
+export const [subFrameRendering, setSubFrameRendering] = createSignal(getSaved('sub-frame-rendering', 'off') === 'on');
 
 // ── Derived ─────────────────────────────────────────────────────────────
 
-export const needsGamepadPolling = computed(() =>
-  joyMapP1.value === 'gamepad' || joyMapP2.value === 'gamepad'
+export const needsGamepadPolling = createMemo(() =>
+  joyMapP1() === 'gamepad' || joyMapP2() === 'gamepad'
 );
 
 // ── Persistence helpers ─────────────────────────────────────────────────
