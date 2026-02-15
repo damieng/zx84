@@ -58,7 +58,7 @@ export function FontPane() {
   const fontNames = Object.keys(store).sort();
 
   return (
-    <Pane id="font-panel" label="Font">
+    <Pane id="font-panel" label="Fonts">
       <div class="slider-row" id="font-row">
         <select id="font-select" value={fontName.value} onChange={(e) => {
           fontName.value = (e.target as HTMLSelectElement).value;

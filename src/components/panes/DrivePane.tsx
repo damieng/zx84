@@ -14,7 +14,7 @@ export function DrivePane() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <Pane id="drive-panel" label="Drive" mono visible={isPlus3(currentModel.value)}>
+    <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel.value)}>
       <div class="drive-toolbar">
         <button title="Open disk" onClick={() => fileInputRef.current?.click()}><HiFolderOpen /></button>
         <button title="Eject disk" onClick={ejectDisk}><HiArrowUpTray /></button>
