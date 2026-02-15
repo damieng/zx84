@@ -93,12 +93,12 @@ function readVal(mem: Uint8Array, def: SysVarDef): { num: number; str: string } 
     return { num: v, str: '  ' + HEX16[v] };
   } else if (def.width === 'pair') {
     const v = (mem[a] << 8) | mem[a + 1];
-    return { num: v, str: HEX8[mem[a]] + ',' + HEX8[mem[a + 1]] };
+    return { num: v, str: ' ' + HEX8[mem[a]] + ',' + HEX8[mem[a + 1]] };
   } else if (def.width === 'char') {
     const v = mem[a] || 0x54;
-    return { num: v, str: '    ' + String.fromCharCode(v) };
+    return { num: v, str: '     ' + String.fromCharCode(v) };
   } else {
-    return { num: mem[a], str: '   ' + HEX8[mem[a]] };
+    return { num: mem[a], str: '    ' + HEX8[mem[a]] };
   }
 }
 
@@ -110,7 +110,7 @@ function buildRow(pre: HTMLElement, left: SysVarDef, right: SysVarDef): [SlotInf
   pre.append(
     makeLabelEl(padName(left.name), left.tip), t(' '), lSlot,
     t('       '),
-    makeLabelEl(padName(right.name), right.tip), t(' '), rSlot,
+    makeLabelEl(padName(right.name), right.tip), t('  '), rSlot,
     t('\n'),
   );
 
