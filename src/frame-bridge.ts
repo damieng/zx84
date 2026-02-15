@@ -10,6 +10,7 @@ import { Z80 } from '@/cores/z80.ts';
 import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
+import { isCollapsed } from '@/ui/panes.ts';
 import * as settings from '@/store/settings.ts';
 import {
   spectrum, floppySound,
@@ -271,6 +272,10 @@ export function updateRegsOnce(): void {
   });
 }
 
+// ── Throttle for expensive per-frame work ───────────────────────────────
+
+let _lastSlowUpdate = 0;
+
 // ── Clock speed tracking ────────────────────────────────────────────────
 
 let speedLastTime = 0;
@@ -435,17 +440,31 @@ export function onFrame(): void {
       }
     }
 
-    // Registers + sysvars + BASIC + vars always updated
-    regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
-    sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
-    basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
-    basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
+    // Registers — only if debugger pane is open
+    if (!isCollapsed('disasm-panel')) {
+      regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
 
-    // Disassembly only when paused (breakpoint hit etc.)
-    if (emulationPaused.value) {
-      const cpu = spectrum!.cpu;
-      const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-      disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+      // Disassembly only when paused (breakpoint hit etc.)
+      if (emulationPaused.value) {
+        const cpu = spectrum!.cpu;
+        const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
+        disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+      }
+    }
+
+    // Sysvars + BASIC — throttled to ~1Hz, only if pane is open
+    const now = performance.now();
+    if (now - _lastSlowUpdate > 1000) {
+      _lastSlowUpdate = now;
+      if (!isCollapsed('sysvar-panel')) {
+        sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
+      }
+      if (!isCollapsed('basic-panel')) {
+        basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
+      }
+      if (!isCollapsed('basic-vars-panel')) {
+        basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
+      }
     }
 
     updateHardwareSignals(model);

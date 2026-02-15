@@ -196,6 +196,13 @@ export function applyDisplaySettings(): void {
 
 export async function createMachine(): Promise<boolean> {
   if (!canvasEl) return false;
+
+  // Preserve tape state across machine rebuild
+  const savedTapeBlocks = spectrum ? [...spectrum.tape.blocks] : null;
+  const savedTapePos = spectrum ? spectrum.tape.position : 0;
+  const savedTapePaused = spectrum ? spectrum.tape.paused : true;
+  const savedTapeName = tapeName.value;
+
   if (spectrum) {
     spectrum.destroy();
   }
@@ -241,14 +248,30 @@ export async function createMachine(): Promise<boolean> {
     floppySound = null;
   }
 
-  batch(() => {
-    tapeLoaded.value = false;
-    tapeBlocks.value = [];
-    tapePosition.value = 0;
-    tapePaused.value = true;
-    tapePlaying.value = false;
-    turboMode.value = false;
-  });
+  // Restore tape if one was loaded
+  if (savedTapeBlocks && savedTapeBlocks.length > 0) {
+    spectrum.tape.blocks = savedTapeBlocks;
+    spectrum.tape.position = savedTapePos;
+    spectrum.tape.paused = savedTapePaused;
+    batch(() => {
+      tapeLoaded.value = true;
+      tapeName.value = savedTapeName;
+      tapeBlocks.value = [...savedTapeBlocks];
+      tapePosition.value = savedTapePos;
+      tapePaused.value = savedTapePaused;
+      tapePlaying.value = false;
+      turboMode.value = false;
+    });
+  } else {
+    batch(() => {
+      tapeLoaded.value = false;
+      tapeBlocks.value = [];
+      tapePosition.value = 0;
+      tapePaused.value = true;
+      tapePlaying.value = false;
+      turboMode.value = false;
+    });
+  }
 
   unpause();
   return hmrRestored;

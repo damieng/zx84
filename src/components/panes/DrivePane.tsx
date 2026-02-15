@@ -1,5 +1,6 @@
 import { useRef } from 'preact/hooks';
 import { Pane } from '@/components/Pane.tsx';
+import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import { HiFolderOpen, HiEllipsisVertical } from 'react-icons/hi2';
 import {
@@ -107,9 +108,9 @@ export function DrivePane() {
       </div>
       <DiskInfo unit={0} name={nameA} diskInfo={currentDiskInfo.value} />
       {dual && <DiskInfo unit={1} name={nameB} diskInfo={currentDiskInfoB.value} />}
-      <pre id="drive-output" dangerouslySetInnerHTML={{ __html: driveHtml.value }} />
+      <RawHtml id="drive-output" html={driveHtml} />
       {showTrapLog.value && (
-        <pre id="trap-log" dangerouslySetInnerHTML={{ __html: trapLogHtml.value }} />
+        <RawHtml id="trap-log" html={trapLogHtml} />
       )}
     </Pane>
   );

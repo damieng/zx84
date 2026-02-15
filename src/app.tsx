@@ -22,6 +22,7 @@ import { DiskInfoPane } from '@/components/panes/DiskInfoPane.tsx';
 import { DrivePane } from '@/components/panes/DrivePane.tsx';
 import { TapePane } from '@/components/panes/TapePane.tsx';
 import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
+import { DevPane } from '@/components/panes/DevPane.tsx';
 
 import { paneOrder } from '@/ui/panes.ts';
 import { joyP1, joyP2, joyMapP1, joyMapP2, needsGamepadPolling, gamepadConfigP1, gamepadConfigP2, saveGamepadConfig, persistSetting, type GamepadConfig, type GamepadBinding } from '@/store/settings.ts';
@@ -47,6 +48,7 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
   'drive-panel': DrivePane,
   'tape-panel': TapePane,
   'disasm-panel': DisassemblyPane,
+  'dev-panel': DevPane,
 };
 
 function renderPanes(side: 'left' | 'right') {

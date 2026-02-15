@@ -1,5 +1,6 @@
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useCallback } from 'preact/hooks';
 import { Pane } from '@/components/Pane.tsx';
+import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import {
   HiPlay, HiPause,
@@ -24,8 +25,9 @@ function addrFromEvent(e: MouseEvent): number | null {
 export function DisassemblyPane() {
   const isTracing = tracing.value;
   const paused = emulationPaused.value;
-  const outputRef = useRef<HTMLDivElement>(null);
+  const outputRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const setOutputRef = useCallback((el: HTMLElement | null) => { outputRef.current = el; }, []);
 
   // Close context menu on any click
   useEffect(() => {
@@ -70,7 +72,7 @@ export function DisassemblyPane() {
 
   return (
     <Pane id="disasm-panel" label="Debugger" mono>
-      <pre id="regs-output" dangerouslySetInnerHTML={{ __html: regsHtml.value }} />
+      <RawHtml id="regs-output" html={regsHtml} />
       <div class="disasm-toolbar">
         <button
           title={paused ? 'Resume emulation' : 'Pause emulation'}
@@ -120,11 +122,12 @@ export function DisassemblyPane() {
       </div>
       {paused && (
         <>
-          <div
+          <RawHtml
+            tag="div"
             class="disasm-output"
-            ref={outputRef}
             style="position:relative"
-            dangerouslySetInnerHTML={{ __html: disasmText.value }}
+            html={disasmText}
+            innerRef={setOutputRef}
             onDblClick={onDblClick}
             onContextMenu={onContextMenu}
           />
