@@ -113,22 +113,47 @@ body {
   user-select: none;
 }
 
-.section-label::before {
-  content: '\25BE';
-  font-size: 0.6rem;
-  line-height: 1;
+.twisty {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
-.pane.collapsed .section-label::before {
-  content: '\25B8';
+.pane.collapsed .twisty {
+  transform: rotate(-90deg);
 }
 
 .pane.collapsed {
-  padding-bottom: 0;
+  padding: 0;
 }
 
-.pane.collapsed > :not(.section-label) {
-  display: none !important;
+.pane.collapsed > .section-label {
+  margin: 0;
+}
+
+.pane.collapsed .pane-content-inner * {
+  overflow: hidden !important;
+}
+
+.pane-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.25s ease;
+  padding: 0 6px 6px;
+  min-height: 0;
+}
+
+.pane.collapsed .pane-content {
+  grid-template-rows: 0fr;
+  padding: 0;
+  min-height: 0;
+}
+
+.pane-content-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .pane.dragging {
@@ -165,7 +190,6 @@ body {
   color: #000;
   border-radius: 4px;
   overflow: hidden;
-  padding: 0 6px 6px;
   border-left: 2px solid #000;
   border-right: 2px solid #000;
   border-bottom: 2px solid #000;
@@ -173,8 +197,7 @@ body {
 }
 
 .pane > .section-label {
-  margin: 0 -6px;
-  margin-bottom: 2px;
+  margin-bottom: 6px;
 }
 
 .pane select,
@@ -217,11 +240,6 @@ body {
 }
 
 /* Hardware pane */
-#hardware-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 /* Model row: select + icon button inline */
 #model-row {
@@ -253,7 +271,6 @@ input[type="file"] { display: none; }
 #snap-row {
   display: flex;
   gap: 4px;
-  margin-top: 4px;
 }
 
 #snap-row button {
@@ -361,11 +378,6 @@ canvas {
 .led[data-kind="dsk"].on .led-dot { background: #0f0; }
 
 /* Display pane */
-#display-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
 #display-controls {
   display: flex;
@@ -461,11 +473,6 @@ input[type="range"]::-moz-range-thumb {
 #font-preview { }
 
 /* Sound pane */
-#sound-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
 
 /* Joystick pane */
 #joystick-panel { }
@@ -473,7 +480,6 @@ input[type="range"]::-moz-range-thumb {
 #joy-columns {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
 }
 
 .joy-column {
@@ -537,11 +543,6 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Register pane */
-#regs-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #cpu-controls {
   display: flex;
@@ -585,11 +586,6 @@ input[type="range"]::-moz-range-thumb {
 #regs-output .reg-name { color: #999; }
 
 /* System variables pane */
-#sysvar-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #sysvar-output {
   margin: 0;
@@ -601,11 +597,6 @@ input[type="range"]::-moz-range-thumb {
 #sysvar-output .reg-name { color: #999; }
 
 /* BASIC listing pane */
-#basic-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #basic-output {
   margin: 0;
@@ -622,11 +613,6 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* BASIC variables pane */
-#basic-vars-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #basic-vars-output {
   margin: 0;
@@ -643,11 +629,6 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Memory bank pane */
-#banks-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #banks-output {
   margin: 0;
@@ -659,11 +640,6 @@ input[type="range"]::-moz-range-thumb {
 #banks-output .reg-name { color: #999; }
 
 /* Disk info pane (static image metadata) */
-#disk-info-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #disk-info-output {
   margin: 0;
@@ -675,17 +651,11 @@ input[type="range"]::-moz-range-thumb {
 #disk-info-output .reg-name { color: #999; }
 
 /* Drive pane (live FDC state) */
-#drive-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 #disk-mode-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
 }
 
 #disk-mode-toggle .disk-mode-label {
@@ -740,12 +710,7 @@ input[type="range"]::-moz-range-thumb {
 
 #trap-log .trap-warn { color: #fa0; }
 
-/* Tape pane — always visible */
-#tape-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+/* Tape pane */
 
 #tape-controls {
   display: flex;
@@ -949,6 +914,40 @@ input[type="range"]::-moz-range-thumb {
   appearance: none;
 }
 .disasm-toolbar select:hover { background: #ddd; }
+
+.trace-select-wrapper {
+  position: relative;
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.trace-select-wrapper:hover {
+  background: #ddd;
+}
+
+.trace-icon {
+  pointer-events: none;
+  position: absolute;
+  color: #000;
+  font-size: 0.8rem;
+}
+
+.trace-select {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  cursor: pointer;
+}
 
 .disasm-output {
   font-family: var(--font-mono);

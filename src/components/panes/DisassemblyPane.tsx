@@ -3,6 +3,7 @@ import { Pane } from '../Pane.tsx';
 import {
   HiPlay, HiPause,
   HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
+  HiPencilSquare,
 } from 'react-icons/hi2';
 import {
   disasmText, regsHtml, tracing, emulationPaused,
@@ -99,25 +100,27 @@ export function DisassemblyPane() {
             onClick={stopTrace}
           >Stop</button>
         ) : (
-          <select
-            title="Start tracing (copies to clipboard on stop)"
-            onChange={(e) => {
-              const sel = e.currentTarget;
-              const mode = sel.value as TraceOrCopy;
-              if (mode === 'loopanalysis') {
-                copyCpuState();
-              } else if (mode) {
-                startTrace(mode);
-              }
-              sel.selectedIndex = 0;
-            }}
-          >
-            <option value="" disabled selected>Trace ▾</option>
-            <option value="full">Full</option>
-            <option value="contention">Contention</option>
-            <option value="portio">Port IO</option>
-            <option value="loopanalysis">Loop</option>
-          </select>
+          <div class="trace-select-wrapper">
+            <HiPencilSquare class="trace-icon" />
+            <select
+              class="trace-select"
+              title="Start tracing (copies to clipboard on stop)"
+              onChange={(e) => {
+                const sel = e.currentTarget;
+                const mode = sel.value as TraceOrCopy;
+                if (mode === 'loopanalysis') {
+                  copyCpuState();
+                } else if (mode) {
+                  startTrace(mode);
+                }
+              }}
+            >
+              <option value="full">Full</option>
+              <option value="contention">Contention</option>
+              <option value="portio">Port IO</option>
+              <option value="loopanalysis">Loop</option>
+            </select>
+          </div>
         )}
       </div>
       {paused && (

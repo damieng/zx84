@@ -37,10 +37,17 @@ export function Pane({ id, label, mono, visible = true, labelExtra, children }: 
   return (
     <div id={id} class={className} draggable>
       <div class="section-label" onClick={onLabelClick} onMouseDown={onLabelMouseDown}>
+        <svg class="twisty" width="10" height="10" viewBox="0 0 10 10">
+          <path d="M2,3 L8,3 L5,8 Z" fill="currentColor" />
+        </svg>
         {label}
         {labelExtra}
       </div>
-      {!collapsed && children}
+      <div class="pane-content">
+        <div class="pane-content-inner">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
