@@ -373,6 +373,18 @@ canvas {
 .led[data-kind="dsk"].on .led-dot { background: #0f0; }
 .led[data-kind="rainbow"].on .led-dot { background: #f0f; }
 .led[data-kind="rainbow"].on { color: #f8f; }
+.led[data-kind="mouse"].on .led-dot { background: #0af; }
+.led[data-kind="mouse"].on { color: #8cf; }
+
+/* Mouse pane */
+.mouse-pane { display: flex; flex-direction: column; gap: 6px; }
+.mouse-controls { display: flex; gap: 6px; }
+.mouse-capture-btn {
+  padding: 3px 10px; font-size: 11px; cursor: pointer;
+  background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px;
+}
+.mouse-capture-btn:hover { background: #444; }
+.mouse-hint { font-size: 10px; color: #888; }
 
 /* Display pane */
 

@@ -145,6 +145,14 @@ export function wirePortIO(s: Spectrum): void {
       }
     }
 
+    // Kempston mouse: port low byte = 0xDF, high byte selects X/Y/buttons
+    if (s.kempstonMouseEnabled && (port & 0xFF) === 0xDF) {
+      const hi = (port >> 8) & 0xFF;
+      if (hi === 0xFB) { s.activity.mouseReads++; return s.kempstonMouseX & 0xFF; }
+      if (hi === 0xFF) { s.activity.mouseReads++; return s.kempstonMouseY & 0xFF; }
+      if (hi === 0xFA) { s.activity.mouseReads++; return s.kempstonMouseButtons; }
+    }
+
     // Kempston joystick: bits 5-7 of low byte all zero
     if ((port & 0x00E0) === 0) {
       s.activity.kempstonReads++;

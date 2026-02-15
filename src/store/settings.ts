@@ -74,6 +74,10 @@ export function saveGamepadConfig(player: 1 | 2, config: GamepadConfig): void {
   setSaved(`gamepad-config-p${player}`, JSON.stringify(config));
 }
 
+// ── Mouse settings ─────────────────────────────────────────────────────
+
+export const [mouseEnabled, setMouseEnabled] = createSignal(getSaved('mouse-enabled', 'off') === 'on');
+
 // ── Font settings ───────────────────────────────────────────────────────
 
 export const [fontName, setFontName] = createSignal(getSaved('font', ''));

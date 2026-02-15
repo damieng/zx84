@@ -62,6 +62,7 @@ export const [ledBeep, setLedBeep] = createSignal(false);
 export const [ledAy, setLedAy] = createSignal(false);
 export const [ledDsk, setLedDsk] = createSignal(false);
 export const [ledRainbow, setLedRainbow] = createSignal(false);
+export const [ledMouse, setLedMouse] = createSignal(false);
 
 // Clock speed display
 export const [clockSpeedText, setClockSpeedText] = createSignal('MHz');
@@ -233,6 +234,9 @@ export async function createMachine(): Promise<boolean> {
   // Apply saved AY stereo mode
   const savedAyStereo = settings.ayStereo() as 'MONO' | 'ABC' | 'BCA' | 'CBA';
   spectrum.ay.setStereoMode(savedAyStereo);
+
+  // Apply saved mouse enabled state
+  spectrum.kempstonMouseEnabled = settings.mouseEnabled();
 
   // Apply saved disk mode for +3
   if (isPlus3(model)) {
@@ -1048,6 +1052,32 @@ export function joyPressForType(dir: string, pressed: boolean, mode: string): vo
         spectrum.keyboard.setKey(0, 0, cursorShiftCount > 0);
       }
     }
+  }
+}
+
+// ── Mouse helpers ────────────────────────────────────────────────────
+
+export function setMouseEnabled(enabled: boolean): void {
+  if (spectrum) spectrum.kempstonMouseEnabled = enabled;
+}
+
+export function updateMousePosition(dx: number, dy: number): void {
+  if (!spectrum) return;
+  spectrum.kempstonMouseX = (spectrum.kempstonMouseX + dx) & 0xFF;
+  spectrum.kempstonMouseY = (spectrum.kempstonMouseY + dy) & 0xFF;
+}
+
+export function setMouseButton(button: number, pressed: boolean): void {
+  if (!spectrum) return;
+  // Active-low: bit clear = pressed, bit set = released
+  // button 0 = left (bit 0), 1 = middle (bit 2), 2 = right (bit 1)
+  const bitMap: Record<number, number> = { 0: 0, 1: 2, 2: 1 };
+  const bit = bitMap[button];
+  if (bit === undefined) return;
+  if (pressed) {
+    spectrum.kempstonMouseButtons &= ~(1 << bit);
+  } else {
+    spectrum.kempstonMouseButtons |= (1 << bit);
   }
 }
 

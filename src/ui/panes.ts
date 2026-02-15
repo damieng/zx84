@@ -18,6 +18,7 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'hardware-panel', sidebar: 'left' },
   { id: 'snapshot-panel', sidebar: 'left' },
   { id: 'joystick-panel', sidebar: 'left' },
+  { id: 'mouse-panel', sidebar: 'left' },
   { id: 'sound-panel', sidebar: 'left' },
   { id: 'display-pane', sidebar: 'left' },
   { id: 'font-panel', sidebar: 'left' },

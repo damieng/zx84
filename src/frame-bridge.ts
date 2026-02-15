@@ -19,7 +19,7 @@ import {
   setClockSpeedText,
   setTapePosition, tapePaused, setTapePaused, transcribeMode, setTranscribeText,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedRst16, setLedText,
-  setLedBeep, setLedAy, setLedDsk, setLedRainbow,
+  setLedBeep, setLedAy, setLedDsk, setLedRainbow, setLedMouse,
   setStatus, setEmulationPaused, setTracing,
   getPendingRunTo, clearPendingRunTo,
 } from '@/emulator.ts';
@@ -318,6 +318,7 @@ export function onFrame(): void {
     setLedAy(a.ayWrites > 5);
     setLedDsk(a.fdcAccesses > 0);
     setLedRainbow(a.attrWrites > 768);
+    setLedMouse(a.mouseReads > 0);
 
     // Transcribe mode LEDs
     setLedRst16(transcribeMode() === 'rst16' || a.rst16Calls > 0);

@@ -4,7 +4,7 @@
 
 import {
   statusText, ledKbd, ledKemp, ledEar, ledLoad, ledRst16, ledText,
-  ledBeep, ledAy, ledDsk, ledRainbow, toggleTranscribeMode, spectrum,
+  ledBeep, ledAy, ledDsk, ledRainbow, ledMouse, toggleTranscribeMode, spectrum,
 } from '@/emulator.ts';
 
 function Led(props: {
@@ -33,6 +33,8 @@ export function StatusBar() {
           tip="Reading the keyboard via the ULA port" />
         <Led id="led-kemp" kind="kemp" label="KEMPSTON" on={ledKemp()}
           tip="Reading the Kempston joystick port" />
+        <Led id="led-mouse" kind="mouse" label="MOUSE" on={ledMouse()}
+          tip="Reading the Kempston mouse ports" />
         <Led id="led-ear" kind="ear" label="EAR" on={ledEar()}
           tip="Sampling the EAR port (tape playback)" />
         <Led id="led-load" kind="load" label="LOAD" on={ledLoad()}

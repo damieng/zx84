@@ -76,6 +76,8 @@ export interface IOActivity {
   subFrameVramWrites: number;
   /** Number of border color changes logged for sub-frame rendering this frame */
   subFrameBorderChanges: number;
+  /** Number of Kempston mouse port reads this frame */
+  mouseReads: number;
 }
 
 export class Spectrum {
@@ -97,7 +99,7 @@ export class Spectrum {
   biosTrap: Plus3DosTrap | null = null;
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
 
   /** Gain factors for AY/beeper balance (0.0–1.0, set from ayMix slider) */
   beeperGain = 1.0;
@@ -105,6 +107,12 @@ export class Spectrum {
 
   /** Kempston joystick state (bits: 0=right,1=left,2=down,3=up,4=fire) */
   kempstonState = 0;
+
+  /** Kempston mouse state */
+  kempstonMouseX = 0;
+  kempstonMouseY = 0;
+  kempstonMouseButtons = 0xFF;  // active-low: all released
+  kempstonMouseEnabled = false;
 
   /** 32x24 character grid mirroring what RST 16 prints to the display */
   get screenGrid(): string[] { return this.screenText.screenGrid; }
@@ -284,6 +292,9 @@ export class Spectrum {
     this.cpu.memory = this.memory.flat;
     this.screenText.clear();
     this.kempstonState = 0;
+    this.kempstonMouseX = 0;
+    this.kempstonMouseY = 0;
+    this.kempstonMouseButtons = 0xFF;
     this.beeperAccum = 0;
     this.beeperTStatesAccum = 0;
     this.beeperDCPrev = 0;
@@ -407,6 +418,7 @@ export class Spectrum {
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
     this.activity.attrWrites = 0;
+    this.activity.mouseReads = 0;
     // Frame starts when INT fires — mark the reference point BEFORE the CPU
     // responds, so interrupt-response T-states count as part of the frame.
     // This keeps contention phase, sub-frame scanline boundaries, and floating

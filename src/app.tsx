@@ -11,6 +11,7 @@ import { Tooltip } from '@/components/Tooltip.tsx';
 import { HardwarePane } from '@/components/panes/HardwarePane.tsx';
 import { LoadSavePane } from '@/components/panes/LoadSavePane.tsx';
 import { JoystickPane } from '@/components/panes/JoystickPane.tsx';
+import { MousePane } from '@/components/panes/MousePane.tsx';
 import { SoundPane } from '@/components/panes/SoundPane.tsx';
 import { DisplayPane } from '@/components/panes/DisplayPane.tsx';
 import { FontPane } from '@/components/panes/FontPane.tsx';
@@ -41,6 +42,7 @@ const PANE_COMPONENTS: Record<string, () => JSX.Element> = {
   'hardware-panel': HardwarePane,
   'snapshot-panel': LoadSavePane,
   'joystick-panel': JoystickPane,
+  'mouse-panel': MousePane,
   'sound-panel': SoundPane,
   'display-pane': DisplayPane,
   'font-panel': FontPane,
