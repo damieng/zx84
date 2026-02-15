@@ -548,10 +548,14 @@ export class Spectrum {
     }
 
     // Display lines 0..191 — replay VRAM writes up to each line's scan time
+    // The ULA fetches 32 columns over 128 T-states (4T per column), so writes
+    // that arrive during the active display portion (before lineTState + 128)
+    // can still affect columns the beam hasn't reached yet.
     for (let y = 0; y < 192; y++) {
       const lineTState = cStart + y * tpl;
-      // Apply all VRAM writes that happened before this line was scanned
-      while (writeIdx < writeCount && this.vramWriteTs[writeIdx] < lineTState) {
+      const lineEnd = lineTState + 128;
+      // Apply all VRAM writes that arrive before the ULA finishes this line
+      while (writeIdx < writeCount && this.vramWriteTs[writeIdx] < lineEnd) {
         shadow[this.vramWriteOff[writeIdx]] = this.vramWriteVal[writeIdx];
         writeIdx++;
       }

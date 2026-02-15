@@ -73,9 +73,6 @@ export let currentDiskInfo: DskImage | null = null;
 export let currentDiskName = '';
 export let canvasEl: HTMLCanvasElement | null = null;
 
-// Tape idle tracking
-let tapeIdleFrames = 0;
-let tapeEverRead = false;
 
 // Clock speed tracking
 let speedLastTime = 0;
@@ -700,8 +697,6 @@ export function applyTape(data: Uint8Array, filename: string): void {
   spectrum.reset();
   spectrum.start();
   spectrum.tape.startPlayback();
-  tapeIdleFrames = 0;
-  tapeEverRead = false;
   unpause();
   setStatus(`Tape loaded: ${filename}`);
 }
@@ -1218,21 +1213,6 @@ function onFrame(): void {
       tapePosition.value = spectrum!.tape.position;
     }
 
-    // Auto-pause tape
-    if (spectrum!.tape.playing && !spectrum!.tape.paused) {
-      if (a.earReads > 100) {
-        tapeIdleFrames = 0;
-        tapeEverRead = true;
-      } else if (tapeEverRead) {
-        tapeIdleFrames++;
-        if (tapeIdleFrames > 100) {
-          spectrum!.tape.paused = true;
-          tapePaused.value = true;
-        }
-      }
-    } else {
-      tapeIdleFrames = 0;
-    }
 
     // Auto-rewind
     if (settings.tapeAutoRewind.value && spectrum!.tape.loaded &&
