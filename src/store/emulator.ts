@@ -1251,12 +1251,15 @@ function onFrame(): void {
       }
     }
 
-    // Registers always updated
+    // Registers + sysvars always updated
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
+    sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
 
     // Disassembly only when paused (breakpoint hit etc.)
     if (emulationPaused.value) {
-      updateDebugSignals();
+      const cpu = spectrum!.cpu;
+      const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
+      disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
     }
 
     updateHardwareSignals(model);
