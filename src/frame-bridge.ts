@@ -14,7 +14,7 @@ import * as settings from '@/store/settings.ts';
 import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
-  regsRev, sysvarHtml, basicHtml, basicVarsHtml,
+  regsRev, sysvarRev, basicHtml, basicVarsHtml,
   banksHtml, driveHtml, trapLogHtml, showTrapLog, disasmText,
   clockSpeedText,
   tapePosition, tapePaused, transcribeMode, transcribeText,
@@ -27,68 +27,6 @@ import {
 
 function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
 function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
-
-// ── System variables rendering ──────────────────────────────────────────
-
-function renderSysVars(mem: Uint8Array, model: SpectrumModel): string {
-  const w = (lo: number) => mem[lo] | (mem[lo + 1] << 8);
-  const rows: [string, string, string, string, string, string][] = [
-    ['ERR_NR',  hex8(mem[0x5C3A]),        '1 less than error report code',
-     'FLAGS',   hex8(mem[0x5C3B]),         'Various flags to control the BASIC system'],
-    ['FLAGS2',  hex8(mem[0x5C71]),         'More flags',
-     'TV_FLAG', hex8(mem[0x5C3C]),         'Flags associated with the TV'],
-    ['MODE',    hex8(mem[0x5C41]),         'Current cursor mode: K/L/C/E/G',
-     'PPC',     hex16(w(0x5C45)),          'Line number of statement currently being executed'],
-    ['CHARS',   hex16(w(0x5C36)),          'Address of character set (256 less than actual)',
-     'UDG',     hex16(w(0x5C7B)),          'Address of first user-defined graphic'],
-    ['DF_CC',   hex16(w(0x5C84)),          'Address in display file of PRINT position',
-     'DFCCL',   hex16(w(0x5C86)),          'Like DF_CC for lower part of screen'],
-    ['S_POSN',  hex8(mem[0x5C88]) + ',' + hex8(mem[0x5C89]), 'Column and line number for PRINT position',
-     'ATTR_P',  hex8(mem[0x5C8D]),         'Permanent current colours (as set by INK, PAPER etc.)'],
-    ['ATTR_T',  hex8(mem[0x5C8F]),         'Temporary current colours (as used by PRINT items)',
-     'BORDCR',  hex8(mem[0x5C48]),         'Border colour * 8; also attributes for lower screen'],
-    ['CHANS',   hex16(w(0x5C4F)),          'Address of channel data area',
-     'CURCHL',  hex16(w(0x5C51)),          'Address of currently selected channel information'],
-    ['PROG',    hex16(w(0x5C53)),          'Address of BASIC program',
-     'VARS',    hex16(w(0x5C4B)),          'Address of variables area'],
-    ['E_LINE',  hex16(w(0x5C59)),          'Address of command being typed in',
-     'STKEND',  hex16(w(0x5C65)),          'Address of start of spare space (end of calculator stack)'],
-    ['RAMTOP',  hex16(w(0x5CB2)),          'Address of last byte of BASIC system area',
-     'P_RAMT',  hex16(w(0x5CB4)),          'Address of last byte of physical RAM'],
-    ['DF_SZ',   hex8(mem[0x5C6B]),         'Number of lines in lower part of screen',
-     'SCR_CT',  hex8(mem[0x5C8C]),         'Scroll count — number of scrolls before "scroll?" message'],
-  ];
-
-  // 128K/+2/+2A/+3: extra sysvars in the old printer buffer (5B00-5BFF)
-  if (is128kClass(model)) {
-    rows.push(
-      ['BANKM',  hex8(mem[0x5B5C]),          'Copy of port 7FFD (paging control)',
-       'BAUD',   hex16(w(0x5B5F)),            'RS232 bit period in T-states/26'],
-      ['SERFL',  hex8(mem[0x5B61]) + ',' + hex8(mem[0x5B62]), 'RS232 second-char-received flag and data',
-       'COL',    hex8(mem[0x5B63]),            'Current column from 1 to WIDTH'],
-      ['WIDTH',  hex8(mem[0x5B64]),            'Paper column width (default 80)',
-       'TVPARS', hex8(mem[0x5B65]),            'Number of inline RS232 parameters expected'],
-      ['FLAGS3', hex8(mem[0x5B66]),            'Printer/device flags (bit 3: RS232, bit 4: disk)',
-       'OLDSP',  hex16(w(0x5B6A)),             'Old stack pointer when TSTACK in use'],
-    );
-  }
-
-  // +2A/+3: disk-related variables
-  if (isPlus2AClass(model)) {
-    rows.push(
-      ['BNK678', hex8(mem[0x5B67]),            'Copy of port 1FFD (ext. paging, disk motor, strobe)',
-       'LODDRV', String.fromCharCode(mem[0x5B79] || 0x54), 'Default device for LOAD/VERIFY/MERGE'],
-      ['SAVDRV', String.fromCharCode(mem[0x5B7A] || 0x54), 'Default device for SAVE',
-       'DUMPLF', hex8(mem[0x5B7B]),            'Line feed units for COPY EXP (normally 9)'],
-    );
-  }
-
-  const s = (name: string, tip: string) =>
-    `<span class="reg-name" data-tip="${tip}">${name}</span>`;
-  return rows.map(([n1, v1, t1, n2, v2, t2]) =>
-    `${s(n1, t1)}${n1.length < 7 ? ' '.repeat(7 - n1.length) : ''} ${v1.length < 5 ? ' '.repeat(5 - v1.length) : ''}${v1}       ${s(n2, t2)}${n2.length < 7 ? ' '.repeat(7 - n2.length) : ''} ${v2.length < 5 ? ' '.repeat(5 - v2.length) : ''}${v2}`
-  ).join('\n');
-}
 
 // ── Hardware panel rendering ────────────────────────────────────────────
 
@@ -207,7 +145,7 @@ function updateHardwareSignals(model: SpectrumModel): void {
 
 /** Update disassembly, system variables, BASIC listing, and variables signals. */
 function updateDebugSignals(): void {
-  sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, currentModel.value);
+  sysvarRev.value++;
   basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);
   basicVarsHtml.value = parseBasicVariables(spectrum!.cpu.memory);
   const cpu = spectrum!.cpu;
@@ -409,7 +347,7 @@ export function onFrame(): void {
     if (now - _lastSlowUpdate > 1000) {
       _lastSlowUpdate = now;
       if (!isCollapsed('sysvar-panel')) {
-        sysvarHtml.value = renderSysVars(spectrum!.cpu.memory, model);
+        sysvarRev.value++;
       }
       if (!isCollapsed('basic-panel')) {
         basicHtml.value = parseBasicProgram(spectrum!.cpu.memory);

@@ -38,7 +38,8 @@ export const tracing = signal(false);
 // Per-frame updated signals (written by bridge)
 export const regsHtml = signal('');  // legacy, unused — kept for type compat
 export const regsRev = signal(0);
-export const sysvarHtml = signal('');
+export const sysvarHtml = signal('');  // legacy
+export const sysvarRev = signal(0);
 export const basicHtml = signal('');
 export const basicVarsHtml = signal('');
 export const banksHtml = signal('');
