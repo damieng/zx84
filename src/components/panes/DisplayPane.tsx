@@ -214,9 +214,10 @@ export function DisplayPane() {
           <option value="2">Aperture Grille</option>
           <option value="3">Slot Mask</option>
           <option value="4">LCD Grid</option>
+          <option value="5">Attr Mask</option>
         </select>
       </div>
-      {maskType.value !== 4 && maskType.value !== 0 && (
+      {maskType.value !== 4 && maskType.value !== 5 && maskType.value !== 0 && (
       <SliderRow label="Dot pitch" id="dot-pitch" min={10} max={40} sig={dotPitch}
         apply={(v) => spectrum?.display?.setDotPitch(v / 10)} settingKey="dot-pitch" />
       )}

@@ -13,6 +13,7 @@ body {
   background: #555566;
   color: #e0e0e0;
   font-family: var(--font-ui);
+  font-size: 1.1em;
   min-height: 100vh;
 }
 
@@ -471,10 +472,86 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-/* Font row overrides */
-#font-row select { flex: 1; min-width: 0; }
-#font-row button { width: 28px; height: 28px; padding: 0; flex-shrink: 0; }
-#font-preview { }
+/* Font pane */
+#font-row { display: flex; gap: 4px; }
+#font-row button { flex: 1; }
+
+#font-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.font-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: 0.75rem;
+  border-radius: 3px;
+  color: #ccc;
+}
+
+.font-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+}
+
+.font-entry-preview {
+  image-rendering: pixelated;
+}
+.font-entry:hover { background: rgba(255,255,255,0.08); }
+.font-entry.active { background: rgba(255,255,255,0.15); color: #fff; }
+
+.font-entry-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-entry-addr {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  color: #888;
+  font-family: monospace;
+}
+
+.font-entry-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.font-entry-actions button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  font-size: 0.7rem;
+}
+.font-entry-actions button:hover { color: #fff; background: rgba(255,255,255,0.15); }
+
+.pane .font-entry { color: #555; }
+.pane .font-entry:hover { background: rgba(0,0,0,0.05); }
+.pane .font-entry.active { background: rgba(0,0,0,0.1); color: #333; }
+.pane .font-entry-addr { color: #999; }
+.pane .font-entry-actions button { color: #999; }
+.pane .font-entry-actions button:hover { color: #333; background: rgba(0,0,0,0.1); }
 
 /* Sound pane */
 

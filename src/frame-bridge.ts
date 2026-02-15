@@ -317,14 +317,22 @@ export function fontDataHash(data: Uint8Array, offset: number, len: number): num
   return h;
 }
 
-export function updateFontPreview(): { type: 'custom'; data: Uint8Array } | { type: 'rom'; data: Uint8Array } | null {
-  const name = settings.fontName.value;
+export interface FontEntry {
+  id: string;
+  label: string;
+  address: number | null;
+  technique: 'file' | 'chars' | 'copyr' | 'scgrab';
+  data: string;            // base64
+}
 
-  if (name) {
-    const store = loadFontStore();
-    const b64 = store[name];
-    if (!b64) return null;
-    const binary = atob(b64);
+export function updateFontPreview(): { type: 'custom'; data: Uint8Array } | { type: 'rom'; data: Uint8Array } | null {
+  const id = settings.fontName.value;
+
+  if (id) {
+    const entries = loadFontStore();
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return null;
+    const binary = atob(entry.data);
     const font = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) font[i] = binary.charCodeAt(i);
     romFontCacheAddr = -1;
@@ -352,14 +360,25 @@ export function updateFontPreview(): { type: 'custom'; data: Uint8Array } | { ty
   }
 }
 
-export function loadFontStore(): Record<string, string> {
+export function loadFontStore(): FontEntry[] {
   try {
     const raw = localStorage.getItem('zx84-fonts');
-    return raw ? JSON.parse(raw) : {};
-  } catch { return {}; }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    // Migrate old Record<string, string> format
+    if (!Array.isArray(parsed)) {
+      const entries: FontEntry[] = [];
+      for (const [name, b64] of Object.entries(parsed)) {
+        entries.push({ id: name, label: name, address: null, technique: 'file', data: b64 as string });
+      }
+      saveFontStore(entries);
+      return entries;
+    }
+    return parsed;
+  } catch { return []; }
 }
 
-export function saveFontStore(store: Record<string, string>): void {
+export function saveFontStore(store: FontEntry[]): void {
   try { localStorage.setItem('zx84-fonts', JSON.stringify(store)); } catch { /* */ }
 }
 

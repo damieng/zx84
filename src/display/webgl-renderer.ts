@@ -150,8 +150,27 @@ const FRAG_CRT = `
         float gapY = step(sc - 1.0, mod(fpy, sc));
         float grid = max(gapX, gapY);
         col *= 1.0 - grid * 0.55;
+      } else if (u_maskType == 5) {
+        // Attr mask: LCD pixel grid + checkerboard tint on 8x8 attribute cells
+        float sc = floor(u_resolution.y / u_texSize.y + 0.5);
+        // Per-pixel LCD grid lines
+        float gapX = step(sc - 1.0, mod(fpx, sc));
+        float gapY = step(sc - 1.0, mod(fpy, sc));
+        float grid = max(gapX, gapY);
+        col *= 1.0 - grid * 0.45;
+        // Checkerboard on 8x8 attr cells
+        float borderX = (u_texSize.x - 256.0) / 2.0;
+        float borderY = (u_texSize.y - 192.0) / 2.0;
+        float srcX = uv.x * u_texSize.x - borderX;
+        float srcY = uv.y * u_texSize.y - borderY;
+        if (srcX >= 0.0 && srcX < 256.0 && srcY >= 0.0 && srcY < 192.0) {
+          float cellX = floor(srcX / 8.0);
+          float cellY = floor(srcY / 8.0);
+          float checker = mod(cellX + cellY, 2.0);
+          col *= 0.55 + checker * 0.45;
+        }
       }
-      maskFactor = u_maskType == 4 ? 0.25 : highlight;
+      maskFactor = u_maskType == 4 || u_maskType == 5 ? 0.25 : highlight;
     }
 
     // -- Brightness compensation --

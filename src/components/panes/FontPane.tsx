@@ -1,10 +1,59 @@
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useCallback } from 'preact/hooks';
+import { useSignal } from '@preact/signals';
 import { Pane } from '@/components/Pane.tsx';
-import { HiPlus, HiArrowDownTray } from 'react-icons/hi2';
+import { HiArrowDownTray, HiXMark } from 'react-icons/hi2';
 import { fontName, persistSetting } from '@/store/settings.ts';
 import {
-  setStatus, updateFontPreview, loadFontStore, saveFontStore, capturedFontData,
+  setStatus, loadFontStore, saveFontStore, spectrum,
 } from '@/emulator.ts';
+import type { FontEntry } from '@/emulator.ts';
+
+// Standard ZX Spectrum © symbol (character 127) – last char in the 96-char font
+const COPYRIGHT_SIG = [0x3C, 0x42, 0x99, 0xA1, 0xA1, 0x99, 0x42, 0x3C];
+
+/** Extract unique non-blank 8-byte tiles from the 32×24 screen bitmap */
+function extractScreenTiles(mem: Uint8Array): Set<string> {
+  const tiles = new Set<string>();
+  for (let cr = 0; cr < 24; cr++) {
+    for (let col = 0; col < 32; col++) {
+      const bytes: number[] = [];
+      let blank = true;
+      for (let py = 0; py < 8; py++) {
+        const y = cr * 8 + py;
+        const addr = 0x4000 | ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2);
+        const b = mem[addr + col];
+        bytes.push(b);
+        if (b !== 0) blank = false;
+      }
+      if (!blank) tiles.add(bytes.join(','));
+    }
+  }
+  return tiles;
+}
+
+/** Key for an 8-byte slot in memory */
+function tileKey(mem: Uint8Array, offset: number): string {
+  return `${mem[offset]},${mem[offset+1]},${mem[offset+2]},${mem[offset+3]},${mem[offset+4]},${mem[offset+5]},${mem[offset+6]},${mem[offset+7]}`;
+}
+
+const BLANK_KEY = '0,0,0,0,0,0,0,0';
+
+function b64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+function bytesToB64(data: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+  return btoa(binary);
+}
+
+function getActiveFilename(): string {
+  try { return localStorage.getItem('zx84-last-file') ?? ''; } catch { return ''; }
+}
 
 function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void {
   const cols = 32, rows = 3;
@@ -33,70 +82,205 @@ function renderFontToCanvas(cvs: HTMLCanvasElement, fontData: Uint8Array): void 
   ctx.putImageData(img, 0, 0);
 }
 
+function saveCh8(entry: FontEntry): void {
+  const data = b64ToBytes(entry.data);
+  const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${entry.label.replace(/[^a-zA-Z0-9_-]/g, '_')}.ch8`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function FontPane() {
   const fontInputRef = useRef<HTMLInputElement>(null);
-  const fontPreviewRef = useRef<HTMLCanvasElement>(null);
-  const romFontPreviewRef = useRef<HTMLCanvasElement>(null);
+  const rev = useSignal(0);    // bump to re-render after store changes
 
-  // Render font preview per-frame
-  useEffect(() => {
-    const result = updateFontPreview();
-    if (!result) return;
+  void rev.value;  // subscribe to re-render signal
+  const entries = loadFontStore();
 
-    if (result.type === 'custom' && fontPreviewRef.current) {
-      renderFontToCanvas(fontPreviewRef.current, result.data);
-      fontPreviewRef.current.style.display = 'block';
-      if (romFontPreviewRef.current) romFontPreviewRef.current.style.display = 'none';
-    } else if (result.type === 'rom' && romFontPreviewRef.current) {
-      renderFontToCanvas(romFontPreviewRef.current, result.data);
-      romFontPreviewRef.current.style.display = 'block';
-      if (fontPreviewRef.current) fontPreviewRef.current.style.display = 'none';
+  function bump() { rev.value++; }
+
+  function removeEntry(id: string) {
+    const store = loadFontStore();
+    saveFontStore(store.filter(e => e.id !== id));
+    if (fontName.value === id) { fontName.value = ''; persistSetting('font', ''); }
+    bump();
+  }
+
+  function huntFonts() {
+    if (!spectrum) { setStatus('No emulator running'); return; }
+    const mem = spectrum.memory.flat;
+    const store = loadFontStore();
+    const existingIds = new Set(store.map(e => e.id));
+    const existingAddrs = new Set(store.filter(e => e.address != null).map(e => e.address!));
+    const added: FontEntry[] = [];
+    const filename = getActiveFilename().replace(/\.[^.]+$/, '') || '';
+    const RAM_START = 0x4000;
+
+    console.group('[FontHunt] Starting hunt…');
+    console.log('Active file:', filename || '(none)');
+    console.log('Existing fonts:', existingIds.size);
+
+    // Strategy 1: CHARS system variable
+    const lo = mem[0x5C36], hi = mem[0x5C37];
+    let charsAddr = lo | (hi << 8);
+    console.group('[CHARS] System variable');
+    console.log(`Raw bytes: [${lo}, ${hi}] → address ${charsAddr}`);
+    if (charsAddr === 0) { charsAddr = 0x3C00; console.log('Zero — defaulting to', charsAddr); }
+    const charsFont = charsAddr + 256;
+    console.log(`Font start: ${charsAddr} + 256 = ${charsFont}`);
+    if (charsFont + 768 > 65536) {
+      console.log('Out of range, skipping');
+    } else if (charsFont < RAM_START) {
+      console.log(`In ROM (< ${RAM_START}), skipping`);
+    } else {
+      const spaceBytes = Array.from(mem.slice(charsFont, charsFont + 8));
+      const spaceBlank = spaceBytes.every(b => b === 0);
+      console.log('Space bytes:', spaceBytes.join(', '), spaceBlank ? '✓ blank' : '✗ not blank');
+      if (spaceBlank) {
+        const id = `chars:${charsFont}`;
+        if (existingIds.has(id) || existingAddrs.has(charsFont)) {
+          console.log('Already captured:', id);
+        } else {
+          console.log('✓ Captured:', id);
+          added.push({
+            id, label: filename || 'CHARS', address: charsFont,
+            technique: 'chars', data: bytesToB64(mem.slice(charsFont, charsFont + 768)),
+          });
+          existingIds.add(id);
+          existingAddrs.add(charsFont);
+        }
+      }
     }
-  });
+    console.groupEnd();
 
-  const store = loadFontStore();
-  const fontNames = Object.keys(store).sort();
+    // Strategy 2: scan RAM for © signature (offset 760 within 768-byte font)
+    console.group('[COPYR] © signature scan');
+    let copyrHits = 0;
+    let copyrValidated = 0;
+    for (let addr = Math.max(RAM_START, 760); addr <= 65536 - 8; addr++) {
+      let match = true;
+      for (let j = 0; j < 8; j++) {
+        if (mem[addr + j] !== COPYRIGHT_SIG[j]) { match = false; break; }
+      }
+      if (!match) continue;
+      copyrHits++;
+      const fontStart = addr - 760;
+      if (fontStart < RAM_START) { console.log(`© at ${addr} → font at ${fontStart} (ROM, skip)`); continue; }
+      const spaceBytes = Array.from(mem.slice(fontStart, fontStart + 8));
+      const spaceBlank = spaceBytes.every(b => b === 0);
+      if (!spaceBlank) { console.log(`© at ${addr} → font at ${fontStart}, space: [${spaceBytes.join(',')}] ✗`); continue; }
+      copyrValidated++;
+      const id = `copyr:${fontStart}`;
+      if (existingIds.has(id) || existingAddrs.has(fontStart)) {
+        console.log(`© at ${addr} → font at ${fontStart} ✓ (already captured)`);
+      } else {
+        console.log(`© at ${addr} → font at ${fontStart} ✓ Captured`);
+        added.push({
+          id, label: filename || '© scan', address: fontStart,
+          technique: 'copyr', data: bytesToB64(mem.slice(fontStart, fontStart + 768)),
+        });
+        existingIds.add(id);
+        existingAddrs.add(fontStart);
+      }
+    }
+    console.log(`Signature hits: ${copyrHits}, validated: ${copyrValidated}`);
+    console.groupEnd();
+
+    // Strategy 3: SCGRAB – match screen tiles against candidate font regions
+    console.group('[SCGRAB] Screen tile scan');
+    const screenTiles = extractScreenTiles(mem);
+    console.log(`Unique non-blank screen tiles: ${screenTiles.size}`);
+    if (screenTiles.size < 15) {
+      console.log('Need ≥15 tiles, skipping SCGRAB');
+    } else {
+      let spaceCandidates = 0;
+      let bestMatches = 0;
+      let bestAddr = -1;
+      for (let fontStart = RAM_START; fontStart + 768 <= 65536; fontStart++) {
+        const id = `scgrab:${fontStart}`;
+        if (existingIds.has(id) || existingAddrs.has(fontStart)) continue;
+        if (tileKey(mem, fontStart) !== BLANK_KEY) continue;
+        spaceCandidates++;
+        let valid = true;
+        let matches = 0;
+        for (let s = 1; s < 96; s++) {
+          const off = fontStart + s * 8;
+          const key = tileKey(mem, off);
+          if (key === BLANK_KEY) { valid = false; break; }
+          if (screenTiles.has(key)) matches++;
+        }
+        if (matches > bestMatches) { bestMatches = matches; bestAddr = fontStart; }
+        if (!valid || matches < 15) continue;
+        console.log(`✓ Font at ${fontStart}: ${matches}/95 slots match screen tiles`);
+        added.push({
+          id, label: filename || 'SCGRAB', address: fontStart,
+          technique: 'scgrab', data: bytesToB64(mem.slice(fontStart, fontStart + 768)),
+        });
+        existingIds.add(id);
+        existingAddrs.add(fontStart);
+      }
+      console.log(`Space-start candidates: ${spaceCandidates}, best match: ${bestMatches} tiles at ${bestAddr}`);
+    }
+    console.groupEnd();
+
+    if (added.length === 0) {
+      console.log('[FontHunt] No new fonts found');
+      console.groupEnd();
+      setStatus('No new fonts found in RAM');
+      return;
+    }
+    const updated = [...store, ...added];
+    saveFontStore(updated);
+    fontName.value = added[added.length - 1].id;
+    persistSetting('font', fontName.value);
+    console.log(`[FontHunt] Total found: ${added.length} —`, added.map(e => `${e.technique}:${e.address}`).join(', '));
+    console.groupEnd();
+    setStatus(`Found ${added.length} font${added.length > 1 ? 's' : ''}`);
+    bump();
+  }
 
   return (
     <Pane id="font-panel" label="Fonts">
-      <div class="slider-row" id="font-row">
-        <select id="font-select" value={fontName.value} onChange={(e) => {
-          fontName.value = (e.target as HTMLSelectElement).value;
-          persistSetting('font', fontName.value);
-          (e.target as HTMLSelectElement).blur();
-        }}>
-          <option value="">Current</option>
-          {fontNames.map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
-        <button id="font-add-btn" title="Add font (.ch8, 768 bytes)" onClick={() => fontInputRef.current?.click()}><HiPlus /></button>
-        <button id="font-save-btn" title="Save displayed font as .ch8" onClick={() => {
-          let data: Uint8Array | null = null;
-          const name = fontName.value;
-          if (name) {
-            const s = loadFontStore();
-            const b64 = s[name];
-            if (b64) {
-              const binary = atob(b64);
-              data = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
-            }
-          } else {
-            data = capturedFontData;
-          }
-          if (!data || data.length !== 768) {
-            setStatus('No font data to save');
-            return;
-          }
-          const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = (name || 'font') + '.ch8';
-          a.click();
-          URL.revokeObjectURL(a.href);
-        }}><HiArrowDownTray /></button>
+      <div id="font-row">
+        <button id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef.current?.click()}>Load</button>
+        <button id="font-search-btn" title="Hunt fonts in RAM" onClick={huntFonts}>Hunt</button>
+        <button id="font-clear-btn" title="Clear all fonts" onClick={() => {
+          saveFontStore([]);
+          fontName.value = '';
+          persistSetting('font', '');
+          bump();
+          setStatus('Font list cleared');
+        }}>Clear</button>
       </div>
-      <canvas id="font-preview" ref={fontPreviewRef} width="128" height="16" style="display:none" />
-      <canvas id="rom-font-preview" ref={romFontPreviewRef} width="128" height="16" style="display:none" />
+      <div id="font-list">
+        {entries.map(entry => (
+          <div
+            key={entry.id}
+            class={`font-entry${fontName.value === entry.id ? ' active' : ''}`}
+            onClick={() => { fontName.value = entry.id; persistSetting('font', entry.id); }}
+          >
+            <div class="font-entry-header">
+              <span class="font-entry-label">{entry.label}</span>
+              <span class="font-entry-addr">
+                {entry.address != null ? entry.address : ''}
+              </span>
+              <span class="font-entry-actions">
+                <button title="Save .ch8" onClick={(e) => { e.stopPropagation(); saveCh8(entry); }}><HiArrowDownTray /></button>
+                <button title="Remove" onClick={(e) => { e.stopPropagation(); removeEntry(entry.id); }}><HiXMark /></button>
+              </span>
+            </div>
+            <canvas
+              class="font-entry-preview"
+              ref={useCallback((cvs: HTMLCanvasElement | null) => {
+                if (cvs) renderFontToCanvas(cvs, b64ToBytes(entry.data));
+              }, [entry.data])}
+            />
+          </div>
+        ))}
+      </div>
       <input
         type="file"
         ref={fontInputRef}
@@ -113,16 +297,16 @@ export function FontPane() {
               (e.target as HTMLInputElement).value = '';
               return;
             }
-            const name = file.name.replace(/\.[^.]+$/, '');
-            let binary = '';
-            for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
-            const s = loadFontStore();
-            s[name] = btoa(binary);
-            saveFontStore(s);
-            fontName.value = name;
-            persistSetting('font', name);
-            setStatus(`Font "${name}" added`);
+            const label = file.name.replace(/\.[^.]+$/, '');
+            const id = `file:${label}:${Date.now()}`;
+            const store = loadFontStore();
+            store.push({ id, label, address: null, technique: 'file', data: bytesToB64(data) });
+            saveFontStore(store);
+            fontName.value = id;
+            persistSetting('font', id);
+            setStatus(`Font "${label}" loaded`);
             (e.target as HTMLInputElement).value = '';
+            bump();
           };
           reader.readAsArrayBuffer(file);
         }}

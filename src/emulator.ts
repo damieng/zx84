@@ -24,6 +24,7 @@ import type { DskImage } from '@/plus3/dsk.ts';
 import type { TapeBlock } from '@/tape/tap.ts';
 import { onFrame, updateRegsOnce, resetSpeedTracking, forceSpeedUpdate } from '@/frame-bridge.ts';
 export { fontDataHash, updateFontPreview, loadFontStore, saveFontStore, capturedFontData } from '@/frame-bridge.ts';
+export type { FontEntry } from '@/frame-bridge.ts';
 
 // ── State ───────────────────────────────────────────────────────────────
 
