@@ -341,6 +341,36 @@ export function disassemble(
   return lines;
 }
 
+/**
+ * Disassemble with context: show `before` lines before PC, then enough
+ * after to fill `totalLines`. Since Z80 instructions are variable-length
+ * we try several start offsets and pick the one that lands on PC.
+ */
+export function disassembleAroundPC(
+  mem: Uint8Array, pc: number, totalLines = 24, before = 6,
+): DisasmLine[] {
+  // Try starting from (pc - offset) for various offsets; pick the run
+  // whose decoded addresses include pc with the most preceding lines.
+  let bestLines: DisasmLine[] | null = null;
+  let bestBefore = -1;
+  for (let offset = before * 4; offset >= before; offset--) {
+    const start = (pc - offset) & 0xFFFF;
+    const lines = disassemble(mem, start, totalLines + before * 4);
+    const pcIdx = lines.findIndex(l => l.addr === pc);
+    if (pcIdx >= 0 && pcIdx <= before && (bestLines === null || pcIdx > bestBefore)) {
+      bestBefore = pcIdx;
+      bestLines = lines;
+    }
+  }
+  if (bestLines && bestBefore >= 0) {
+    // Trim to: bestBefore lines before PC, then fill up to totalLines
+    const startIdx = Math.max(0, bestBefore - before);
+    return bestLines.slice(startIdx, startIdx + totalLines);
+  }
+  // Fallback: just start at PC
+  return disassemble(mem, pc, totalLines);
+}
+
 /** Convert tagged mnemonic text to HTML with colored spans. */
 function colorize(text: string): string {
   return text

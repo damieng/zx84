@@ -54,7 +54,9 @@
       "Bash(key enter 5)",
       "Bash(run 500)",
       "Bash(mem:*)",
-      "Bash(cont:*)"
+      "Bash(cont:*)",
+      "Bash(npm run hmr-freeze:*)",
+      "Bash(npm run hmr-unfreeze:*)"
     ]
   }
 }

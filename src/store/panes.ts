@@ -21,7 +21,6 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'sound-panel', sidebar: 'left' },
   { id: 'display-pane', sidebar: 'left' },
   { id: 'font-panel', sidebar: 'left' },
-  { id: 'regs-panel', sidebar: 'right' },
   { id: 'sysvar-panel', sidebar: 'right' },
   { id: 'banks-panel', sidebar: 'right' },
   { id: 'disk-info-panel', sidebar: 'right' },
@@ -36,8 +35,10 @@ function loadPaneOrder(): PanePosition[] {
     if (raw) {
       const saved: PanePosition[] = JSON.parse(raw);
       // Merge: use saved order but ensure all default panes exist
+      // and remove any panes no longer in defaults
+      const defaultIds = new Set(DEFAULT_ORDER.map(p => p.id));
       const savedIds = new Set(saved.map(p => p.id));
-      const merged = [...saved];
+      const merged = saved.filter(p => defaultIds.has(p.id));
       for (const def of DEFAULT_ORDER) {
         if (!savedIds.has(def.id)) merged.push(def);
       }

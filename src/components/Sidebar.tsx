@@ -85,18 +85,8 @@ export function Sidebar({ id, side, children, extra }: SidebarProps) {
     const indicatorNext = dropIndicator.nextElementSibling;
     const beforeId = indicatorNext?.classList.contains('pane') ? indicatorNext.id : null;
 
-    // Move in the signal store
+    // Move in the signal store (Preact re-render handles DOM)
     movePaneTo(draggedPaneId, side, beforeId);
-
-    // Also move in the DOM immediately for visual feedback
-    const pane = document.getElementById(draggedPaneId);
-    if (pane) {
-      if (dropIndicator.parentElement === sidebar) {
-        sidebar.insertBefore(pane, dropIndicator);
-      } else {
-        sidebar.appendChild(pane);
-      }
-    }
     dropIndicator.remove();
   }, [side]);
 

@@ -1,7 +1,10 @@
 import { useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
-import { HiCpuChip } from 'react-icons/hi2';
-import { currentModel, romStatusText, switchModel, loadRomFiles } from '../../store/emulator.ts';
+import { HiCpuChip, HiPower } from 'react-icons/hi2';
+import {
+  currentModel, romStatusText, switchModel, loadRomFiles,
+  turboMode, clockSpeedText, resetMachine, toggleTurbo,
+} from '../../store/emulator.ts';
 import type { SpectrumModel } from '../../spectrum.ts';
 
 export function HardwarePane() {
@@ -39,6 +42,15 @@ export function HardwarePane() {
             (e.target as HTMLInputElement).value = '';
           }}
         />
+      </div>
+      <div id="cpu-controls">
+        <button id="cpu-reset" title="Reset machine" onClick={resetMachine}><HiPower /></button>
+        <button
+          id="cpu-mhz"
+          title={turboMode.value ? 'Switch to normal speed' : 'Toggle turbo speed'}
+          class={turboMode.value ? 'active' : ''}
+          onClick={toggleTurbo}
+        >{clockSpeedText.value}</button>
       </div>
       {romStatusText.value && (
         <span class="rom-status" id="rom-status">{romStatusText.value}</span>

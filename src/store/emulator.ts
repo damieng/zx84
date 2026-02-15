@@ -14,7 +14,7 @@ import { unzip } from '../formats/zip.ts';
 import { parseTZX } from '../formats/tzx.ts';
 import { parseDSK } from '../formats/dsk.ts';
 import { showFilePicker } from '../ui/zip-picker.ts';
-import { disassemble, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
+import { disassemble, disassembleAroundPC, formatDisasmHtml, stripMarkers } from '../z80-disasm.ts';
 import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from './persistence.ts';
 import * as settings from './settings.ts';
 import type { DskImage } from '../formats/dsk.ts';
@@ -74,7 +74,7 @@ export let currentDiskName = '';
 export let canvasEl: HTMLCanvasElement | null = null;
 
 
-// Clock speed tracking
+// Clock speed tracking (1-second average)
 let speedLastTime = 0;
 let speedLastTStates = 0;
 let speedFrameCount = 0;
@@ -236,9 +236,15 @@ export function unpause(): void {
   emulationPaused.value = false;
 }
 
+function clearDebugPanels(): void {
+  disasmText.value = '';
+  sysvarHtml.value = '';
+}
+
 export function togglePause(): void {
   if (!spectrum) return;
   if (emulationPaused.value) {
+    clearDebugPanels();
     spectrum.start();
   } else {
     spectrum.stop();
@@ -270,7 +276,20 @@ export function stepOver(): void {
     (op & 0xC7) === 0xC4 ||                                              // CALL cc,nn
     (op & 0xC7) === 0xC7 ||                                              // RST
     (op === 0xED && ((cpu.memory[(cpu.pc + 1) & 0xFFFF] & 0xC7) === 0xB0)); // block repeat (LDIR etc)
-  if (!isCall) {
+  // Conditional jumps: run to the next instruction (skip if taken)
+  const isCondJump =
+    op === 0x10 ||                  // DJNZ e        (2 bytes)
+    (op & 0xE7) === 0x20 ||        // JR cc,e        (2 bytes: 20/28/30/38)
+    (op & 0xC7) === 0xC2;          // JP cc,nn       (3 bytes: C2/CA/D2/DA/E2/EA/F2/FA)
+  if (isCondJump) {
+    const instrLen = (op & 0xC7) === 0xC2 ? 3 : 2;
+    const nextPC = (cpu.pc + instrLen) & 0xFFFF;
+    const limit = cpu.tStates + 5_000_000;
+    cpu.step();
+    while (cpu.pc !== nextPC && cpu.tStates < limit) {
+      cpu.step();
+    }
+  } else if (!isCall) {
     cpu.step();
   } else {
     const targetSP = cpu.sp;
@@ -350,6 +369,7 @@ export function runTo(addr: number): void {
     pendingRunTo = addr;
   }
   if (emulationPaused.value) {
+    clearDebugPanels();
     spectrum.start();
     emulationPaused.value = false;
   }
@@ -884,9 +904,9 @@ export function tapeSetPosition(pos: number): void {
   tapePosition.value = pos;
 }
 
-export function toggleTapeCollapse(): void {
-  settings.tapeCollapse.value = !settings.tapeCollapse.value;
-  settings.persistSetting('tape-collapse', settings.tapeCollapse.value ? 'on' : 'off');
+export function toggleAutoRewind(): void {
+  settings.tapeAutoRewind.value = !settings.tapeAutoRewind.value;
+  settings.persistSetting('tape-auto-rewind', settings.tapeAutoRewind.value ? 'on' : 'off');
 }
 
 // ── Auto-type ───────────────────────────────────────────────────────────
@@ -1077,7 +1097,7 @@ function updateRegsOnce(): void {
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
     sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
     const cpu = spectrum!.cpu;
-    const dLines = disassemble(cpu.memory, cpu.pc, 24);
+    const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
     disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();
@@ -1107,7 +1127,7 @@ function updateRegsOnce(): void {
 function updateClockSpeed(): void {
   if (!spectrum) return;
   speedFrameCount++;
-  if (speedFrameCount < 50) return;
+  if (speedFrameCount < 50) return;   // update every ~1 second
   speedFrameCount = 0;
   const now = performance.now();
   const elapsed = (now - speedLastTime) / 1000;
@@ -1224,14 +1244,16 @@ function onFrame(): void {
     }
 
 
-    // Registers + system state
+    // Registers always updated
     regsHtml.value = renderRegs(spectrum!.cpu, spectrum!.tStatesPerFrame);
-    sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
 
-    // Disassembly at PC
-    const cpu = spectrum!.cpu;
-    const dLines = disassemble(cpu.memory, cpu.pc, 24);
-    disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+    // Disassembly only when paused (breakpoint hit etc.)
+    if (emulationPaused.value) {
+      sysvarHtml.value = renderSysVars(spectrum!.cpu.memory);
+      const cpu = spectrum!.cpu;
+      const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
+      disasmText.value = formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints);
+    }
 
     if (is128kClass(model)) {
       banksHtml.value = renderBanks();

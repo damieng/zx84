@@ -5,7 +5,7 @@ import {
   HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
 } from 'react-icons/hi2';
 import {
-  disasmText, tracing, emulationPaused,
+  disasmText, regsHtml, tracing, emulationPaused,
   stepInto, stepOver, stepOut,
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
@@ -70,6 +70,7 @@ export function DisassemblyPane() {
 
   return (
     <Pane id="disasm-panel" label="Debugger" mono>
+      <pre id="regs-output" dangerouslySetInnerHTML={{ __html: regsHtml.value }} />
       <div class="disasm-toolbar">
         <button
           title={paused ? 'Resume emulation' : 'Pause emulation'}
@@ -119,18 +120,22 @@ export function DisassemblyPane() {
           </select>
         )}
       </div>
-      <div
-        class="disasm-output"
-        ref={outputRef}
-        style="position:relative"
-        dangerouslySetInnerHTML={{ __html: disasmText.value }}
-        onDblClick={onDblClick}
-        onContextMenu={onContextMenu}
-      />
-      <div ref={menuRef} class="disasm-ctx-menu" style="display:none">
-        <div class="disasm-ctx-item" onClick={onMenuRunTo}>Run to here</div>
-        <div class="disasm-ctx-item" onClick={onMenuToggleBp}>Toggle breakpoint</div>
-      </div>
+      {paused && (
+        <>
+          <div
+            class="disasm-output"
+            ref={outputRef}
+            style="position:relative"
+            dangerouslySetInnerHTML={{ __html: disasmText.value }}
+            onDblClick={onDblClick}
+            onContextMenu={onContextMenu}
+          />
+          <div ref={menuRef} class="disasm-ctx-menu" style="display:none">
+            <div class="disasm-ctx-item" onClick={onMenuRunTo}>Run to here</div>
+            <div class="disasm-ctx-item" onClick={onMenuToggleBp}>Toggle breakpoint</div>
+          </div>
+        </>
+      )}
     </Pane>
   );
 }

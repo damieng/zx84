@@ -14,7 +14,6 @@ import { JoystickPane } from './components/panes/JoystickPane.tsx';
 import { SoundPane } from './components/panes/SoundPane.tsx';
 import { DisplayPane } from './components/panes/DisplayPane.tsx';
 import { FontPane } from './components/panes/FontPane.tsx';
-import { CpuPane } from './components/panes/CpuPane.tsx';
 import { SysVarPane } from './components/panes/SysVarPane.tsx';
 import { BanksPane } from './components/panes/BanksPane.tsx';
 import { DiskInfoPane } from './components/panes/DiskInfoPane.tsx';
@@ -37,7 +36,6 @@ const PANE_COMPONENTS: Record<string, () => preact.JSX.Element> = {
   'sound-panel': SoundPane,
   'display-pane': DisplayPane,
   'font-panel': FontPane,
-  'regs-panel': CpuPane,
   'sysvar-panel': SysVarPane,
   'banks-panel': BanksPane,
   'disk-info-panel': DiskInfoPane,

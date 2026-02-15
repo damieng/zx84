@@ -50,16 +50,23 @@ body {
 }
 
 .logo {
-  font-size: 1.05rem;
+  font-size: 1.6rem;
   font-family: var(--font-ui);
   font-weight: 800;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
   color: #fff;
+  background: #000;
+  width: 100%;
+  text-align: center;
+  padding: 4px 0;
 }
 
 .logo-num {
-  color: #fa4;
+  color: #f66;
   font-weight: 600;
+  font-size: 0.8em;
+  position: relative;
+  top: -5px;
 }
 
 .logo-stripe {
