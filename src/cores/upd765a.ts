@@ -158,6 +158,8 @@ export class UPD765A {
 
   get currentTrack(): number { return this.pcn[this.exUnit]; }
 
+  getUnitTrack(unit: number): number { return this.pcn[unit & 3]; }
+
   get currentSector(): number {
     if (this.phase === Phase.Execution) return this.exR;
     return this.latchFrames > 0 ? this.latchR : 0;

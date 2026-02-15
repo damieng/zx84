@@ -15,7 +15,7 @@ import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
-  setBanksHtml, setDriveHtml, setTrapLogHtml, setShowTrapLog, setDisasmText,
+  setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setTrapLogHtml, setShowTrapLog, setDisasmText,
   setClockSpeedText,
   setTapePosition, tapePaused, setTapePaused, transcribeMode, setTranscribeText,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedRst16, setLedText,
@@ -94,29 +94,26 @@ function renderBanks(): string {
 
 // Disk info now rendered directly in DrivePane component
 
-function renderDriveStr(): string {
+function renderDriveStatus(unit: number): string {
   if (!spectrum) return '';
   const fdc = spectrum.fdc;
-  fdc.tickFrame();
   const n = '<span class="reg-name">';
   const e = '</span>';
-  const motor = fdc.motorOn ? 'On' : 'Off';
-  const track = fdc.currentTrack.toString().padStart(2, '0');
-  const head = fdc.currentHead;
-  const sector = fdc.isExecuting ? fdc.currentSector.toString().padStart(2, '0') : '--';
-  const operation = fdc.isExecuting ? (fdc.isWriting ? 'WRITE' : 'READ') : '(idle)';
-  const lines = [
-    `${n}Motor${e}  ${motor}  ${n}Operation${e} ${operation}`,
-    `${n}Head${e} ${head}  ${n}Track${e}  ${track}  ${n}Sector${e} ${sector}`,
-  ];
-
-  // Show unit info if dual drives enabled
-  if (settings.dualDrives() && fdc.isExecuting) {
-    const unit = fdc.currentUnit;
-    lines.push(`${n}Unit${e} ${unit === 0 ? 'A:' : unit === 1 ? 'B:' : unit}`);
+  
+  const isActive = fdc.currentUnit === unit;
+  const track = fdc.getUnitTrack(unit).toString().padStart(2, '0');
+  const sector = fdc.isExecuting && isActive ? fdc.currentSector.toString().padStart(2, '0') : '--';
+  
+  let status: string;
+  if (!fdc.motorOn || !isActive) {
+    status = 'Off  ';
+  } else if (fdc.isExecuting) {
+    status = fdc.isWriting ? 'Write' : 'Read ';
+  } else {
+    status = 'Spin ';
   }
-
-  return lines.join('\n');
+  
+  return `${status} ${n}Track${e} ${track} ${n}Sector${e} ${sector}`;
 }
 
 /** Update banks, disk info, drive status, and trap log signals. */
@@ -125,7 +122,10 @@ function updateHardwareSignals(model: SpectrumModel): void {
     setBanksHtml(renderBanks());
   }
   if (isPlus3(model)) {
-    setDriveHtml(renderDriveStr());
+    spectrum!.fdc.tickFrame();
+    setDriveAStatus(renderDriveStatus(0));
+    setDriveBStatus(renderDriveStatus(1));
+    setDriveHtml(renderDriveStatus(0)); // legacy
     if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
       const entries = spectrum!.biosTrap.trapLog;
       setTrapLogHtml(entries.length > 0

@@ -4,7 +4,7 @@ import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import { HiOutlineFolderOpen, HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
-  driveHtml, trapLogHtml, showTrapLog, currentModel,
+  driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
   setDiskModeAction, ejectDisk, loadDiskToUnit,
 } from '@/emulator.ts';
@@ -19,29 +19,37 @@ function renderDiskInfoStr(img: DskImage): string {
   const spt = t0 ? t0.sectors.length : 0;
   return [
     `${n}Sides${e} ${img.numSides}  ${n}Tracks${e} ${img.numTracks}  ${n}Sectors${e} ${spt}`,
-    `${n}Format${e} ${img.diskFormat}`,
-    `${n}Prot.${e}  ${img.protection || 'None'}`,
+    `${n}Format${e}   ${img.diskFormat}`,
+    `${n}Protect${e}  ${img.protection || 'None'}`,
   ].join('\n');
 }
 
-function DiskInfo(props: { unit: number; name: string; diskInfo: DskImage | null }) {
+function DiskInfo(props: { unit: number; name: string; diskInfo: DskImage | null; status: string; onInsert: () => void }) {
+  const label = props.unit === 0 ? 'A:' : 'B:';
   return (
-    <Show when={props.name}>
-      <div class="disk-section">
-        <div class="disk-name">
-          <span class="disk-label">{props.unit === 0 ? 'A:' : 'B:'}</span>
-          <span class="disk-name-text" title={props.name}>{props.name}</span>
-          <button class="tape-eject" title={`Eject disk ${props.unit === 0 ? 'A:' : 'B:'}`} onClick={() => ejectDisk(props.unit)}>
+    <div class="disk-section">
+      <div 
+        class="disk-name" 
+        classList={{ 'disk-name-clickable': !props.name }}
+        onClick={() => !props.name && props.onInsert()}
+      >
+        <span class="disk-label">{label}</span>
+        <span class="disk-name-text" title={props.name || ''}>
+          {props.name || 'No disk inserted'}
+        </span>
+        <Show when={props.name}>
+          <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
               <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
             </svg>
           </button>
-        </div>
-        <Show when={props.diskInfo}>
-          <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />
         </Show>
       </div>
-    </Show>
+      <Show when={props.diskInfo}>
+        <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />
+      </Show>
+      <pre class="drive-status" innerHTML={props.status} />
+    </div>
   );
 }
 
@@ -52,10 +60,7 @@ export function DrivePane() {
   return (
     <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())}>
       <div class="drive-toolbar">
-        <button title="Open disk A:" onClick={() => fileInputRefA?.click()}><HiOutlineFolderOpen /> A:</button>
-        <Show when={dualDrives()}>
-          <button title="Open disk B:" onClick={() => fileInputRefB?.click()}><HiOutlineFolderOpen /> B:</button>
-        </Show>
+        <div style="flex: 1" />
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
           title="Drive options"
@@ -102,11 +107,10 @@ export function DrivePane() {
           />
         </Show>
       </div>
-      <DiskInfo unit={0} name={currentDiskName()} diskInfo={currentDiskInfo()} />
+      <DiskInfo unit={0} name={currentDiskName()} diskInfo={currentDiskInfo()} status={driveAStatus()} onInsert={() => fileInputRefA?.click()} />
       <Show when={dualDrives()}>
-        <DiskInfo unit={1} name={currentDiskNameB()} diskInfo={currentDiskInfoB()} />
+        <DiskInfo unit={1} name={currentDiskNameB()} diskInfo={currentDiskInfoB()} status={driveBStatus()} onInsert={() => fileInputRefB?.click()} />
       </Show>
-      <RawHtml id="drive-output" html={driveHtml} />
       <Show when={showTrapLog()}>
         <RawHtml id="trap-log" html={trapLogHtml} />
       </Show>

@@ -788,8 +788,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .drive-toolbar button {
-  flex: 1;
-  padding: 4px 0;
+  flex: 0 0 auto;
+  padding: 4px 8px;
   border: 1px solid #bbb;
   border-radius: 4px;
   background: #eee;
@@ -857,20 +857,46 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 6px;
-  background: #f4f4fa;
-  border-bottom: 1px solid #ddd;
-  font-size: 0.7rem;
-  min-height: 22px;
+  padding: 4px 6px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  min-height: 24px;
   flex-shrink: 0;
+  margin-bottom: 4px;
 }
+
+#tape-name.tape-name-clickable {
+  cursor: pointer;
+}
+
+#tape-name.tape-name-clickable:hover {
+  background: #f0f0f8;
+  border-color: #999;
+}
+
+.tape-label {
+  flex: 0 0 auto;
+  font-weight: bold;
+  color: #666;
+  margin-right: 4px;
+}
+
 .tape-name-text {
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #444;
+  color: #222;
+  font-weight: 500;
+}
+
+#tape-name:not(:has(button.tape-eject)) .tape-name-text {
+  color: #999;
+  font-style: italic;
+  font-weight: 400;
 }
 .tape-eject {
   flex: 0 0 18px;
@@ -899,11 +925,22 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
-  border-bottom: 1px solid #ddd;
-  background: #f8f8f8;
-  margin-bottom: 4px;
-  min-height: 22px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  min-height: 24px;
   flex-shrink: 0;
+  margin-bottom: 4px;
+}
+
+.disk-name-clickable {
+  cursor: pointer;
+}
+
+.disk-name-clickable:hover {
+  background: #f0f0f8;
+  border-color: #999;
 }
 .disk-label {
   flex: 0 0 auto;
@@ -917,16 +954,33 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #444;
+  color: #222;
+  font-weight: 500;
+}
+
+.disk-section:not(:has(button.tape-eject)) .disk-name-text {
+  color: #999;
+  font-style: italic;
+  font-weight: 400;
 }
 .disk-info-output {
-  padding: 4px 6px;
+  padding: 6px;
   margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  background: #fafafa;
-  border-left: 3px solid #ddd;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: pre;
 }
+
+.disk-info-output .reg-name { color: #999; }
+
+.drive-status {
+  margin: 0;
+  padding: 6px;
+  font-size: 0.7rem;
+  white-space: pre;
+}
+
+.drive-status .reg-name { color: #999; }
 
 #tape-blocks {
   max-height: 400px;

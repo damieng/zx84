@@ -133,21 +133,26 @@ export function TapePane() {
           }}
         />
       </div>
-      <Show when={tapeLoaded()}>
-        <div id="tape-name">
-          <span class="tape-name-text" title={tapeName()}>{tapeName()}</span>
-          <button class="tape-eject" title="Eject tape" onClick={ejectTape}>
+      <div 
+        id="tape-name" 
+        classList={{ 'tape-name-clickable': !tapeLoaded() }}
+        onClick={() => !tapeLoaded() && fileInputRef?.click()}
+      >
+        <span class="tape-label">T:</span>
+        <span class="tape-name-text" title={tapeLoaded() ? tapeName() : ''}>
+          {tapeLoaded() ? tapeName() : 'No tape loaded'}
+        </span>
+        <Show when={tapeLoaded()}>
+          <button class="tape-eject" title="Eject tape" onClick={(e) => { e.stopPropagation(); ejectTape(); }}>
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
               <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
             </svg>
           </button>
-        </div>
-      </Show>
-      <div id="tape-blocks" class="mono-block" ref={containerRef}>
-        {!tapeLoaded() ? (
-          <div class="tape-empty">No tape loaded</div>
-        ) : (
-          tapeBlocks().map((block, i) => {
+        </Show>
+      </div>
+      <Show when={tapeLoaded()}>
+        <div id="tape-blocks" class="mono-block" ref={containerRef}>
+          {tapeBlocks().map((block, i) => {
             const meta = parseTapeBlockMeta(block, i, tapeBlocks(), tapeCollapseBlocks());
             if (meta.hidden) return null;
             const className = `tape-block${i < tapePosition() ? ' played' : ''}${i === tapePosition() ? ' current' : ''}${meta.control ? ' control' : ''}`;
@@ -159,9 +164,9 @@ export function TapePane() {
                 ))}
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      </Show>
     </Pane>
   );
 }
