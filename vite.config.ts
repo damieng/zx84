@@ -2,6 +2,8 @@ import { defineConfig, Plugin } from 'vite';
 import preact from '@preact/preset-vite';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
+import obfuscatorPlugin from 'rollup-plugin-obfuscator';
+import viteCompression from 'vite-plugin-compression';
 
 // ── HMR freeze: shared state between plugins ────────────────────────────
 
@@ -55,8 +57,15 @@ function hmrFreezePlugin(): Plugin {
 
 // (buildTimePlugin removed — logo is static HTML)
 
-export default defineConfig({
-  plugins: [hmrFreezePlugin(), preact()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    hmrFreezePlugin(),
+    preact(),
+    ...(mode === 'production' ? [
+      viteCompression({ algorithm: 'gzip', threshold: 1024 }),
+      viteCompression({ algorithm: 'brotliCompress', threshold: 1024, ext: '.br' }),
+    ] : []),
+  ],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -69,4 +78,47 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
-});
+  build: {
+    target: 'es2020',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true,
+        drop_debugger: true,
+        passes: 2,
+      },
+      mangle: {
+        toplevel: true,
+        properties: { regex: /^_/ },
+      },
+    },
+    rollupOptions: {
+      plugins: [
+        obfuscatorPlugin({
+          options: {
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.5,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.2,
+            stringArray: true,
+            stringArrayThreshold: 0.5,
+            stringArrayEncoding: ['rc4'],
+            stringArrayRotate: true,
+            stringArrayShuffle: true,
+            splitStrings: true,
+            splitStringsChunkLength: 5,
+            identifierNamesGenerator: 'hexadecimal',
+            renameGlobals: true,
+            selfDefending: false,
+            transformObjectKeys: true,
+            unicodeEscapeSequence: false,
+          },
+        }),
+      ],
+    },
+    assetsInlineLimit: 4096,
+    cssCodeSplit: false,
+    sourcemap: false,
+  },
+}));
