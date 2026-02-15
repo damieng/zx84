@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
-import { HiBackward, HiPlay, HiPause, HiArrowPath } from 'react-icons/hi2';
+import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
+import { HiBackward, HiPlay, HiPause, HiEllipsisVertical } from 'react-icons/hi2';
 import {
   tapeLoaded, tapeBlocks, tapePosition, tapePaused,
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
@@ -127,6 +128,7 @@ export function TapePane() {
   const pos = tapePosition.value;
   const paused = tapePaused.value;
   const loaded = tapeLoaded.value;
+  const autoRewind = tapeAutoRewind.value;
 
   // Auto-scroll current block into view
   useEffect(() => {
@@ -145,12 +147,18 @@ export function TapePane() {
           class={paused ? 'active' : ''}
           onClick={tapeTogglePause}
         >{paused ? <HiPlay /> : <HiPause />}</button>
-        <button
-          id="tape-auto-rewind"
-          title="Auto-rewind when tape ends"
-          class={tapeAutoRewind.value ? 'active' : ''}
-          onClick={toggleAutoRewind}
-        ><HiArrowPath /></button>
+        <DropDownMenuButton
+          icon={<HiEllipsisVertical />}
+          title="Tape options"
+          items={[
+            { value: 'auto-rewind', label: 'Auto-rewind', checked: autoRewind },
+          ]}
+          onSelect={(value) => {
+            if (value === 'auto-rewind') {
+              toggleAutoRewind();
+            }
+          }}
+        />
       </div>
       <div id="tape-blocks" class="mono-block" ref={containerRef}>
         {!loaded ? (

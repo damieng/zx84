@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'preact/hooks';
 import { Pane } from '../Pane.tsx';
+import { DropDownMenuButton } from '../DropDownMenuButton.tsx';
 import {
   HiPlay, HiPause,
   HiArrowDownRight, HiArrowTrendingDown, HiArrowUpRight,
@@ -11,8 +12,6 @@ import {
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
 } from '../../store/emulator.ts';
-
-type TraceOrCopy = 'full' | 'contention' | 'portio' | 'loopanalysis';
 
 /** Find the data-addr from a click target inside .disasm-output */
 function addrFromEvent(e: MouseEvent): number | null {
@@ -100,27 +99,23 @@ export function DisassemblyPane() {
             onClick={stopTrace}
           >Stop</button>
         ) : (
-          <div class="trace-select-wrapper">
-            <HiPencilSquare class="trace-icon" />
-            <select
-              class="trace-select"
-              title="Start tracing (copies to clipboard on stop)"
-              onChange={(e) => {
-                const sel = e.currentTarget;
-                const mode = sel.value as TraceOrCopy;
-                if (mode === 'loopanalysis') {
-                  copyCpuState();
-                } else if (mode) {
-                  startTrace(mode);
-                }
-              }}
-            >
-              <option value="full">Full</option>
-              <option value="contention">Contention</option>
-              <option value="portio">Port IO</option>
-              <option value="loopanalysis">Loop</option>
-            </select>
-          </div>
+          <DropDownMenuButton
+            icon={<HiPencilSquare />}
+            title="Start tracing (copies to clipboard on stop)"
+            items={[
+              { value: 'full', label: 'Full' },
+              { value: 'contention', label: 'Contention' },
+              { value: 'portio', label: 'Port IO' },
+              { value: 'loopanalysis', label: 'Loop' },
+            ]}
+            onSelect={(mode) => {
+              if (mode === 'loopanalysis') {
+                copyCpuState();
+              } else {
+                startTrace(mode as 'full' | 'contention' | 'portio');
+              }
+            }}
+          />
         )}
       </div>
       {paused && (
