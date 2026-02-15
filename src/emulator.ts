@@ -992,6 +992,10 @@ export const SINCLAIR1_KEYS: Record<string, { row: number; bit: number }> = {
   fire:  { row: 4, bit: 0 },
 };
 
+// Track how many cursor-joystick directions are currently held,
+// so Caps Shift stays pressed until all are released.
+let cursorShiftCount = 0;
+
 export function joyPressForType(dir: string, pressed: boolean, mode: string): void {
   if (!spectrum || mode === 'none') return;
 
@@ -1007,7 +1011,15 @@ export function joyPressForType(dir: string, pressed: boolean, mode: string): vo
               : mode === 'sinclair2' ? SINCLAIR2_KEYS
               : SINCLAIR1_KEYS;
     const key = map[dir];
-    if (key) spectrum.keyboard.setKey(key.row, key.bit, pressed);
+    if (key) {
+      spectrum.keyboard.setKey(key.row, key.bit, pressed);
+      // Cursor joystick requires Caps Shift held with the number keys
+      if (mode === 'cursor') {
+        cursorShiftCount += pressed ? 1 : -1;
+        if (cursorShiftCount < 0) cursorShiftCount = 0;
+        spectrum.keyboard.setKey(0, 0, cursorShiftCount > 0);
+      }
+    }
   }
 }
 
