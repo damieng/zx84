@@ -122,19 +122,6 @@ export function wirePortIO(s: Spectrum): void {
     }
   };
 
-  // DEBUG: tape loading diagnostics — per-read timing in DATA phase
-  let _dbgPhase = '';
-  let _dbgLastReadT = 0;
-  let _dbgLastEar = -1;
-  let _dbgLastEdgeT = 0;
-  let _dbgEdges = 0;
-  let _dbgReads = 0;         // consecutive reads in current phase
-  let _dbgDataLogs = 0;
-  const _dbgMaxDataLogs = 3000;
-  let _dbgRomDumped = false;
-  let _dbgDataStartIX = 0;   // IX at start of DATA phase
-  let _dbgBlockNum = 0;      // which block we're loading
-
   s.cpu.portInHandler = (port: number): number => {
     // ULA port: any port with bit 0 = 0
     if ((port & 0x01) === 0) {
@@ -145,109 +132,6 @@ export function wirePortIO(s: Spectrum): void {
       // at the exact T-state of the read, not one instruction behind.
       s.advanceTapeTo();
       if (s.ula.tapeActive) s.activity.earReads++;
-
-      // DEBUG: log tape loading with per-read timing
-      if (s.ula.tapeActive) {
-        const ear = s.ula.tapeEarBit;
-        const t = s.cpu.tStates;
-        const ds = s.tape.debugState();
-        const isEdge = ear !== _dbgLastEar && _dbgLastEar !== -1;
-        if (isEdge) _dbgEdges++;
-        _dbgReads++;
-
-        // Log phase transitions (always, regardless of log limit)
-        if (ds.phase !== _dbgPhase) {
-          const prevPhase = _dbgPhase;
-          _dbgPhase = ds.phase;
-          _dbgReads = 0;
-          console.log(`[TAPE-DBG] === Phase ${prevPhase || '?'} -> ${ds.phase} === T=${t} edges=${_dbgEdges} turbo=${s.tapeTurbo}`);
-          if (ds.phase === 'DATA') {
-            _dbgEdges = 0;
-            _dbgBlockNum++;
-            _dbgDataStartIX = s.cpu.ix;
-            console.log(`[TAPE-DBG] BLOCK #${_dbgBlockNum} rawLen=${ds.rawLen} bit0=${ds.bBit0}T bit1=${ds.bBit1}T`);
-            console.log(`[TAPE-DBG] IX=${_dbgDataStartIX.toString(16).padStart(4, '0')} DE=${(s.cpu.d * 256 + s.cpu.e).toString(16).padStart(4, '0')}`)
-            console.log(`[TAPE-DBG] Expected: ${s.tape.debugRawBytes(32)}`);
-            // Dump ROM tape routine bytes (one-time)
-            if (!_dbgRomDumped) {
-              _dbgRomDumped = true;
-              const rom = s.cpu.memory;
-              const dumpHex = (start: number, len: number) =>
-                Array.from(rom.slice(start, start + len), b => b.toString(16).padStart(2, '0')).join(' ');
-              console.log(`[ROM-DBG] 0x05C8: ${dumpHex(0x05C8, 16)}`);
-              console.log(`[ROM-DBG] 0x05D8: ${dumpHex(0x05D8, 16)}`);
-              console.log(`[ROM-DBG] 0x05E8: ${dumpHex(0x05E8, 16)}`);
-              console.log(`[ROM-DBG] IX=${s.cpu.ix.toString(16).padStart(4, '0')} DE=${(s.cpu.d * 256 + s.cpu.e).toString(16).padStart(4, '0')}`);
-            }
-          }
-          if (ds.phase === 'PAUSE' && prevPhase === 'DATA') {
-            const ix = s.cpu.ix;
-            const de = s.cpu.d * 256 + s.cpu.e;
-            const h = s.cpu.h;
-            const carry = s.cpu.f & 1;
-            const bytesLoaded = ix - _dbgDataStartIX;
-            console.log(`[TAPE-DBG] BLOCK #${_dbgBlockNum} DATA->PAUSE: IX=${ix.toString(16).padStart(4, '0')} startIX=${_dbgDataStartIX.toString(16).padStart(4, '0')} DE=${de.toString(16).padStart(4, '0')} H(chk)=${h.toString(16).padStart(2, '0')} loaded=${bytesLoaded}`);
-            console.log(`[TAPE-DBG] CPU: A=${s.cpu.a.toString(16).padStart(2, '0')} carry=${carry} B=${s.cpu.b.toString(16).padStart(2, '0')} C=${s.cpu.c.toString(16).padStart(2, '0')} F=${s.cpu.f.toString(16).padStart(2, '0')}`);
-            // Compare expected vs actual stored data byte-by-byte
-            const expectedHex = s.tape.debugRawBytes(ds.rawLen);
-            const expArr = expectedHex.split(' ').map((x: string) => parseInt(x, 16));
-            const startAddr = _dbgDataStartIX;
-            // ROM loads: flag byte first (checked, not stored), then DE bytes stored at IX
-            // So stored[0] = expected[1], stored[1] = expected[2], etc.
-            const cmpLen = Math.min(bytesLoaded, expArr.length - 1);
-            let firstBad = -1;
-            let mismatches = 0;
-            for (let i = 0; i < cmpLen; i++) {
-              const actual = s.cpu.memory[startAddr + i];
-              const expected = expArr[i + 1]; // +1 to skip flag byte
-              if (actual !== expected) {
-                mismatches++;
-                if (firstBad === -1) firstBad = i;
-                if (mismatches <= 5) {
-                  console.log(`[TAPE-DBG] MISMATCH byte[${i}] @${(startAddr + i).toString(16)}: got=0x${actual.toString(16).padStart(2, '0')} want=0x${expected.toString(16).padStart(2, '0')}`);
-                }
-              }
-            }
-            console.log(`[TAPE-DBG] Compared ${cmpLen} bytes: ${mismatches} mismatches${firstBad >= 0 ? ` (first at byte ${firstBad})` : ''}`);
-          }
-        }
-
-        // In DATA phase: log EVERY read for the first 200 reads (per-iteration timing)
-        if (ds.phase === 'DATA' && _dbgReads <= 200 && _dbgDataLogs < _dbgMaxDataLogs) {
-          const readDelta = _dbgLastReadT > 0 ? t - _dbgLastReadT : 0;
-          const pc = s.cpu.pc;
-          console.log(
-            `[READ#${_dbgReads}] T=${t} d=${readDelta} ` +
-            `PC=${pc.toString(16).padStart(4, '0')} ` +
-            `ear=${ear} B=0x${s.cpu.b.toString(16).padStart(2, '0')} ` +
-            `${isEdge ? 'EDGE' : ''}` +
-            ` tape=${ds.tInPulse}/${ds.pulseLen}`
-          );
-          _dbgDataLogs++;
-        }
-
-        // After first 200 reads, log edges only
-        if (ds.phase === 'DATA' && _dbgReads > 200 && isEdge && _dbgDataLogs < _dbgMaxDataLogs) {
-          const edgeGap = _dbgLastEdgeT > 0 ? t - _dbgLastEdgeT : 0;
-          console.log(
-            `[TAPE-DBG] EDGE#${_dbgEdges} T=${t} edgeGap=${edgeGap} ` +
-            `PC=${s.cpu.pc.toString(16).padStart(4, '0')} ear=${ear} ` +
-            `B=0x${s.cpu.b.toString(16).padStart(2, '0')} ` +
-            `byte[${ds.byteIdx}] bit=${ds.bitIdx} half=${ds.pulseHalf}`
-          );
-          _dbgDataLogs++;
-        }
-
-        if (isEdge) _dbgLastEdgeT = t;
-        _dbgLastReadT = t;
-
-        // In PILOT: count silently, summary every 500
-        if (ds.phase === 'PILOT' && isEdge && _dbgEdges % 500 === 0) {
-          console.log(`[TAPE-DBG] PILOT: ${_dbgEdges} edges, ~${ds.pulseLen}T/pulse`);
-        }
-
-        _dbgLastEar = ear;
-      }
 
       // Loader detection: auto-start tape for custom loaders (Speedlock etc.)
       if (s.tape.loaded && !s.tape.finished) {

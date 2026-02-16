@@ -54,17 +54,6 @@ const BIT_1 = 1710;
 const PAUSE_DEFAULT_MS = 1000;
 const Z80_CLOCK = 3500000;
 
-/** Edge flags for the loader accelerator */
-export const EDGE_FLAG_NONE = 0;
-export const EDGE_FLAG_SHORT = 1;
-export const EDGE_FLAG_LONG = 2;
-
-/**
- * Threshold T-states to distinguish short vs long pulses.
- * Standard Spectrum: bit-0 = 855T, bit-1 = 1710T. Midpoint ≈ 1282T.
- * Turbo loaders use different timing; we use each block's own thresholds.
- */
-const DEFAULT_SHORT_LONG_THRESHOLD = 1282;
 
 const enum TapePhase {
   IDLE,
@@ -142,39 +131,6 @@ export class TapeDeck {
   private directUsedBitsLast = 8;
   private directPauseMs = 0;
 
-  /** Edge flags: SHORT or LONG, updated when earBit toggles */
-  lastEdgeFlags = EDGE_FLAG_NONE;
-
-  /** Per-block threshold for distinguishing short vs long pulses */
-  private shortLongThreshold = DEFAULT_SHORT_LONG_THRESHOLD;
-
-  /** Diagnostic snapshot of playback engine internals (for debug logging). */
-  debugState(): {
-    phase: string; byteIdx: number; bitIdx: number; pulseHalf: number;
-    pulseLen: number; tInPulse: number; bBit0: number; bBit1: number;
-    rawByte: number; rawLen: number;
-  } {
-    const phaseNames = ['IDLE', 'PILOT', 'SYNC1', 'SYNC2', 'DATA', 'PAUSE', 'TONE', 'PULSES', 'DIRECT'];
-    return {
-      phase: phaseNames[this.phase] ?? '?',
-      byteIdx: this.byteIdx,
-      bitIdx: this.bitIdx,
-      pulseHalf: this.pulseHalf,
-      pulseLen: this.pulseLen,
-      tInPulse: this.tInPulse,
-      bBit0: this.bBit0,
-      bBit1: this.bBit1,
-      rawByte: this.rawData ? this.rawData[this.byteIdx] ?? -1 : -1,
-      rawLen: this.rawData ? this.rawData.length : 0,
-    };
-  }
-
-  /** Dump first N raw bytes of the current block as hex string (for debug). */
-  debugRawBytes(n: number): string {
-    if (!this.rawData) return '(no data)';
-    const count = Math.min(n, this.rawData.length);
-    return Array.from(this.rawData.slice(0, count), b => b.toString(16).padStart(2, '0')).join(' ');
-  }
 
   // ── TAP parser ─────────────────────────────────────────────────────────
 
@@ -325,38 +281,6 @@ export class TapeDeck {
   }
 
   /**
-   * Advance the tape to the next edge (earBit toggle).
-   * Used by the loader accelerator to fast-forward through the current
-   * pulse so the EAR bit toggles immediately.
-   *
-   * This calls advance() with exactly enough T-states to complete the
-   * current pulse, so all normal bookkeeping (phase transitions, edge
-   * flags, etc.) happens through the same code path as real-time playback.
-   *
-   * Returns null if the tape has no more edges (finished/paused/idle).
-   */
-  nextEdge(): { tStates: number; flags: number } | null {
-    if (!this.playing || this.paused || this.phase === TapePhase.IDLE) return null;
-    if (this.phase === TapePhase.PAUSE || this.phase === TapePhase.DIRECT) return null;
-
-    const remaining = this.pulseLen - this.tInPulse;
-    if (remaining <= 0) return null;
-
-    // Save earBit before advance to detect the toggle
-    const earBefore = this.earBit;
-
-    // Feed exactly enough T-states to complete this pulse
-    this.advance(remaining);
-
-    // If earBit toggled, the edge happened
-    if (this.earBit !== earBefore) {
-      return { tStates: remaining, flags: this.lastEdgeFlags };
-    }
-
-    return null;
-  }
-
-  /**
    * Skip the current block (called after ROM trap instant-loads it).
    * Advances the player to start playing the next block.
    */
@@ -398,9 +322,6 @@ export class TapeDeck {
            (this.phase as number) !== TapePhase.IDLE &&
            (this.phase as number) !== TapePhase.PAUSE &&
            (this.phase as number) !== TapePhase.DIRECT) {
-      // Record edge flags before toggling: was the completing pulse short or long?
-      this.lastEdgeFlags = this.pulseLen >= this.shortLongThreshold
-        ? EDGE_FLAG_LONG : EDGE_FLAG_SHORT;
       this.tInPulse -= this.pulseLen;
       this.earBit ^= 1;
       this.advancePulse();
@@ -498,8 +419,6 @@ export class TapeDeck {
     this.bBit0 = block.bit0Pulse;
     this.bBit1 = block.bit1Pulse;
     this.usedBitsLast = block.usedBits;
-    // Set threshold midpoint between bit-0 and bit-1 pulse lengths
-    this.shortLongThreshold = (block.bit0Pulse + block.bit1Pulse) >> 1;
     this.pauseRemaining = Math.round(block.pause * Z80_CLOCK / 1000);
 
     if (block.pilotCount === 0) {
