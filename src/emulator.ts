@@ -10,6 +10,7 @@ import { FloppySound } from '@/plus3/floppy-sound.ts';
 import { PALETTES } from '@/cores/ula.ts';
 import { saveSNA } from '@/snapshot/sna.ts';
 import { saveSZX } from '@/snapshot/szx.ts';
+import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
 import { parseDSK } from '@/plus3/dsk.ts';
 import { loadSZX } from '@/snapshot/szx.ts';
@@ -629,23 +630,24 @@ function downloadFile(data: Uint8Array, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function saveSnapshot(format: 'sna' | 'z80' | 'szx' = 'sna'): void {
+export function saveSnapshot(format: 'z80' | 'szx' = 'szx'): void {
   if (!spectrum) { setStatus('No machine running'); return; }
 
   const wasPaused = emulationPaused();
   if (!wasPaused) spectrum.stop();
 
+  const model = is128kClass(currentModel()) ? '128k' : '48k';
   let data: Uint8Array;
+
   if (format === 'szx') {
     const ayRegs = spectrum.ay.getRegisters();
     data = saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, ayRegs, spectrum.ay.selectedReg);
   } else {
-    // For now, .z80 saves as .sna (full .z80 writer not yet implemented)
-    data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+    // .z80 format
+    data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, is128kClass(currentModel()));
   }
-  const model = is128kClass(currentModel()) ? '128k' : '48k';
-  const ext = format === 'z80' ? 'sna' : format; // TODO: implement .z80 writer
-  const filename = `zx84-${model}.${ext}`;
+
+  const filename = `zx84-${model}.${format}`;
 
   downloadFile(data, filename);
 

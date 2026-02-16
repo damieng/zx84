@@ -317,3 +317,227 @@ export function loadZ80(
     return { is128K: false, port7FFD: 0, borderColor };
   }
 }
+
+// ── Z80 Writer ─────────────────────────────────────────────────────────────
+
+/**
+ * Compress a 16KB block using ED ED <count> <byte> RLE compression.
+ * Returns compressed data or original data if compression doesn't help.
+ */
+function compressBlock(src: Uint8Array): { data: Uint8Array; compressed: boolean } {
+  const out: number[] = [];
+  let i = 0;
+
+  while (i < src.length) {
+    const byte = src[i];
+
+    // Check for ED byte - needs special handling
+    if (byte === 0xED) {
+      // Look ahead to see if next byte is also ED
+      if (i + 1 < src.length && src[i + 1] === 0xED) {
+        // Literal ED ED sequence - encode as ED ED 01 ED
+        out.push(0xED, 0xED, 0x01, 0xED);
+        i += 2;
+        continue;
+      }
+      // Single ED - just output it
+      out.push(byte);
+      i++;
+      continue;
+    }
+
+    // Count consecutive identical bytes
+    let count = 1;
+    while (i + count < src.length && src[i + count] === byte && count < 255) {
+      count++;
+    }
+
+    // Use RLE if we have 5+ identical bytes, or 4+ if the byte is ED
+    if (count >= 5) {
+      out.push(0xED, 0xED, count, byte);
+      i += count;
+    } else {
+      // Output literal bytes
+      for (let j = 0; j < count; j++) {
+        out.push(byte);
+      }
+      i += count;
+    }
+  }
+
+  const compressed = new Uint8Array(out);
+  // Only use compression if it actually saves space
+  if (compressed.length < src.length) {
+    return { data: compressed, compressed: true };
+  }
+  return { data: src, compressed: false };
+}
+
+function w16(data: Uint8Array, offset: number, value: number): void {
+  data[offset] = value & 0xFF;
+  data[offset + 1] = (value >> 8) & 0xFF;
+}
+
+/**
+ * Save a .z80 v3 snapshot.
+ * v3 format supports both 48K and 128K machines with all hardware modes.
+ */
+export function saveZ80(
+  cpu: Z80,
+  memory: SpectrumMemory,
+  borderColor: number,
+  is128K: boolean
+): Uint8Array {
+  // ── 30-byte common header ──────────────────────────────────────────────
+
+  const header = new Uint8Array(30);
+
+  header[0] = cpu.a;
+  header[1] = cpu.f;
+  header[2] = cpu.c;
+  header[3] = cpu.b;
+  header[4] = cpu.l;
+  header[5] = cpu.h;
+
+  // PC = 0 for v2/v3 (actual PC goes in extended header)
+  w16(header, 6, 0);
+
+  w16(header, 8, cpu.sp);
+  header[10] = cpu.i;
+  header[11] = cpu.r & 0x7F;
+
+  // Byte 12: bit 0 = R bit 7, bits 1-3 = border color, bit 5 = v1 compression (unused in v3)
+  const rBit7 = (cpu.r & 0x80) >> 7;
+  header[12] = rBit7 | ((borderColor & 0x07) << 1);
+
+  header[13] = cpu.e;
+  header[14] = cpu.d;
+  header[15] = cpu.c_;
+  header[16] = cpu.b_;
+  header[17] = cpu.e_;
+  header[18] = cpu.d_;
+  header[19] = cpu.l_;
+  header[20] = cpu.h_;
+  header[21] = cpu.a_;
+  header[22] = cpu.f_;
+
+  w16(header, 23, cpu.iy);
+  w16(header, 25, cpu.ix);
+
+  header[27] = cpu.iff1 ? 1 : 0;
+  header[28] = cpu.iff2 ? 1 : 0;
+  header[29] = cpu.im & 0x03;
+
+  // ── 54-byte v3 extended header ─────────────────────────────────────────
+
+  const extHeaderLen = 54;
+  const extHeader = new Uint8Array(2 + extHeaderLen);
+
+  // Bytes 0-1: extended header length
+  w16(extHeader, 0, extHeaderLen);
+
+  // Bytes 2-3 (extBase+0,+1): PC
+  w16(extHeader, 2, cpu.pc);
+
+  // Byte 4 (extBase+2): hardware mode
+  // v3 hardware modes: 0=48K, 1=48K+IF1, 3=48K+MGT, 4=128K, 5=128K+IF1, 7=+3, 9=Pentagon, 12=+2, 13=+2A
+  const hwMode = is128K ? 4 : 0; // 4 = 128K, 0 = 48K
+  extHeader[4] = hwMode;
+
+  // Byte 5 (extBase+3): port 0x7FFD value (128K paging)
+  extHeader[5] = is128K ? memory.port7FFD : 0;
+
+  // Byte 6 (extBase+4): interface 1 ROM paged (0 = no)
+  extHeader[6] = 0;
+
+  // Byte 7 (extBase+5): hardware modify flags (0 = emulate, 1 = modify)
+  extHeader[7] = 0;
+
+  // Byte 8 (extBase+6): last OUT to port 0xFFFF (AY sound)
+  extHeader[8] = 0;
+
+  // Bytes 9-24 (extBase+7 to +22): reserved, set to 0
+  for (let i = 9; i <= 24; i++) {
+    extHeader[i] = 0;
+  }
+
+  // The rest of extended header bytes (up to 54) are also reserved
+  for (let i = 25; i < 2 + extHeaderLen; i++) {
+    extHeader[i] = 0;
+  }
+
+  // ── Data blocks ────────────────────────────────────────────────────────
+
+  const blocks: Uint8Array[] = [];
+
+  if (is128K) {
+    // 128K: write all 8 RAM banks (pages 3-10)
+    for (let bank = 0; bank < 8; bank++) {
+      const pageId = bank + 3;
+      const bankData = memory.ramBanks[bank];
+      const { data: compressed, compressed: isCompressed } = compressBlock(bankData);
+
+      // Block header: 2 bytes length + 1 byte page ID
+      const blockHeader = new Uint8Array(3);
+      if (isCompressed) {
+        w16(blockHeader, 0, compressed.length);
+      } else {
+        w16(blockHeader, 0, 0xFFFF); // 0xFFFF = uncompressed
+      }
+      blockHeader[2] = pageId;
+
+      blocks.push(blockHeader);
+      blocks.push(compressed);
+    }
+  } else {
+    // 48K: write three pages (4, 5, 8)
+    // Page 8 = 0x4000-0x7FFF (bank 5)
+    // Page 4 = 0x8000-0xBFFF (bank 2)
+    // Page 5 = 0xC000-0xFFFF (bank 0)
+
+    const pages = [
+      { pageId: 8, bank: 5 },
+      { pageId: 4, bank: 2 },
+      { pageId: 5, bank: 0 },
+    ];
+
+    for (const { pageId, bank } of pages) {
+      const bankData = memory.ramBanks[bank];
+      const { data: compressed, compressed: isCompressed } = compressBlock(bankData);
+
+      const blockHeader = new Uint8Array(3);
+      if (isCompressed) {
+        w16(blockHeader, 0, compressed.length);
+      } else {
+        w16(blockHeader, 0, 0xFFFF);
+      }
+      blockHeader[2] = pageId;
+
+      blocks.push(blockHeader);
+      blocks.push(compressed);
+    }
+  }
+
+  // ── Concatenate all parts ──────────────────────────────────────────────
+
+  let totalLen = header.length + extHeader.length;
+  for (const block of blocks) {
+    totalLen += block.length;
+  }
+
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+
+  result.set(header, offset);
+  offset += header.length;
+
+  result.set(extHeader, offset);
+  offset += extHeader.length;
+
+  for (const block of blocks) {
+    result.set(block, offset);
+    offset += block.length;
+  }
+
+  return result;
+}
