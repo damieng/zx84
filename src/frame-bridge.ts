@@ -328,6 +328,15 @@ export function onFrame(): void {
     // Tape position + play/pause state (may change via ROM trap or loader detector)
     if (spectrum!.tape.loaded) {
       setTapePosition(spectrum!.tape.position);
+
+      // Auto-rewind: if tape just finished and auto-rewind is on, rewind and resume
+      if (!spectrum!.tape.playing && spectrum!.tape.finished && settings.tapeAutoRewind()) {
+        spectrum!.tape.position = 0;
+        spectrum!.tape.paused = false;
+        spectrum!.tape.startPlayback();
+        setTapePosition(0);
+      }
+
       if (tapePlaying() !== spectrum!.tape.playing) {
         setTapePlaying(spectrum!.tape.playing);
       }
