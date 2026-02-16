@@ -99,6 +99,9 @@ export class Z80 {
   // T-state counter
   tStates = 0;
 
+  /** Vector byte for next IM 2 interrupt (0xFF = standard frame interrupt) */
+  _pendingVector = 0xFF;
+
   // Flag constants
   static readonly FLAG_C = 0x01;
   static readonly FLAG_N = 0x02;
@@ -141,6 +144,7 @@ export class Z80 {
     this.halted = false;
 
     this.tStates = 0;
+    this._pendingVector = 0xFF;
   }
 
   loadBinary(data: Uint8Array, address: number): void {
@@ -249,7 +253,10 @@ export class Z80 {
       case 2: {
         // IM 2: vectored interrupt. 19T: ack(7T), push@T+7/T+10, read@T+13/T+16
         // Real Z80 pushes PC first, then reads the vector table.
-        const vectorAddr = ((this.i << 8) | 0xFF) & 0xFFFF;
+        // Standard frame interrupt puts 0xFF on the bus; peripheral interrupts
+        // supply their own vector byte via interruptWithVector().
+        const vectorAddr = ((this.i << 8) | (this._pendingVector & 0xFF)) & 0xFFFF;
+        this._pendingVector = 0xFF;
         this.tStates += 7;
         this.push16(this.pc);
         this.tStates += 3;
@@ -265,6 +272,12 @@ export class Z80 {
         this.tStates += 3;
         return 13;
     }
+  }
+
+  /** Fire an IM 2 interrupt with a specific vector byte (for peripheral devices like Z80 PIO). */
+  interruptWithVector(vector: number): number {
+    this._pendingVector = vector & 0xFE; // PIO vectors are always even
+    return this.interrupt();
   }
 
   // --- ALU operations ---

@@ -114,6 +114,19 @@ export class Spectrum {
   kempstonMouseButtons = 0xFF;  // active-low: all released
   kempstonMouseEnabled = false;
 
+  /** AMX mouse state */
+  amxMouseEnabled = false;
+  amxMouseButtons = 0xFF;       // active-low: bits 7=LMB, 6=MMB, 5=RMB
+  amxDirX = 0;                  // current X direction bit (bit 0 of port 0x1F)
+  amxDirY = 0;                  // current Y direction bit (bit 0 of port 0x3F)
+  amxPioVectorA = 0;            // IM2 interrupt vector for X axis (port A)
+  amxPioVectorB = 0;            // IM2 interrupt vector for Y axis (port B)
+  amxPendingX = 0;              // queued X movement steps (positive=right)
+  amxPendingY = 0;              // queued Y movement steps (positive=down)
+  /** PIO control state machine: after mode 3 word, next byte is I/O mask */
+  private amxPioCtrlStateA: 'normal' | 'await_io' | 'await_int' = 'normal';
+  private amxPioCtrlStateB: 'normal' | 'await_io' | 'await_int' = 'normal';
+
   /** 32x24 character grid mirroring what RST 16 prints to the display */
   get screenGrid(): string[] { return this.screenText.screenGrid; }
 
@@ -215,6 +228,87 @@ export class Spectrum {
     wirePortIO(this);
   }
 
+  /** Handle a write to AMX PIO control port (0x5F for A, 0x7F for B). */
+  amxPioControlWrite(port: 'A' | 'B', val: number): void {
+    const state = port === 'A' ? this.amxPioCtrlStateA : this.amxPioCtrlStateB;
+    if (state === 'await_io') {
+      // I/O direction mask — consume and return to normal
+      if (port === 'A') this.amxPioCtrlStateA = 'normal'; else this.amxPioCtrlStateB = 'normal';
+      return;
+    }
+    if (state === 'await_int') {
+      // Interrupt mask — consume and return to normal
+      if (port === 'A') this.amxPioCtrlStateA = 'normal'; else this.amxPioCtrlStateB = 'normal';
+      return;
+    }
+    // Normal state: decode control word
+    if ((val & 1) === 0) {
+      // Bit 0 = 0 → interrupt vector
+      if (port === 'A') this.amxPioVectorA = val & 0xFE; else this.amxPioVectorB = val & 0xFE;
+    } else if ((val & 0x0F) === 0x0F) {
+      // Mode word: if mode 3 (bits 7:6 = 11), next byte is I/O mask
+      if ((val & 0xC0) === 0xC0) {
+        if (port === 'A') this.amxPioCtrlStateA = 'await_io'; else this.amxPioCtrlStateB = 'await_io';
+      }
+    } else if ((val & 0x0F) === 0x07) {
+      // Interrupt control word: if bit 4 set, next byte is interrupt mask
+      if (val & 0x10) {
+        if (port === 'A') this.amxPioCtrlStateA = 'await_int'; else this.amxPioCtrlStateB = 'await_int';
+      }
+    }
+    // Other control words (enable/disable int, etc.) — ignore
+  }
+
+  /**
+   * Drain pending AMX mouse movement by firing PIO interrupts.
+   * Called at the top of runFrame after the frame interrupt.
+   * Spreads interrupts evenly across the frame.
+   */
+  private drainAmxMouse(frameEnd: number): void {
+    const total = Math.abs(this.amxPendingX) + Math.abs(this.amxPendingY);
+    if (total === 0) return;
+    // Cap to avoid flooding — real mouse tops out at ~200 steps/frame
+    const cap = 200;
+    if (Math.abs(this.amxPendingX) > cap) this.amxPendingX = Math.sign(this.amxPendingX) * cap;
+    if (Math.abs(this.amxPendingY) > cap) this.amxPendingY = Math.sign(this.amxPendingY) * cap;
+    const steps = Math.min(Math.abs(this.amxPendingX) + Math.abs(this.amxPendingY), cap);
+    const spacing = Math.floor((frameEnd - this.cpu.tStates) / (steps + 1));
+
+    // Interleave X and Y steps
+    let xRemain = Math.abs(this.amxPendingX);
+    let yRemain = Math.abs(this.amxPendingY);
+    const xDir = this.amxPendingX > 0 ? 0 : 1;  // bit 0: 0=right, 1=left
+    const yDir = this.amxPendingY > 0 ? 1 : 0;  // bit 0: 1=down, 0=up
+
+    for (let i = 0; i < steps && this.cpu.tStates < frameEnd - 100; i++) {
+      // Alternate X and Y, draining whichever has more remaining
+      const doX = xRemain > 0 && (yRemain === 0 || xRemain >= yRemain);
+      if (doX) {
+        this.amxDirX = xDir;
+        this.cpu.interruptWithVector(this.amxPioVectorA);
+        xRemain--;
+        this.activity.mouseReads++;
+      } else if (yRemain > 0) {
+        this.amxDirY = yDir;
+        this.cpu.interruptWithVector(this.amxPioVectorB);
+        yRemain--;
+        this.activity.mouseReads++;
+      }
+      // Run CPU until next interrupt slot
+      const target = this.cpu.tStates + spacing;
+      while (this.cpu.tStates < target && this.cpu.tStates < frameEnd - 100) {
+        if (this.cpu.halted) {
+          this.cpu.tStates += 4;
+          this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + 1) & 0x7F);
+        } else {
+          this.cpu.step();
+        }
+      }
+    }
+    this.amxPendingX = 0;
+    this.amxPendingY = 0;
+  }
+
   /** Trace state accessors for io-ports.ts */
   get tracing(): boolean { return this._tracing; }
   get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
@@ -295,6 +389,15 @@ export class Spectrum {
     this.kempstonMouseX = 0;
     this.kempstonMouseY = 0;
     this.kempstonMouseButtons = 0xFF;
+    this.amxMouseButtons = 0xFF;
+    this.amxDirX = 0;
+    this.amxDirY = 0;
+    this.amxPioVectorA = 0;
+    this.amxPioVectorB = 0;
+    this.amxPendingX = 0;
+    this.amxPendingY = 0;
+    this.amxPioCtrlStateA = 'normal';
+    this.amxPioCtrlStateB = 'normal';
     this.beeperAccum = 0;
     this.beeperTStatesAccum = 0;
     this.beeperDCPrev = 0;
@@ -431,6 +534,11 @@ export class Spectrum {
     // stays pending and fires as soon as EI re-enables interrupts.
     let intT = this.cpu.interrupt();
     let intPending = intT === 0;  // interrupt didn't fire — keep it pending
+
+    // AMX mouse: drain queued movement steps as PIO interrupts spread across frame
+    if (this.amxMouseEnabled && (this.amxPendingX !== 0 || this.amxPendingY !== 0)) {
+      this.drainAmxMouse(frameEnd);
+    }
 
     // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;

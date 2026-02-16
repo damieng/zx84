@@ -100,6 +100,13 @@ export function wirePortIO(s: Spectrum): void {
       }
     }
 
+    // AMX mouse PIO control ports (active when AMX enabled, A7=0)
+    if (s.amxMouseEnabled && (port & 0x80) === 0) {
+      const lo = port & 0xE0;
+      if (lo === 0x40) { s.amxPioControlWrite('A', val); }  // 0x5F: Port A control
+      if (lo === 0x60) { s.amxPioControlWrite('B', val); }  // 0x7F: Port B control
+    }
+
     // AY ports — 128K only (48K has no AY chip)
     if (is128kClass(s.model)) {
       // AY register select: port 0xFFFD (A15=1, A14=1, A1=0)
@@ -142,6 +149,19 @@ export function wirePortIO(s: Spectrum): void {
         if (!isPlus3(s.model)) return 0xFF;
         s.activity.fdcAccesses++;
         return s.fdc.readData();
+      }
+    }
+
+    // AMX mouse PIO data ports (A7=0) and button port (0xDF)
+    if (s.amxMouseEnabled) {
+      if ((port & 0x80) === 0) {
+        const lo = port & 0xE0;
+        if (lo === 0x00) { s.activity.mouseReads++; return s.amxDirX & 1; }  // 0x1F: X direction
+        if (lo === 0x20) { s.activity.mouseReads++; return s.amxDirY & 1; }  // 0x3F: Y direction
+      }
+      if ((port & 0xFF) === 0xDF) {
+        s.activity.mouseReads++;
+        return s.amxMouseButtons;
       }
     }
 
