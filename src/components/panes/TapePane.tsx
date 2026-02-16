@@ -113,8 +113,8 @@ export function TapePane() {
           icon={<HiOutlineEllipsisVertical />}
           title="Tape options"
           items={[
-            { value: 'instant-load', label: 'Instant loading (ROM trap)', checked: tapeInstantLoad() },
-            { value: 'tape-turbo', label: 'Turbo loading', checked: tapeTurbo() },
+            { value: 'instant-load', label: 'Instant ROM loaders', checked: tapeInstantLoad() },
+            { value: 'tape-turbo', label: 'Accelerate custom loaders', checked: tapeTurbo() },
             { value: 'auto-rewind', label: 'Auto-rewind', checked: tapeAutoRewind() },
             { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: tapeCollapseBlocks() },
           ]}

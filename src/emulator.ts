@@ -7,24 +7,32 @@ import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } fro
 import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import { FloppySound } from '@/plus3/floppy-sound.ts';
-import { Z80 } from '@/cores/z80.ts';
 import { PALETTES } from '@/cores/ula.ts';
-import { loadSNA, saveSNA } from '@/snapshot/sna.ts';
-import { loadZ80 } from '@/snapshot/z80format.ts';
-import { loadSZX, saveSZX } from '@/snapshot/szx.ts';
-import { loadSP } from '@/snapshot/sp.ts';
-import { unzip } from '@/snapshot/zip.ts';
+import { saveSNA } from '@/snapshot/sna.ts';
+import { saveSZX } from '@/snapshot/szx.ts';
 import { parseTZX } from '@/tape/tzx.ts';
 import { parseDSK } from '@/plus3/dsk.ts';
-import { showFilePicker } from '@/ui/zip-picker.ts';
-import { disassemble, stripMarkers } from '@/debug/z80-disasm.ts';
-import { dbSave, dbLoad, persistLastFile, clearLastFile, persistTape, restoreTape, clearTape, persistDisk, restoreDisk, clearDisk } from '@/store/persistence.ts';
+import { loadSZX } from '@/snapshot/szx.ts';
+import { clearLastFile, restoreTape, restoreDisk } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 import type { TapeBlock } from '@/tape/tap.ts';
 import { onFrame, updateRegsOnce, resetSpeedTracking, forceSpeedUpdate } from '@/frame-bridge.ts';
 export { fontDataHash, updateFontPreview, loadFontStore, saveFontStore, capturedFontData } from '@/frame-bridge.ts';
 export type { FontEntry } from '@/frame-bridge.ts';
+
+// Managers
+import { ROMManager } from '@/managers/rom-manager.ts';
+import { MediaManager, type MediaLoadCallbacks } from '@/managers/media-manager.ts';
+import { DebugManager, type TraceMode } from '@/managers/debug-manager.ts';
+
+// Create manager instances
+const romManager = new ROMManager();
+const mediaManager = new MediaManager();
+const debugManager = new DebugManager();
+
+// Re-export TraceMode for compatibility
+export type { TraceMode };
 
 // ── State ───────────────────────────────────────────────────────────────
 
@@ -93,54 +101,24 @@ export let canvasEl: HTMLCanvasElement | null = null;
 
 
 
-// ── ROM cache ───────────────────────────────────────────────────────────
+// ── ROM management (via ROMManager) ─────────────────────────────────────
 
-interface ROMEntry {
-  data: Uint8Array;
-  label: string;
-}
+// Re-export ROMEntry type for compatibility
+export type { ROMEntry } from '@/managers/rom-manager.ts';
 
-const romCache: Record<string, ROMEntry> = {};
-
+/** Persist a ROM to cache and storage (delegates to ROMManager) */
 export async function persistROM(model: SpectrumModel, data: Uint8Array, label: string): Promise<void> {
-  romCache[model] = { data, label };
-  await dbSave(`rom-${model}`, data);
-  try { localStorage.setItem(`zx84-rom-label-${model}`, label); } catch { /* */ }
+  await romManager.persistROM(model, data, label);
 }
 
-export async function restoreROM(model: SpectrumModel): Promise<ROMEntry | null> {
-  if (romCache[model]) return romCache[model];
-  const data = await dbLoad(`rom-${model}`);
-  if (!data) return null;
-  const label = localStorage.getItem(`zx84-rom-label-${model}`) || 'saved ROM';
-  romCache[model] = { data, label };
-  return romCache[model];
+/** Restore a ROM from cache (delegates to ROMManager) */
+export async function restoreROM(model: SpectrumModel) {
+  return await romManager.restoreROM(model);
 }
 
-const DEFAULT_ROM_URLS: Record<SpectrumModel, string> = {
-  '48k':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum16-48/spec48.rom',
-  '128k': 'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/128/spec128uk.rom',
-  '+2':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/plus2/plus2uk.rom',
-  '+2a':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus2a/plus2a.rom',
-  '+3':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus3/plus3.rom',
-};
-
-export async function fetchDefaultROM(model: SpectrumModel): Promise<ROMEntry | null> {
-  const url = DEFAULT_ROM_URLS[model];
-  if (!url) return null;
-  setStatus(`Downloading ${model.toUpperCase()} ROM…`);
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = new Uint8Array(await resp.arrayBuffer());
-    const name = url.split('/').pop()!;
-    await persistROM(model, data, name);
-    setStatus(`${model.toUpperCase()} ROM loaded`);
-    return { data, label: name };
-  } catch (err) {
-    setStatus(`Failed to download ROM: ${(err as Error).message}`);
-    return null;
-  }
+/** Fetch default ROM from CDN (delegates to ROMManager) */
+export async function fetchDefaultROM(model: SpectrumModel) {
+  return await romManager.fetchDefaultROM(model, setStatus);
 }
 
 function loadSavedModel(): SpectrumModel | null {
@@ -318,8 +296,7 @@ export function stepInto(): void {
     spectrum.stop();
     setEmulationPaused(true);
   }
-  spectrum.cpu.step();
-  updateRegsOnce();
+  debugManager.stepInto(spectrum, updateRegsOnce);
 }
 
 export function stepOver(): void {
@@ -328,37 +305,7 @@ export function stepOver(): void {
     spectrum.stop();
     setEmulationPaused(true);
   }
-  const cpu = spectrum.cpu;
-  const op = cpu.memory[cpu.pc];
-  // CALL nn / CALL cc,nn / RST: step until SP returns to current level
-  const isCall = op === 0xCD ||                                           // CALL nn
-    (op & 0xC7) === 0xC4 ||                                              // CALL cc,nn
-    (op & 0xC7) === 0xC7 ||                                              // RST
-    (op === 0xED && ((cpu.memory[(cpu.pc + 1) & 0xFFFF] & 0xC7) === 0xB0)); // block repeat (LDIR etc)
-  // Conditional jumps: run to the next instruction (skip if taken)
-  const isCondJump =
-    op === 0x10 ||                  // DJNZ e        (2 bytes)
-    (op & 0xE7) === 0x20 ||        // JR cc,e        (2 bytes: 20/28/30/38)
-    (op & 0xC7) === 0xC2;          // JP cc,nn       (3 bytes: C2/CA/D2/DA/E2/EA/F2/FA)
-  if (isCondJump) {
-    const instrLen = (op & 0xC7) === 0xC2 ? 3 : 2;
-    const nextPC = (cpu.pc + instrLen) & 0xFFFF;
-    const limit = cpu.tStates + 5_000_000;
-    cpu.step();
-    while (cpu.pc !== nextPC && cpu.tStates < limit) {
-      cpu.step();
-    }
-  } else if (!isCall) {
-    cpu.step();
-  } else {
-    const targetSP = cpu.sp;
-    const limit = cpu.tStates + 5_000_000; // safety: max ~1.4 seconds
-    cpu.step(); // execute the CALL/RST
-    while (cpu.sp < targetSP && cpu.tStates < limit) {
-      cpu.step();
-    }
-  }
-  updateRegsOnce();
+  debugManager.stepOver(spectrum, updateRegsOnce);
 }
 
 export function stepOut(): void {
@@ -367,14 +314,7 @@ export function stepOut(): void {
     spectrum.stop();
     setEmulationPaused(true);
   }
-  const cpu = spectrum.cpu;
-  const targetSP = cpu.sp + 2; // SP after RET pops return address
-  const limit = cpu.tStates + 10_000_000; // safety: max ~2.8 seconds
-  // Run until we execute a RET that brings SP back to or above target
-  while (cpu.sp < targetSP && cpu.tStates < limit) {
-    cpu.step();
-  }
-  updateRegsOnce();
+  debugManager.stepOut(spectrum, updateRegsOnce);
 }
 
 export function resetMachine(): void {
@@ -409,90 +349,42 @@ export function toggleTurbo(): void {
 
 export function toggleBreakpoint(addr: number): void {
   if (!spectrum) return;
-  if (spectrum.breakpoints.has(addr)) {
-    spectrum.breakpoints.delete(addr);
-    setStatus(`Breakpoint removed at ${hex16(addr)}`);
-  } else {
-    spectrum.breakpoints.add(addr);
-    setStatus(`Breakpoint set at ${hex16(addr)}`);
-  }
-  updateRegsOnce();
+  debugManager.toggleBreakpoint(spectrum, addr, setStatus, updateRegsOnce);
 }
 
 export function runTo(addr: number): void {
   if (!spectrum) return;
-  // Add a temporary breakpoint, resume, and clean up when it hits
-  const wasSet = spectrum.breakpoints.has(addr);
-  spectrum.breakpoints.add(addr);
-  if (!wasSet) {
-    pendingRunTo = addr;
-  }
-  if (emulationPaused()) {
+  debugManager.runTo(spectrum, addr, emulationPaused(), () => {
     clearDebugPanels();
-    spectrum.start();
     setEmulationPaused(false);
-  }
+  });
 }
 
-/** Address of a temporary "run to" breakpoint to clean up on hit */
-let pendingRunTo = -1;
-export function getPendingRunTo(): number { return pendingRunTo; }
-export function clearPendingRunTo(): void { pendingRunTo = -1; }
+export function getPendingRunTo(): number {
+  return debugManager.getPendingRunTo();
+}
+
+export function clearPendingRunTo(): void {
+  debugManager.clearPendingRunTo();
+}
 
 export function copyCpuState(): void {
   if (!spectrum) return;
-  const cpu = spectrum.cpu;
-  const f = cpu.f;
-  const flags = [
-    `Sign=${(f & Z80.FLAG_S) ? 1 : 0}`,
-    `Zero=${(f & Z80.FLAG_Z) ? 1 : 0}`,
-    `Half=${(f & Z80.FLAG_H) ? 1 : 0}`,
-    `P/V=${(f & Z80.FLAG_PV) ? 1 : 0}`,
-    `Sub=${(f & Z80.FLAG_N) ? 1 : 0}`,
-    `Carry=${(f & Z80.FLAG_C) ? 1 : 0}`,
-  ].join('  ');
-  const iff = cpu.iff1 ? 'EI' : 'DI';
-  const halt = cpu.halted ? ' HALT' : '';
-  const lines = [
-    `AF  ${hex16(cpu.af)}  AF' ${hex16((cpu.a_ << 8) | cpu.f_)}`,
-    `BC  ${hex16(cpu.bc)}  BC' ${hex16((cpu.b_ << 8) | cpu.c_)}`,
-    `DE  ${hex16(cpu.de)}  DE' ${hex16((cpu.d_ << 8) | cpu.e_)}`,
-    `HL  ${hex16(cpu.hl)}  HL' ${hex16((cpu.h_ << 8) | cpu.l_)}`,
-    `IX  ${hex16(cpu.ix)}  IY  ${hex16(cpu.iy)}  ${iff}  IM${cpu.im}${halt}`,
-    `SP  ${hex16(cpu.sp)}  PC  ${hex16(cpu.pc)}  IR  ${hex8(cpu.i)}${hex8(cpu.r)}`,
-    `Flags: ${flags}`,
-  ];
-  // Disassembly at PC
-  const mem = cpu.memory;
-  const dLines = disassemble(mem, cpu.pc, 16);
-  lines.push('');
-  for (const dl of dLines) {
-    const addr = hex16(dl.addr);
-    const bytes: string[] = [];
-    for (let i = 0; i < dl.length; i++) bytes.push(hex8(mem[(dl.addr + i) & 0xFFFF]));
-    const bytesStr = bytes.join(' ').padEnd(11);
-    const mnem = stripMarkers(dl.text);
-    lines.push(`${dl.addr === cpu.pc ? '>' : ' '} ${addr}  ${bytesStr}  ${mnem}`);
-  }
-  navigator.clipboard.writeText(lines.join('\n'));
-  setStatus('CPU state + disassembly copied to clipboard');
+  debugManager.copyCpuState(spectrum, setStatus);
 }
-
-export type TraceMode = 'full' | 'contention' | 'portio';
 
 export function startTrace(mode: TraceMode = 'full'): void {
   if (!spectrum) return;
-  spectrum.startTrace(mode);
-  setTracing(true);
+  debugManager.startTrace(spectrum, mode, () => setTracing(true));
 }
 
 export function stopTrace(): void {
   if (!spectrum) return;
-  const text = spectrum.stopTrace();
-  setTracing(false);
-  navigator.clipboard.writeText(text);
-  const lines = text.split('\n').length;
-  setStatus(`Trace copied to clipboard (${lines.toLocaleString()} lines)`);
+  debugManager.stopTrace(spectrum, (text, lineCount) => {
+    setTracing(false);
+    navigator.clipboard.writeText(text);
+    setStatus(`Trace copied to clipboard (${lineCount.toLocaleString()} lines)`);
+  });
 }
 
 // ── Model switching ─────────────────────────────────────────────────────
@@ -593,255 +485,63 @@ async function ensure128kROM(): Promise<boolean> {
   return false;
 }
 
-async function applySnapshot(data: Uint8Array, filename: string): Promise<boolean> {
-  if (!spectrum) {
-    setStatus('Load a ROM first');
-    return false;
-  }
-
-  const ext = filename.toLowerCase().split('.').pop();
-
-  try {
-    if (ext === 'sna') {
-      if (data.length > 49179 && !is128kClass(currentModel())) {
-        if (!await ensure128kROM()) {
-          setStatus('128K SNA requires a 128K ROM — load one first');
-          return false;
-        }
-      }
-
-      spectrum!.stop();
-      spectrum!.reset();
-      const result = loadSNA(data, spectrum!.cpu, spectrum!.memory);
-      spectrum!.ula.borderColor = result.borderColor;
-      spectrum!.cpu.memory = spectrum!.memory.flat;
-      spectrum!.start();
-      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} SNA: ${filename}`);
-    } else if (ext === 'z80') {
-      spectrum.stop();
-      spectrum.reset();
-      const result = loadZ80(data, spectrum.cpu, spectrum.memory);
-
-      if (result.is128K && !is128kClass(currentModel())) {
-        if (!await ensure128kROM()) {
-          setStatus('128K .z80 snapshot requires a 128K ROM — load one first');
-          return false;
-        }
-        spectrum!.stop();
-        spectrum!.reset();
-        loadZ80(data, spectrum!.cpu, spectrum!.memory);
-      }
-
-      spectrum!.ula.borderColor = result.borderColor;
-      spectrum!.cpu.memory = spectrum!.memory.flat;
-      spectrum!.start();
-      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
-    } else if (ext === 'szx') {
-      spectrum.stop();
-      spectrum.reset();
-      const result = await loadSZX(data, spectrum.cpu, spectrum.memory);
-
-      if (result.is128K && !is128kClass(currentModel())) {
-        if (!await ensure128kROM()) {
-          setStatus('128K .szx snapshot requires a 128K ROM — load one first');
-          return false;
-        }
-        spectrum!.stop();
-        spectrum!.reset();
-        await loadSZX(data, spectrum!.cpu, spectrum!.memory);
-      }
-
-      // Apply paging state for 128K
-      if (result.is128K) {
-        spectrum!.memory.port7FFD = result.port7FFD;
-        spectrum!.memory.currentBank = result.port7FFD & 0x07;
-        spectrum!.memory.currentROM = (result.port7FFD >> 4) & 1;
-        spectrum!.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
-        if (isPlus2AClass(currentModel())) {
-          spectrum!.memory.port1FFD = result.port1FFD;
-          spectrum!.memory.specialPaging = (result.port1FFD & 1) !== 0;
-        }
-        spectrum!.memory.applyBanking();
-      }
-
-      spectrum!.ula.borderColor = result.borderColor;
-      spectrum!.cpu.memory = spectrum!.memory.flat;
-
-      // Restore AY state if present
-      if (result.ayRegs) {
-        spectrum!.ay.setRegisters(result.ayRegs);
-        if (result.ayCurrentReg !== undefined) {
-          spectrum!.ay.selectedReg = result.ayCurrentReg;
-        }
-      }
-
-      spectrum!.start();
-      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .szx: ${filename}`);
-    } else if (ext === 'sp') {
-      spectrum.stop();
-      spectrum.reset();
-      const result = loadSP(data, spectrum.cpu, spectrum.memory);
-
-      if (result.is128K && !is128kClass(currentModel())) {
-        if (!await ensure128kROM()) {
-          setStatus('128K .sp snapshot requires a 128K ROM — load one first');
-          return false;
-        }
-        spectrum!.stop();
-        spectrum!.reset();
-        loadSP(data, spectrum!.cpu, spectrum!.memory);
-      }
-
-      // Apply paging state for 128K
-      if (result.is128K) {
-        spectrum!.memory.port7FFD = result.port7FFD;
-        spectrum!.memory.currentBank = result.port7FFD & 0x07;
-        spectrum!.memory.currentROM = (result.port7FFD >> 4) & 1;
-        spectrum!.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
-        spectrum!.memory.applyBanking();
-      }
-
-      spectrum!.ula.borderColor = result.borderColor;
-      spectrum!.cpu.memory = spectrum!.memory.flat;
-      spectrum!.start();
-      setStatus(`Loaded ${result.is128K ? '128K' : '48K'} .sp: ${filename}`);
-    } else {
-      setStatus(`Unknown format: .${ext}`);
-      return false;
-    }
-  } catch (e) {
-    setStatus(`Error: ${(e as Error).message}`);
-    return false;
-  }
-  unpause();
-  return true;
-}
-
-// ── Tape loading ────────────────────────────────────────────────────────
-
-export function applyTape(data: Uint8Array, filename: string): void {
-  if (!spectrum) { setStatus('Load a ROM first'); return; }
-
-  // Stop the machine first to prevent the frame loop from interfering
-  spectrum.stop();
-
-  const ext = filename.toLowerCase().split('.').pop();
-  let blocks: TapeBlock[];
-  try {
-    if (ext === 'tzx') {
-      blocks = parseTZX(data);
-    } else {
-      blocks = spectrum.tape.parseTAP(data);
-    }
-  } catch (e) {
-    spectrum.start();
-    setStatus(`Error: ${(e as Error).message}`);
-    return;
-  }
-
-  // Set tape state on the deck in play mode but paused —
-  // like pressing PLAY on a real cassette deck but with the pause button held.
-  // User can unpause when ready to load.
-  spectrum.tape.blocks = blocks;
-  spectrum.tape.position = 0;
-  spectrum.tape.paused = true;
-  spectrum.tape.startPlayback();
-
-  // Reset machine (preserves tape) and restart
-  spectrum.reset();
-  spectrum.start();
-
-  // Update UI signals after machine state is settled
-  batch(() => {
-    setTapeLoaded(true);
-    setTapeName(filename);
-    setTapeBlocks([...blocks]);
-    setTapePosition(0);
-    setTapePaused(true);
-    setTapePlaying(true);
-  });
-
-  unpause();
-  setStatus(`Tape loaded: ${filename}`);
-}
-
-// ── File routing ────────────────────────────────────────────────────────
-
-export async function loadFile(data: Uint8Array, filename: string, unit?: number): Promise<void> {
-  const ext = filename.toLowerCase().split('.').pop();
-
-  if (ext === 'zip') {
-    await handleZipFile(data, unit);
-    return;
-  }
-
-  if (ext === 'tap' || ext === 'tzx') {
-    applyTape(data, filename);
-    persistLastFile(data, filename);
-    persistTape(data, filename);
-    return;
-  }
-
-  if (ext === 'dsk') {
-    if (!spectrum) { setStatus('Load a ROM first'); return; }
-    try {
-      const image = parseDSK(data);
-      const diskUnit = unit ?? 0; // Default to unit 0 if not specified
-      if (diskUnit === 0) {
+/** Build media callbacks for the MediaManager */
+function buildMediaCallbacks(): MediaLoadCallbacks {
+  return {
+    onStatus: setStatus,
+    onTapeLoaded: (blocks, filename) => {
+      batch(() => {
+        setTapeLoaded(true);
+        setTapeName(filename);
+        setTapeBlocks([...blocks]);
+        setTapePosition(0);
+        setTapePaused(true);
+        setTapePlaying(true);
+      });
+    },
+    onDiskLoaded: (image, filename, unit) => {
+      if (unit === 0) {
         setCurrentDiskInfo(image);
         setCurrentDiskName(filename);
       } else {
         setCurrentDiskInfoB(image);
         setCurrentDiskNameB(filename);
       }
-      spectrum.loadDisk(image, diskUnit);
-      setStatus(`Disk ${diskUnit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
-      if (diskUnit === 0) persistLastFile(data, filename);
-      persistDisk(diskUnit, data, filename);
-    } catch (e) {
-      setStatus(`DSK error: ${(e as Error).message}`);
-    }
-    return;
-  }
-
-  if (ext === 'sna' || ext === 'z80' || ext === 'szx' || ext === 'sp') {
-    if (await applySnapshot(data, filename)) {
-      persistLastFile(data, filename);
-    }
-    return;
-  }
-
-  setStatus(`Unknown file type: .${ext}`);
+    },
+    onSnapshotLoaded: (_filename) => {
+      // No special action needed beyond what MediaManager already does
+    },
+    unpause,
+    ensure128kROM,
+  };
 }
 
-async function handleZipFile(data: Uint8Array, unit?: number): Promise<void> {
-  let entries;
-  try {
-    entries = await unzip(data);
-  } catch (e) {
-    setStatus(`ZIP error: ${(e as Error).message}`);
-    return;
-  }
 
-  if (entries.length === 0) {
-    setStatus('ZIP contains no loadable files');
-    return;
-  }
+// ── Tape/Disk loading (via MediaManager) ───────────────────────────────
 
-  let chosen;
-  if (entries.length === 1) {
-    chosen = entries[0];
-  } else {
-    const names = entries.map(e => e.name);
-    const picked = await showFilePicker(names);
-    if (!picked) {
-      setStatus('Load cancelled');
-      return;
-    }
-    chosen = entries.find(e => e.name === picked)!;
-  }
+export function applyTape(data: Uint8Array, filename: string): void {
+  if (!spectrum) { setStatus('Load a ROM first'); return; }
 
-  await loadFile(chosen.data, chosen.name, unit);
+  mediaManager.applyTape(spectrum, data, filename, {
+    onStatus: setStatus,
+    onTapeLoaded: (blocks, filename) => {
+      batch(() => {
+        setTapeLoaded(true);
+        setTapeName(filename);
+        setTapeBlocks([...blocks]);
+        setTapePosition(0);
+        setTapePaused(true);
+        setTapePlaying(true);
+      });
+    },
+    unpause,
+  });
+}
+
+// ── File routing ────────────────────────────────────────────────────────
+
+export async function loadFile(data: Uint8Array, filename: string, unit?: number): Promise<void> {
+  await mediaManager.loadFile(spectrum, data, filename, currentModel(), buildMediaCallbacks(), unit);
 }
 
 // ── Save snapshot ───────────────────────────────────────────────────────
@@ -975,58 +675,48 @@ export function toggleAutoRewind(): void {
 
 export function ejectTape(): void {
   if (!spectrum) return;
-  spectrum.tape.stopPlayback();
-  spectrum.tape.blocks = [];
-  spectrum.tape.position = 0;
-  spectrum.tape.paused = true;
-  setTapeLoaded(false);
-  setTapeName('');
-  setTapeBlocks([]);
-  setTapePosition(0);
-  setTapePaused(true);
-  setTapePlaying(false);
-  clearTape();
-  setStatus('Tape ejected');
+  mediaManager.ejectTape(spectrum, () => {
+    batch(() => {
+      setTapeLoaded(false);
+      setTapeName('');
+      setTapeBlocks([]);
+      setTapePosition(0);
+      setTapePaused(true);
+      setTapePlaying(false);
+    });
+  }, setStatus);
 }
 
 export function ejectDisk(unit: number = 0): void {
   if (!spectrum) return;
-  if (spectrum.fdc) spectrum.fdc.ejectDisk(unit);
-  clearDisk(unit);
-  if (unit === 0) {
-    setCurrentDiskInfo(null);
-    setCurrentDiskName('');
-    setDiskInfoHtml('');
-    setStatus('Disk A: ejected');
-  } else {
-    setCurrentDiskInfoB(null);
-    setCurrentDiskNameB('');
-    setStatus('Disk B: ejected');
-  }
+  mediaManager.ejectDisk(spectrum, unit, (u) => {
+    if (u === 0) {
+      setCurrentDiskInfo(null);
+      setCurrentDiskName('');
+      setDiskInfoHtml('');
+    } else {
+      setCurrentDiskInfoB(null);
+      setCurrentDiskNameB('');
+    }
+  }, setStatus);
 }
 
 export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number): void {
   if (!spectrum) { setStatus('Load a ROM first'); return; }
-  try {
-    const image = parseDSK(data);
-    if (unit === 0) {
-      setCurrentDiskInfo(image);
-      setCurrentDiskName(filename);
-    } else {
-      setCurrentDiskInfoB(image);
-      setCurrentDiskNameB(filename);
-    }
-    spectrum.loadDisk(image, unit);
-    setStatus(`Disk ${unit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
-    if (unit === 0) persistLastFile(data, filename);
-    persistDisk(unit, data, filename);
-  } catch (e) {
-    setStatus(`DSK error: ${(e as Error).message}`);
-  }
+  mediaManager.loadDisk(spectrum, data, filename, unit, {
+    onStatus: setStatus,
+    onDiskLoaded: (image, filename, unit) => {
+      if (unit === 0) {
+        setCurrentDiskInfo(image);
+        setCurrentDiskName(filename);
+      } else {
+        setCurrentDiskInfoB(image);
+        setCurrentDiskNameB(filename);
+      }
+    },
+  });
 }
 
-function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
-function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
 
 // ── Joystick helpers ────────────────────────────────────────────────────
 

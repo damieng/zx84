@@ -6,7 +6,8 @@
       "Bash(npm run hmr-unfreeze:*)",
       "Bash(npm ls:*)",
       "Bash(npx vite build:*)",
-      "Bash(timeout 10 npx vite:*)"
+      "Bash(timeout 10 npx vite:*)",
+      "Bash(done)"
     ]
   }
 }
