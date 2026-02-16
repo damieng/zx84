@@ -60,6 +60,7 @@ export function LoadSavePane() {
           <HiOutlineArrowDownTray /> Save
         </button>
         <div ref={menuRef} class="save-menu" style="display:none">
+          <div class="save-menu-item" onClick={handleSave(() => saveSnapshot('szx'))}>Snapshot (.szx)</div>
           <div class="save-menu-item" onClick={handleSave(() => saveSnapshot('sna'))}>Snapshot (.sna)</div>
           <div class="save-menu-item" onClick={handleSave(() => saveSnapshot('z80'))}>Snapshot (.z80)</div>
           <div class="save-menu-item" onClick={handleSave(() => saveScreenshot('png'))}>Screenshot (.png)</div>
