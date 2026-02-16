@@ -82,6 +82,7 @@ export const [fontName, setFontName] = /*@once*/ createRoot(() => createSignal(g
 
 export const [diskMode, setDiskMode] = /*@once*/ createRoot(() => createSignal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios'));
 export const [dualDrives, setDualDrives] = /*@once*/ createRoot(() => createSignal(getSaved('dual-drives', 'off') === 'on'));
+export const [diskSoundEnabled, setDiskSoundEnabled] = /*@once*/ createRoot(() => createSignal(getSaved('disk-sound', 'on') === 'on'));
 
 // ── Tape settings ───────────────────────────────────────────────────────
 
@@ -89,6 +90,7 @@ export const [tapeAutoRewind, setTapeAutoRewind] = /*@once*/ createRoot(() => cr
 export const [tapeCollapseBlocks, setTapeCollapseBlocks] = /*@once*/ createRoot(() => createSignal(getSaved('tape-collapse-blocks', 'on') === 'on'));
 export const [tapeInstantLoad, setTapeInstantLoad] = /*@once*/ createRoot(() => createSignal(getSaved('tape-instant-load', 'on') === 'on'));
 export const [tapeTurbo, setTapeTurbo] = /*@once*/ createRoot(() => createSignal(getSaved('tape-turbo', 'on') === 'on'));
+export const [tapeSoundEnabled, setTapeSoundEnabled] = /*@once*/ createRoot(() => createSignal(getSaved('tape-sound', 'on') === 'on'));
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@ import {
   tapeRewind, tapeTogglePlay, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile, tapePrev, tapeNext, applyDisplaySettings,
 } from '@/emulator.ts';
-import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeTurbo, setTapeTurbo } from '@/store/settings.ts';
+import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeTurbo, setTapeTurbo, tapeSoundEnabled, setTapeSoundEnabled } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
 import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
@@ -115,6 +115,7 @@ export function TapePane() {
           items={[
             { value: 'instant-load', label: 'Instant ROM loaders', checked: tapeInstantLoad() },
             { value: 'tape-turbo', label: 'Accelerate custom loaders', checked: tapeTurbo() },
+            { value: 'tape-sound', label: 'Loading sounds', checked: tapeSoundEnabled() },
             { value: 'auto-rewind', label: 'Auto-rewind', checked: tapeAutoRewind() },
             { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: tapeCollapseBlocks() },
           ]}
@@ -127,6 +128,9 @@ export function TapePane() {
               setTapeTurbo(!tapeTurbo());
               persistSetting('tape-turbo', tapeTurbo() ? 'on' : 'off');
               applyDisplaySettings();
+            } else if (value === 'tape-sound') {
+              setTapeSoundEnabled(!tapeSoundEnabled());
+              persistSetting('tape-sound', tapeSoundEnabled() ? 'on' : 'off');
             } else if (value === 'auto-rewind') {
               toggleAutoRewind();
             } else if (value === 'collapse-blocks') {

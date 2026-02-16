@@ -8,7 +8,7 @@ import {
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
   setDiskModeAction, ejectDisk, loadFile,
 } from '@/emulator.ts';
-import { diskMode, dualDrives, setDualDrives, persistSetting } from '@/store/settings.ts';
+import { diskMode, dualDrives, setDualDrives, diskSoundEnabled, setDiskSoundEnabled, persistSetting } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 
@@ -68,11 +68,15 @@ export function DrivePane() {
             { value: 'fdc', label: 'Emulate 765 FDC', checked: diskMode() === 'fdc' },
             { value: 'bios', label: 'Trap +3DOS calls', checked: diskMode() === 'bios' },
             { value: 'dual', label: 'Enable B: drive', checked: dualDrives() },
+            { value: 'disk-sound', label: 'Drive sounds', checked: diskSoundEnabled() },
           ]}
           onSelect={(value) => {
             if (value === 'dual') {
               setDualDrives(!dualDrives());
               persistSetting('dual-drives', dualDrives() ? 'on' : 'off');
+            } else if (value === 'disk-sound') {
+              setDiskSoundEnabled(!diskSoundEnabled());
+              persistSetting('disk-sound', diskSoundEnabled() ? 'on' : 'off');
             } else {
               setDiskModeAction(value as 'fdc' | 'bios');
             }

@@ -385,10 +385,15 @@ export function onFrame(): void {
   });
 
   // Floppy sound (non-signal, side effect)
-  if (floppySound && isPlus3(model)) {
-    if (!floppySound['ctx'] && spectrum['audio'].ctx) {
-      floppySound.attach(spectrum['audio'].ctx);
+  if (floppySound && isPlus3(model) && settings.diskSoundEnabled()) {
+    // Attach to audio context if not already attached
+    if (!floppySound['ctx'] && spectrum!['audio'].ctx) {
+      floppySound.attach(spectrum!['audio'].ctx);
     }
-    floppySound.update(spectrum.fdc.motorOn, spectrum.fdc.currentTrack);
+    // Update motor state (this generates the sounds)
+    floppySound.update(spectrum!.fdc.motorOn, spectrum!.fdc.currentTrack);
+  } else if (floppySound) {
+    // Stop any running motor sound when disabled
+    floppySound.reset();
   }
 }

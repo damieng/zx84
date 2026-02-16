@@ -138,6 +138,15 @@ export class ULA {
   }
 
   /**
+   * Get the effective EAR bit for audio output.
+   * During tape playback (with sound enabled), this is the tape signal;
+   * otherwise it's the beeper.
+   */
+  getAudioEarBit(tapeSoundEnabled: boolean): number {
+    return (this.tapeActive && tapeSoundEnabled) ? this.tapeEarBit : this.beeperBit;
+  }
+
+  /**
    * Render the full screen (border + display area) from memory.
    * Called once per frame (non-sub-frame path).
    */

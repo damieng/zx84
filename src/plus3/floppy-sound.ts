@@ -25,7 +25,7 @@ export class FloppySound {
     if (this.ctx) return;
     this.ctx = ctx;
     this.masterGain = ctx.createGain();
-    this.masterGain.gain.value = 0.06;
+    this.masterGain.gain.value = 0.4;
     this.masterGain.connect(ctx.destination);
   }
 
