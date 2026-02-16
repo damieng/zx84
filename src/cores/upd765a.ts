@@ -68,6 +68,16 @@ function paramCount(cmdByte: number): number {
 }
 
 export class UPD765A {
+  // ── Debug logging ───────────────────────────────────────────────────
+
+  private enableLogging = true; // Set to false to disable FDC logging
+
+  private log(...args: any[]): void {
+    if (this.enableLogging) {
+      console.log('[FDC]', ...args);
+    }
+  }
+
   // ── Phase & buffers ─────────────────────────────────────────────────
 
   private phase = Phase.Idle;
@@ -125,6 +135,9 @@ export class UPD765A {
   private exN = 0;
   /** Reference to current track for write-back */
   private exTrack: DskTrack | null = null;
+  /** Status registers from sector (for CRC error reporting) */
+  private exST1 = 0;
+  private exST2 = 0;
 
   // ── Public API ─────────────────────────────────────────────────────
 
@@ -150,9 +163,17 @@ export class UPD765A {
   insertDisk(image: DskImage, unit: number = 0): void {
     this.disks[unit & 3] = image;
     this.idIndex[unit & 3] = 0;
+    this.log(`🎮 Disk inserted in unit ${unit}: ${image.numTracks} tracks, ${image.numSides} sides, ${image.format} format`);
+    if (image.protection) {
+      this.log(`   🔒 Copy protection detected: ${image.protection}`);
+    }
+    if (image.diskFormat) {
+      this.log(`   📀 Disk format: ${image.diskFormat}`);
+    }
   }
 
   ejectDisk(unit: number = 0): void {
+    this.log(`📤 Disk ejected from unit ${unit}`);
     this.disks[unit & 3] = null;
   }
 
@@ -294,26 +315,27 @@ export class UPD765A {
       this.exBuf = this.prepareReadBuffer(sector);
       this.exPos = 0;
     }
+
+    // Update status registers for the new sector (preserve CRC errors!)
+    this.exST1 = sector.st1;
+    this.exST2 = sector.st2;
+
     return true;
   }
 
   /**
-   * Prepare sector data for reading. For weak sectors (st2 & 0x40),
+   * Prepare sector data for reading. For weak sectors (st2 & 0x20),
    * return randomized data to emulate Speedlock copy protection.
    */
   private prepareReadBuffer(sector: DskSector): Uint8Array {
-    // TEMPORARILY DISABLED — weak sector randomization
-    // Will be enabled after Read Track implementation is complete
-    return sector.data;
-
-    /* DISABLED CODE — uncomment to enable weak sector randomization:
-    // Check if this is a weak sector (bit 6 of ST2)
-    if ((sector.st2 & 0x40) === 0) {
+    // Check if this is a weak sector (ST2 bit 5 = Data Error / CRC error)
+    // Note: ST2 bit 6 (0x40) is Control Mark (deleted data), NOT a weak sector!
+    if ((sector.st2 & 0x20) === 0) {
       // Normal sector — return original data
       return sector.data;
     }
 
-    // Weak sector — create a copy with random variations
+    // Weak sector (CRC error) — create a copy with random variations
     const buf = new Uint8Array(sector.data.length);
     buf.set(sector.data);
 
@@ -327,7 +349,6 @@ export class UPD765A {
     }
 
     return buf;
-    */
   }
 
   /** Write the execution buffer back into the current sector's data. */
@@ -342,13 +363,24 @@ export class UPD765A {
   /** End execution phase with success result. */
   private finishExecution(): void {
     const st0 = (this.exHead << 2) | this.exUnit;
-    this.result([st0, 0x00, 0x00, this.exC, this.exH, this.exR, this.exN]);
+    // Return actual ST1 and ST2 from the sector (preserves CRC errors!)
+    // Speedlock checks for intentional CRC errors - must not "fix" them!
+    this.log(`  ← Result: ST0=0x${st0.toString(16).padStart(2, '0')} ST1=0x${this.exST1.toString(16).padStart(2, '0')} ST2=0x${this.exST2.toString(16).padStart(2, '0')} C=${this.exC} H=${this.exH} R=${this.exR} N=${this.exN}`);
+    if (this.exST1 || this.exST2) {
+      this.log(`  ⚠ CRC/Error flags present in result!`);
+    }
+    this.result([st0, this.exST1, this.exST2, this.exC, this.exH, this.exR, this.exN]);
   }
 
   // ── Command dispatch ───────────────────────────────────────────────
 
   private exec(): void {
-    switch (this.cmdBuf[0] & 0x1F) {
+    const cmd = this.cmdBuf[0] & 0x1F;
+    const cmdName = this.getCommandName(cmd);
+    this.log(`CMD: ${cmdName} (0x${cmd.toString(16).padStart(2, '0').toUpperCase()})`,
+             `params=[${this.cmdBuf.slice(1).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
+
+    switch (cmd) {
       case CMD_SPECIFY:       this.cmdSpecify(); break;
       case CMD_SENSE_DRIVE:   this.cmdSenseDrive(); break;
       case CMD_SENSE_INT:     this.cmdSenseInt(); break;
@@ -366,6 +398,28 @@ export class UPD765A {
       case CMD_SCAN_HIGH_EQ:  this.cmdReadWrite(); break;
       case CMD_VERSION:       this.cmdVersion(); break;
       default:                this.cmdInvalid(); break;
+    }
+  }
+
+  private getCommandName(cmd: number): string {
+    switch (cmd) {
+      case CMD_READ_TRACK: return 'READ_TRACK';
+      case CMD_SPECIFY: return 'SPECIFY';
+      case CMD_SENSE_DRIVE: return 'SENSE_DRIVE';
+      case CMD_WRITE_DATA: return 'WRITE_DATA';
+      case CMD_READ_DATA: return 'READ_DATA';
+      case CMD_RECALIBRATE: return 'RECALIBRATE';
+      case CMD_SENSE_INT: return 'SENSE_INT';
+      case CMD_WRITE_DELETED: return 'WRITE_DELETED';
+      case CMD_READ_ID: return 'READ_ID';
+      case CMD_READ_DELETED: return 'READ_DELETED';
+      case CMD_FORMAT_TRACK: return 'FORMAT_TRACK';
+      case CMD_SEEK: return 'SEEK';
+      case CMD_VERSION: return 'VERSION';
+      case CMD_SCAN_EQUAL: return 'SCAN_EQUAL';
+      case CMD_SCAN_LOW_EQ: return 'SCAN_LOW_EQ';
+      case CMD_SCAN_HIGH_EQ: return 'SCAN_HIGH_EQ';
+      default: return 'UNKNOWN';
     }
   }
 
@@ -401,6 +455,7 @@ export class UPD765A {
   /** Recalibrate — seek to track 0. Generates interrupt. */
   private cmdRecalibrate(): void {
     const unit = this.cmdBuf[1] & 0x03;
+    this.log(`  → Unit=${unit} recalibrating to track 0`);
     this.pcn[unit] = 0;
     this.intPending = true;
     this.intST0 = ST0_SEEK_END | unit;
@@ -412,6 +467,7 @@ export class UPD765A {
   private cmdSeek(): void {
     const unit = this.cmdBuf[1] & 0x03;
     const ncn = this.cmdBuf[2];
+    this.log(`  → Unit=${unit} seeking to cylinder ${ncn}`);
     this.pcn[unit] = ncn;
     this.intPending = true;
     this.intST0 = ST0_SEEK_END | unit;
@@ -442,10 +498,13 @@ export class UPD765A {
     const r = this.cmdBuf[4], n = this.cmdBuf[5];
     const eot = this.cmdBuf[6];
 
+    this.log(`  → Unit=${unit} Head=${head} C=${c} H=${h} R=${r} N=${n} (${128 << n} bytes) EOT=${eot}`);
+
     const track = this.getTrack(unit, h);
 
     if (!track) {
       // No disk or no track — abnormal termination
+      this.log(`  ✗ No disk or track not found (C=${c}, H=${h})`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
       this.result([st0, 0x01, 0x00, c, h, r, n]); // ST1=MA
       return;
@@ -455,12 +514,14 @@ export class UPD765A {
     const idx = track.sectorMap.get(r);
     if (idx === undefined) {
       // Sector not found — No Data
+      this.log(`  ✗ Sector R=${r} not found on track`);
       const st0 = ST0_ABNORMAL | (head << 2) | unit;
       this.result([st0, 0x04, 0x00, c, h, r, n]); // ST1=ND (bit 2)
       return;
     }
 
     const sector = track.sectors[idx];
+    this.log(`  ✓ Found sector: actual size=${sector.data.length} bytes, ST1=0x${sector.st1.toString(16).padStart(2, '0')} ST2=0x${sector.st2.toString(16).padStart(2, '0')}`);
     const isWrite = cmd === CMD_WRITE_DATA || cmd === CMD_WRITE_DELETED;
 
     // Save execution state
@@ -468,7 +529,7 @@ export class UPD765A {
     this.exHead = head;
     this.exC = c;
     this.exH = h;
-    this.exN = n;
+    this.exN = n;  // Expected size from command (may differ from actual!)
     this.exR = r;
     this.exEOT = eot;
     this.exTrack = track;
@@ -481,6 +542,12 @@ export class UPD765A {
     this.latchWriting = isWrite;
     this.latchFrames = 25; // ~0.5s at 50fps
 
+    // OVERLAPPING SECTOR SUPPORT:
+    // We use sector.data.length, which may NOT match the size claimed by
+    // the N parameter (from command or sector ID). Speedlock protection
+    // uses sectors where the ID claims 512 bytes (N=2) but only 256 bytes
+    // of physical data exist. We read what's actually there and move on.
+    // No validation, no errors - just like real hardware.
     if (isWrite) {
       this.exBuf = new Uint8Array(sector.data.length);
       this.exPos = 0;
@@ -488,6 +555,12 @@ export class UPD765A {
       this.exBuf = this.prepareReadBuffer(sector);
       this.exPos = 0;
     }
+
+    // CRC ERROR SUPPORT: Capture sector error flags (critical for Speedlock!)
+    // Speedlock checks that sectors with intentional CRC errors return the
+    // proper error status. If we "fix" errors or return ST1/ST2=0, it fails.
+    this.exST1 = sector.st1;
+    this.exST2 = sector.st2;
 
     this.phase = Phase.Execution;
   }
@@ -503,17 +576,23 @@ export class UPD765A {
     const r = this.cmdBuf[4], n = this.cmdBuf[5];
     const eot = this.cmdBuf[6];
 
+    this.log(`  → Unit=${unit} Head=${head} C=${c} H=${h} - Reading entire raw track`);
+
     const track = this.getTrack(unit, h);
 
     if (!track || track.sectors.length === 0) {
       // No disk or empty track
+      this.log(`  ✗ No disk or empty track`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
       this.result([st0, 0x01, 0x00, c, h, r, n]);
       return;
     }
 
+    this.log(`  ✓ Track has ${track.sectors.length} sectors, Gap3=${track.gap3}, Filler=0x${(track.filler || 0x4E).toString(16).padStart(2, '0')}`);
+
     // Build raw track data with proper gaps and formatting
     const trackData = this.buildRawTrack(track);
+    this.log(`  → Built raw track data: ${trackData.length} bytes`);
 
     // Save execution state
     this.exUnit = unit;
@@ -526,6 +605,10 @@ export class UPD765A {
     this.exTrack = track;
     this.exWriting = false;
     this.exReadTrack = true; // Flag: reading entire raw track
+
+    // Read Track returns raw data, ST1/ST2 typically 0 (no errors at track level)
+    this.exST1 = 0;
+    this.exST2 = 0;
 
     // Latch for UI display
     this.latchR = r;
@@ -581,10 +664,17 @@ export class UPD765A {
       parts.push(new Uint8Array(12).fill(0x00));
 
       // Data Address Mark — 3×0xA1 + 0xFB (or 0xF8 for deleted data)
-      const dam = (sector.st2 & 0x40) ? 0xF8 : 0xFB; // Use 0xF8 for sectors with errors
+      // ST2 bit 6 (0x40) = Control Mark = Deleted Data Mark
+      const dam = (sector.st2 & 0x40) ? 0xF8 : 0xFB;
       parts.push(new Uint8Array([0xA1, 0xA1, 0xA1, dam]));
 
       // Data Field — the actual sector data
+      // CRITICAL: We output sector.data.length bytes, which may NOT match
+      // the size claimed by sector.n in the ID field. This is intentional!
+      // Speedlock uses "overlapping sectors" where N=2 (512 bytes) but the
+      // physical data is only 256 bytes, causing the next sector ID to
+      // appear "early". Extended DSK format preserves this; standard DSK
+      // enforces 128<<N and will break these protections.
       parts.push(sector.data);
 
       // CRC for data field
@@ -678,6 +768,7 @@ export class UPD765A {
 
     if (!track || track.sectors.length === 0) {
       // No disk or empty track
+      this.log(`  ✗ No disk or empty track for Read ID`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
       this.result([st0, 0x01, 0x00, 0, 0, 0, 0]);
       return;
@@ -688,6 +779,7 @@ export class UPD765A {
     this.idIndex[unit] = idx + 1;
     const sector = track.sectors[idx];
 
+    this.log(`  → Unit=${unit} Head=${head} returning sector ID: C=${sector.c} H=${sector.h} R=${sector.r} N=${sector.n}`);
     const st0 = (head << 2) | unit; // normal termination
     this.result([st0, 0x00, 0x00, sector.c, sector.h, sector.r, sector.n]);
   }
@@ -708,6 +800,8 @@ export class UPD765A {
 
   /** Invalid/unrecognised command — return ST0 with invalid-command code. */
   private cmdInvalid(): void {
+    this.log(`  ✗✗✗ INVALID/UNIMPLEMENTED COMMAND! Command byte: 0x${this.cmdBuf[0].toString(16).padStart(2, '0').toUpperCase()}`);
+    this.log(`      Full command buffer: [${this.cmdBuf.map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
     this.result([ST0_INVALID]);
   }
 
@@ -735,6 +829,8 @@ export class UPD765A {
     this.exWriting = false;
     this.exReadTrack = false;
     this.exTrack = null;
+    this.exST1 = 0;
+    this.exST2 = 0;
     this.latchR = 0;
     this.latchHead = 0;
     this.latchWriting = false;
