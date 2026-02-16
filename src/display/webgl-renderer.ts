@@ -241,7 +241,7 @@ export class WebGLRenderer implements IScreenRenderer {
     this.width = width;
     this.height = height;
 
-    const gl = canvas.getContext('webgl', { alpha: false, antialias: false });
+    const gl = canvas.getContext('webgl', { alpha: false, antialias: false, preserveDrawingBuffer: true });
     if (!gl) throw new Error('WebGL not supported');
     this.gl = gl;
 
