@@ -4,7 +4,9 @@
       "WebFetch(*)",
       "Bash(npm run hmr-freeze:*)",
       "Bash(npm run hmr-unfreeze:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(npx vite build:*)",
+      "Bash(timeout 10 npx vite:*)"
     ]
   }
 }

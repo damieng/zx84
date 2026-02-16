@@ -174,10 +174,15 @@ export class Spectrum {
    *  data directly into memory.  Works for standard TAP/TZX data blocks. */
   tapeInstantLoad = true;
 
-  /** Edge acceleration: fast-forward tape to next edge on each port read
-   *  during custom loader playback, eliminating the multi-iteration wait.
-   *  Produces fast loading while preserving border stripes. */
-  tapeAcceleration = true;
+  /** Tape turbo: auto-engage maximum emulation speed while a custom
+   *  loader is actively reading the EAR port.  Disengages after a cooldown
+   *  when EAR reads stop (loading finished). */
+  tapeTurbo = true;
+
+  /** Internal: whether tape turbo is currently engaged */
+  private _tapeTurboActive = false;
+  /** Frames remaining before tape turbo disengages (cooldown) */
+  private _tapeTurboCooldown = 0;
 
   /** Breakpoints (checked every instruction in runFrame) */
   breakpoints = new Set<number>();
@@ -373,13 +378,16 @@ export class Spectrum {
     return maxFrames;
   }
 
+  /** Whether tape turbo is currently engaged (read by UI for status) */
+  get tapeTurboActive(): boolean { return this._tapeTurboActive; }
+
   private frameLoop = (): void => {
     if (!this.running) return;
 
     // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
     this.breakpointHit = -1;
     const now = performance.now();
-    if (this.turbo) {
+    if (this.turbo || this._tapeTurboActive) {
       // Turbo: run as many frames as possible (target ~50MHz ≈ 14x)
       this.frameTimeAccum = FRAME_PERIOD * 14;
       let framesRun = 0;
@@ -545,9 +553,38 @@ export class Spectrum {
       // T-states not already advanced by the port-in handler mid-instruction)
       this.advanceTapeTo();
 
-      // Accumulate beeper duty and generate audio samples
+      // Accumulate beeper duty and generate audio samples.
+      // During tape turbo, skip audio generation entirely — the loading
+      // noise is unwanted and audio pacing would throttle our speed.
       this.mixer.accumulate(this.ula.beeperBit, elapsed);
-      this.mixer.generateSamples(this.audio, this.ay, is128kClass(this.model));
+      if (!this._tapeTurboActive) {
+        this.mixer.generateSamples(this.audio, this.ay, is128kClass(this.model));
+      } else {
+        // Drain the accumulator without producing samples so it stays in sync
+        this.mixer.beeperTStatesAccum = 0;
+      }
+    }
+
+    // Tape turbo: engage/disengage based on EAR port read activity.
+    // Engage when custom loader is actively reading EAR; disengage after
+    // a cooldown of frames with no EAR reads (to handle brief inter-block gaps).
+    if (this.tapeTurbo && this.tape.loaded && !this.tape.finished) {
+      if (this.activity.earReads > 0) {
+        if (!this._tapeTurboActive) {
+          this._tapeTurboActive = true;
+        }
+        this._tapeTurboCooldown = 25; // ~0.5s at 50Hz
+      } else if (this._tapeTurboActive) {
+        if (--this._tapeTurboCooldown <= 0) {
+          this._tapeTurboActive = false;
+          // Reset audio state so playback resumes cleanly
+          this.mixer.reset();
+        }
+      }
+    } else if (this._tapeTurboActive) {
+      // Tape finished or turbo disabled — disengage immediately
+      this._tapeTurboActive = false;
+      this.mixer.reset();
     }
 
     // Adjust loader detector T-state tracking across frame boundary

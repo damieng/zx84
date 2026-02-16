@@ -8,7 +8,6 @@
 
 import type { Spectrum } from '@/spectrum.ts';
 import { is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
-import { accelerateTape } from '@/tape/loader-accel.ts';
 
 /**
  * Override Z80 read8/write8 to apply per-access ULA contention and
@@ -161,7 +160,7 @@ export function wirePortIO(s: Spectrum): void {
           const prevPhase = _dbgPhase;
           _dbgPhase = ds.phase;
           _dbgReads = 0;
-          console.log(`[TAPE-DBG] === Phase ${prevPhase || '?'} -> ${ds.phase} === T=${t} edges=${_dbgEdges} accel=${s.tapeAcceleration}`);
+          console.log(`[TAPE-DBG] === Phase ${prevPhase || '?'} -> ${ds.phase} === T=${t} edges=${_dbgEdges} turbo=${s.tapeTurbo}`);
           if (ds.phase === 'DATA') {
             _dbgEdges = 0;
             _dbgBlockNum++;
@@ -250,7 +249,7 @@ export function wirePortIO(s: Spectrum): void {
         _dbgLastEar = ear;
       }
 
-      // Loader detection + acceleration for custom loaders (Speedlock etc.)
+      // Loader detection: auto-start tape for custom loaders (Speedlock etc.)
       if (s.tape.loaded && !s.tape.finished) {
         if (!s.tape.playing || s.tape.paused) {
           // Tape not playing: detect edge-detection loops to auto-start.
@@ -264,13 +263,6 @@ export function wirePortIO(s: Spectrum): void {
             s.tape.startPlayback();
             s.loaderDetector.reset();
           }
-        } else if (s.tapeAcceleration) {
-          // Tape playing + acceleration enabled: fast-forward the tape to
-          // the next edge so the loader sees the EAR toggle immediately
-          // instead of spinning in a tight poll loop.  The loader's own
-          // code still runs (border stripes etc.) — we just eliminate the
-          // multi-thousand-iteration wait for each edge.
-          accelerateTape(s.tape);
         }
       }
 

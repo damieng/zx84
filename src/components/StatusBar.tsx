@@ -3,7 +3,7 @@
  */
 
 import {
-  statusText, ledKbd, ledKemp, ledEar, ledLoad, ledAccel, ledRst16, ledText,
+  statusText, ledKbd, ledKemp, ledEar, ledLoad, ledTapeTurbo, ledRst16, ledText,
   ledBeep, ledAy, ledDsk, ledRainbow, ledMouse, toggleTranscribeMode, spectrum,
 } from '@/emulator.ts';
 
@@ -44,8 +44,8 @@ export function StatusBar() {
             tip="Sampling the EAR port (tape playback)" />
           <Led id="led-load" kind="load" label="TAPE" on={ledLoad()}
             tip="ROM tape-load routine is active (LD-BYTES at 0556h)" />
-          <Led id="led-accel" kind="accel" label="ACCEL" on={ledAccel()}
-            tip="Tape loader acceleration active (FUSE-style edge skip)" />
+          <Led id="led-accel" kind="accel" label="TURBO" on={ledTapeTurbo()}
+            tip="Tape turbo loading active (max speed while EAR port is read)" />
           <Led id="led-dsk" kind="dsk" label="DISK" on={ledDsk()}
             tip="Floppy disk controller is being accessed" />
         </div>

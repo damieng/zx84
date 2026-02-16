@@ -7,7 +7,7 @@ import {
   tapeRewind, tapeTogglePlay, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile, tapePrev, tapeNext, applyDisplaySettings,
 } from '@/emulator.ts';
-import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeAcceleration, setTapeAcceleration } from '@/store/settings.ts';
+import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeTurbo, setTapeTurbo } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
 import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
@@ -114,7 +114,7 @@ export function TapePane() {
           title="Tape options"
           items={[
             { value: 'instant-load', label: 'Instant loading (ROM trap)', checked: tapeInstantLoad() },
-            { value: 'edge-acceleration', label: 'Edge acceleration (TZX)', checked: tapeAcceleration() },
+            { value: 'tape-turbo', label: 'Turbo loading', checked: tapeTurbo() },
             { value: 'auto-rewind', label: 'Auto-rewind', checked: tapeAutoRewind() },
             { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: tapeCollapseBlocks() },
           ]}
@@ -123,9 +123,9 @@ export function TapePane() {
               setTapeInstantLoad(!tapeInstantLoad());
               persistSetting('tape-instant-load', tapeInstantLoad() ? 'on' : 'off');
               applyDisplaySettings();
-            } else if (value === 'edge-acceleration') {
-              setTapeAcceleration(!tapeAcceleration());
-              persistSetting('tape-acceleration', tapeAcceleration() ? 'on' : 'off');
+            } else if (value === 'tape-turbo') {
+              setTapeTurbo(!tapeTurbo());
+              persistSetting('tape-turbo', tapeTurbo() ? 'on' : 'off');
               applyDisplaySettings();
             } else if (value === 'auto-rewind') {
               toggleAutoRewind();

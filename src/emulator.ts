@@ -63,6 +63,7 @@ export const [ledAy, setLedAy] = createSignal(false);
 export const [ledDsk, setLedDsk] = createSignal(false);
 export const [ledRainbow, setLedRainbow] = createSignal(false);
 export const [ledMouse, setLedMouse] = createSignal(false);
+export const [ledTapeTurbo, setLedTapeTurbo] = createSignal(false);
 
 // Clock speed display
 export const [clockSpeedText, setClockSpeedText] = createSignal('MHz');
@@ -198,7 +199,7 @@ export function applyDisplaySettings(): void {
   spectrum.mixer.ayGain = Math.min(1, 2 * mix);
   spectrum.subFrameRendering = settings.subFrameRendering();
   spectrum.tapeInstantLoad = settings.tapeInstantLoad();
-  spectrum.tapeAcceleration = settings.tapeAcceleration();
+  spectrum.tapeTurbo = settings.tapeTurbo();
 }
 
 export async function createMachine(): Promise<boolean> {
@@ -738,13 +739,12 @@ export function applyTape(data: Uint8Array, filename: string): void {
     return;
   }
 
-  // Set tape state on the deck and start playing immediately —
-  // like pressing PLAY on a real cassette deck before typing LOAD.
-  // The 5+ second pilot tone gives the ROM plenty of time to boot
-  // and reach LD-BYTES before data starts.
+  // Set tape state on the deck in play mode but paused —
+  // like pressing PLAY on a real cassette deck but with the pause button held.
+  // User can unpause when ready to load.
   spectrum.tape.blocks = blocks;
   spectrum.tape.position = 0;
-  spectrum.tape.paused = false;
+  spectrum.tape.paused = true;
   spectrum.tape.startPlayback();
 
   // Reset machine (preserves tape) and restart
@@ -757,7 +757,7 @@ export function applyTape(data: Uint8Array, filename: string): void {
     setTapeName(filename);
     setTapeBlocks([...blocks]);
     setTapePosition(0);
-    setTapePaused(false);
+    setTapePaused(true);
     setTapePlaying(true);
   });
 

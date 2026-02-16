@@ -88,7 +88,7 @@ export const [dualDrives, setDualDrives] = /*@once*/ createRoot(() => createSign
 export const [tapeAutoRewind, setTapeAutoRewind] = /*@once*/ createRoot(() => createSignal(getSaved('tape-auto-rewind', 'on') === 'on'));
 export const [tapeCollapseBlocks, setTapeCollapseBlocks] = /*@once*/ createRoot(() => createSignal(getSaved('tape-collapse-blocks', 'on') === 'on'));
 export const [tapeInstantLoad, setTapeInstantLoad] = /*@once*/ createRoot(() => createSignal(getSaved('tape-instant-load', 'on') === 'on'));
-export const [tapeAcceleration, setTapeAcceleration] = /*@once*/ createRoot(() => createSignal(getSaved('tape-acceleration', 'on') === 'on'));
+export const [tapeTurbo, setTapeTurbo] = /*@once*/ createRoot(() => createSignal(getSaved('tape-turbo', 'on') === 'on'));
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 
