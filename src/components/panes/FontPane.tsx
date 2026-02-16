@@ -32,6 +32,18 @@ function tileKey(mem: Uint8Array, offset: number): string {
 
 const BLANK_KEY = '0,0,0,0,0,0,0,0';
 
+function isFontBlank(mem: Uint8Array, fontStart: number): boolean {
+  // Check if font is entirely blank (all 768 bytes are zero)
+  // We skip the first character (space) which should be blank, and check chars 1-95
+  for (let c = 1; c < 96; c++) {
+    const offset = fontStart + c * 8;
+    for (let b = 0; b < 8; b++) {
+      if (mem[offset + b] !== 0) return false;
+    }
+  }
+  return true; // All characters 1-95 are blank
+}
+
 function b64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const out = new Uint8Array(binary.length);
@@ -124,12 +136,16 @@ export function FontPane() {
       const spaceBlank = spaceBytes.every(b => b === 0);
       console.log('Space bytes:', spaceBytes.join(', '), spaceBlank ? '✓ blank' : '✗ not blank');
       if (spaceBlank) {
-        const id = `chars:${charsFont}`;
-        if (existingIds.has(id) || existingAddrs.has(charsFont)) { console.log('Already captured:', id); }
-        else {
-          console.log('✓ Captured:', id);
-          added.push({ id, label: filename || 'CHARS', address: charsFont, technique: 'chars', data: bytesToB64(mem.slice(charsFont, charsFont + 768)) });
-          existingIds.add(id); existingAddrs.add(charsFont);
+        if (isFontBlank(mem, charsFont)) {
+          console.log('✗ Font is entirely blank, skipping');
+        } else {
+          const id = `chars:${charsFont}`;
+          if (existingIds.has(id) || existingAddrs.has(charsFont)) { console.log('Already captured:', id); }
+          else {
+            console.log('✓ Captured:', id);
+            added.push({ id, label: filename || 'CHARS', address: charsFont, technique: 'chars', data: bytesToB64(mem.slice(charsFont, charsFont + 768)) });
+            existingIds.add(id); existingAddrs.add(charsFont);
+          }
         }
       }
     }
@@ -147,6 +163,7 @@ export function FontPane() {
       const spaceBytes = Array.from(mem.slice(fontStart, fontStart + 8));
       const spaceBlank = spaceBytes.every(b => b === 0);
       if (!spaceBlank) { console.log(`© at ${addr} → font at ${fontStart}, space: [${spaceBytes.join(',')}] ✗`); continue; }
+      if (isFontBlank(mem, fontStart)) { console.log(`© at ${addr} → font at ${fontStart}, ✗ font is entirely blank`); continue; }
       copyrValidated++;
       const id = `copyr:${fontStart}`;
       if (existingIds.has(id) || existingAddrs.has(fontStart)) { console.log(`© at ${addr} → font at ${fontStart} ✓ (already captured)`); }
