@@ -2,7 +2,7 @@
  * Machine lifecycle: spectrum instance, ROM management, model switching.
  */
 
-import { createSignal, batch } from 'solid-js';
+import { batch } from 'solid-js';
 import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
@@ -15,8 +15,6 @@ import { parseDSK } from '@/plus3/dsk.ts';
 import { loadSZX } from '@/snapshot/szx.ts';
 import { clearLastFile, restoreTape, restoreDisk } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
-import type { DskImage } from '@/plus3/dsk.ts';
-import type { TapeBlock } from '@/tape/tap.ts';
 import { onFrame, updateRegsOnce, resetSpeedTracking, forceSpeedUpdate } from '@/frame-bridge.ts';
 export { fontDataHash, updateFontPreview, loadFontStore, saveFontStore, capturedFontData } from '@/frame-bridge.ts';
 export type { FontEntry } from '@/frame-bridge.ts';
@@ -34,69 +32,156 @@ const debugManager = new DebugManager();
 // Re-export TraceMode for compatibility
 export type { TraceMode };
 
-// ── State ───────────────────────────────────────────────────────────────
+// ── State (re-exported from feature modules) ───────────────────────────
 
-export const [statusText, setStatusText] = createSignal('Load a ROM to start');
-export const [romStatusText, setRomStatusText] = createSignal('');
-export const [currentModel, setCurrentModel] = createSignal<SpectrumModel>(loadSavedModel() ?? '128k');
-export const [emulationPaused, setEmulationPaused] = createSignal(false);
-export const [turboMode, setTurboMode] = createSignal(false);
-export const [tracing, setTracing] = createSignal(false);
+// Machine state
+export {
+  statusText,
+  romStatusText,
+  currentModel,
+  emulationPaused,
+  turboMode,
+  clockSpeedText,
+  saveModel,
+} from '@/state/machine-state.ts';
 
-// Per-frame updated signals (written by bridge)
-export const [regsHtml, setRegsHtml] = createSignal('');  // legacy, unused — kept for type compat
-export const [regsRev, setRegsRev] = createSignal(0);
-export const [sysvarHtml, setSysvarHtml] = createSignal('');  // legacy
-export const [sysvarRev, setSysvarRev] = createSignal(0);
-export const [basicHtml, setBasicHtml] = createSignal('');
-export const [basicVarsHtml, setBasicVarsHtml] = createSignal('');
-export const [banksHtml, setBanksHtml] = createSignal('');
-export const [diskInfoHtml, setDiskInfoHtml] = createSignal('');
-export const [driveHtml, setDriveHtml] = createSignal('');
-export const [driveAStatus, setDriveAStatus] = createSignal('');
-export const [driveBStatus, setDriveBStatus] = createSignal('');
-export const [trapLogHtml, setTrapLogHtml] = createSignal('');
-export const [showTrapLog, setShowTrapLog] = createSignal(false);
-export const [disasmText, setDisasmText] = createSignal('');
+// Import signals for use in this module
+import {
+  setStatusText,
+  setRomStatusText,
+  currentModel,
+  setCurrentModel,
+  emulationPaused,
+  setEmulationPaused,
+  setTurboMode,
+  saveModel,
+} from '@/state/machine-state.ts';
 
-// LED states
-export const [ledKbd, setLedKbd] = createSignal(false);
-export const [ledKemp, setLedKemp] = createSignal(false);
-export const [ledEar, setLedEar] = createSignal(false);
-export const [ledLoad, setLedLoad] = createSignal(false);
-export const [ledRst16, setLedRst16] = createSignal(false);
-export const [ledText, setLedText] = createSignal(false);
-export const [ledBeep, setLedBeep] = createSignal(false);
-export const [ledAy, setLedAy] = createSignal(false);
-export const [ledDsk, setLedDsk] = createSignal(false);
-export const [ledRainbow, setLedRainbow] = createSignal(false);
-export const [ledMouse, setLedMouse] = createSignal(false);
-export const [ledTapeTurbo, setLedTapeTurbo] = createSignal(false);
+import {
+  setTapeLoaded,
+  setTapeName,
+  setTapeBlocks,
+  setTapePosition,
+  setTapePaused,
+  setTapePlaying,
+  tapeName,
+} from '@/state/tape-state.ts';
 
-// Clock speed display
-export const [clockSpeedText, setClockSpeedText] = createSignal('MHz');
+import {
+  setCurrentDiskInfo,
+  setCurrentDiskName,
+  setCurrentDiskInfoB,
+  setCurrentDiskNameB,
+  setDiskInfoHtml,
+} from '@/state/disk-state.ts';
 
-// Tape signals
-export const [tapeLoaded, setTapeLoaded] = createSignal(false);
-export const [tapeName, setTapeName] = createSignal('');
-export const [tapeBlocks, setTapeBlocks] = createSignal<TapeBlock[]>([]);
-export const [tapePosition, setTapePosition] = createSignal(0);
-export const [tapePaused, setTapePaused] = createSignal(true);
-export const [tapePlaying, setTapePlaying] = createSignal(false);
+import {
+  setDisasmText,
+  setSysvarHtml,
+  setBasicHtml,
+  setBasicVarsHtml,
+  setTracing,
+} from '@/state/debug-state.ts';
 
-// Transcribe mode
-export const [transcribeMode, setTranscribeMode] = createSignal<'off' | 'rst16' | 'text'>('off');
-export const [transcribeText, setTranscribeText] = createSignal('');
+import {
+  transcribeMode,
+  setTranscribeMode,
+} from '@/state/activity-state.ts';
+
+// Tape state
+export {
+  tapeLoaded,
+  tapeBlocks,
+  tapePosition,
+  tapePaused,
+  tapePlaying,
+} from '@/state/tape-state.ts';
+
+// Re-export setters
+export { setStatusText, setRomStatusText, setCurrentModel, setEmulationPaused, setTurboMode, setClockSpeedText } from '@/state/machine-state.ts';
+export { setTapeLoaded, setTapeName, setTapeBlocks, setTapePosition, setTapePaused, setTapePlaying, tapeName };
+
+// Disk state
+export {
+  currentDiskInfo,
+  currentDiskName,
+  currentDiskInfoB,
+  currentDiskNameB,
+  driveAStatus,
+  driveBStatus,
+  diskInfoHtml,
+  driveHtml,
+} from '@/state/disk-state.ts';
+
+// Re-export disk setters
+export {
+  setCurrentDiskInfo, setCurrentDiskName, setCurrentDiskInfoB, setCurrentDiskNameB,
+  setDriveAStatus, setDriveBStatus, setDiskInfoHtml, setDriveHtml,
+} from '@/state/disk-state.ts';
+
+// Debug state
+export {
+  regsHtml,
+  regsRev,
+  sysvarHtml,
+  sysvarRev,
+  basicHtml,
+  basicVarsHtml,
+  banksHtml,
+  disasmText,
+  tracing,
+  trapLogHtml,
+  showTrapLog,
+  setRegsHtml,
+  setRegsRev,
+  setSysvarHtml,
+  setSysvarRev,
+  setBasicHtml,
+  setBasicVarsHtml,
+  setBanksHtml,
+  setDisasmText,
+  setTracing,
+  setTrapLogHtml,
+  setShowTrapLog,
+} from '@/state/debug-state.ts';
+
+// Activity state (LEDs + transcription)
+export {
+  ledKbd,
+  ledKemp,
+  ledMouse,
+  ledEar,
+  ledLoad,
+  ledTapeTurbo,
+  ledDsk,
+  ledBeep,
+  ledAy,
+  ledRainbow,
+  ledRst16,
+  ledText,
+  transcribeMode,
+  transcribeText,
+  setLedKbd,
+  setLedKemp,
+  setLedMouse,
+  setLedEar,
+  setLedLoad,
+  setLedTapeTurbo,
+  setLedDsk,
+  setLedBeep,
+  setLedAy,
+  setLedRainbow,
+  setLedRst16,
+  setLedText,
+  setTranscribeMode,
+  setTranscribeText,
+} from '@/state/activity-state.ts';
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
 
 export let spectrum: Spectrum | null = null;
 export let romData: Uint8Array | null = null;
 export let floppySound: FloppySound | null = null;
-export const [currentDiskInfo, setCurrentDiskInfo] = createSignal<DskImage | null>(null);
-export const [currentDiskName, setCurrentDiskName] = createSignal('');
-export const [currentDiskInfoB, setCurrentDiskInfoB] = createSignal<DskImage | null>(null);
-export const [currentDiskNameB, setCurrentDiskNameB] = createSignal('');
 export let canvasEl: HTMLCanvasElement | null = null;
 
 
@@ -119,18 +204,6 @@ export async function restoreROM(model: SpectrumModel) {
 /** Fetch default ROM from CDN (delegates to ROMManager) */
 export async function fetchDefaultROM(model: SpectrumModel) {
   return await romManager.fetchDefaultROM(model, setStatus);
-}
-
-function loadSavedModel(): SpectrumModel | null {
-  try {
-    const val = localStorage.getItem('zx84-model');
-    if (val === '48k' || val === '128k' || val === '+2' || val === '+2a' || val === '+3') return val as SpectrumModel;
-  } catch { /* */ }
-  return null;
-}
-
-function saveModel(model: SpectrumModel): void {
-  try { localStorage.setItem('zx84-model', model); } catch { /* */ }
 }
 
 // ── Actions ─────────────────────────────────────────────────────────────
