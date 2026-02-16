@@ -2,7 +2,7 @@
  * Persisted display/sound/joystick settings as signals.
  */
 
-import { createSignal, createMemo } from 'solid-js';
+import { createSignal, createMemo, createRoot } from 'solid-js';
 import { getSaved, setSaved } from '@/store/persistence.ts';
 
 // ── Display settings ────────────────────────────────────────────────────
@@ -11,32 +11,32 @@ function getSavedNumber(key: string, fallback: string): number {
   return Number(getSaved(key, fallback));
 }
 
-export const [scale, setScale] = createSignal(getSavedNumber('scale', '2'));
-export const [brightness, setBrightness] = createSignal(getSavedNumber('brightness', '0'));
-export const [contrast, setContrast] = createSignal(getSavedNumber('contrast', '50'));
-export const [smoothing, setSmoothing] = createSignal(getSavedNumber('smoothing', '0'));
-export const [curvature, setCurvature] = createSignal(getSavedNumber('curvature', '0'));
-export const [scanlines, setScanlines] = createSignal(getSavedNumber('scanlines', '0'));
-export const [maskType, setMaskType] = createSignal(getSavedNumber('mask-type', '0'));
-export const [dotPitch, setDotPitch] = createSignal(getSavedNumber('dot-pitch', '10'));
-export const [curvatureMode, setCurvatureMode] = createSignal(getSavedNumber('curvature-mode', '0'));
-export const [monitor, setMonitor] = createSignal(getSaved('monitor', 'raw'));
-export const [borderSize, setBorderSize] = createSignal(getSavedNumber('border-size', '2'));
-export const [renderer, setRenderer] = createSignal(getSaved('renderer', 'webgl') as 'webgl' | 'canvas');
-export const [colorMap, setColorMap] = createSignal(getSaved('color-map', 'measured') as 'basic' | 'measured' | 'vivid');
+export const [scale, setScale] = /*@once*/ createRoot(() => createSignal(getSavedNumber('scale', '2')));
+export const [brightness, setBrightness] = /*@once*/ createRoot(() => createSignal(getSavedNumber('brightness', '0')));
+export const [contrast, setContrast] = /*@once*/ createRoot(() => createSignal(getSavedNumber('contrast', '50')));
+export const [smoothing, setSmoothing] = /*@once*/ createRoot(() => createSignal(getSavedNumber('smoothing', '0')));
+export const [curvature, setCurvature] = /*@once*/ createRoot(() => createSignal(getSavedNumber('curvature', '0')));
+export const [scanlines, setScanlines] = /*@once*/ createRoot(() => createSignal(getSavedNumber('scanlines', '0')));
+export const [maskType, setMaskType] = /*@once*/ createRoot(() => createSignal(getSavedNumber('mask-type', '0')));
+export const [dotPitch, setDotPitch] = /*@once*/ createRoot(() => createSignal(getSavedNumber('dot-pitch', '10')));
+export const [curvatureMode, setCurvatureMode] = /*@once*/ createRoot(() => createSignal(getSavedNumber('curvature-mode', '0')));
+export const [monitor, setMonitor] = /*@once*/ createRoot(() => createSignal(getSaved('monitor', 'raw')));
+export const [borderSize, setBorderSize] = /*@once*/ createRoot(() => createSignal(getSavedNumber('border-size', '2')));
+export const [renderer, setRenderer] = /*@once*/ createRoot(() => createSignal(getSaved('renderer', 'webgl') as 'webgl' | 'canvas'));
+export const [colorMap, setColorMap] = /*@once*/ createRoot(() => createSignal(getSaved('color-map', 'measured') as 'basic' | 'measured' | 'vivid'));
 
 // ── Sound settings ──────────────────────────────────────────────────────
 
-export const [volume, setVolume] = createSignal(getSavedNumber('volume', '70'));
-export const [ayMix, setAyMix] = createSignal(getSavedNumber('ay-mix', '50'));
-export const [ayStereo, setAyStereo] = createSignal(getSaved('ay-stereo', 'ABC'));
+export const [volume, setVolume] = /*@once*/ createRoot(() => createSignal(getSavedNumber('volume', '70')));
+export const [ayMix, setAyMix] = /*@once*/ createRoot(() => createSignal(getSavedNumber('ay-mix', '50')));
+export const [ayStereo, setAyStereo] = /*@once*/ createRoot(() => createSignal(getSaved('ay-stereo', 'ABC')));
 
 // ── Joystick settings ───────────────────────────────────────────────────
 
-export const [joyP1, setJoyP1] = createSignal(getSaved('joy-p1', 'kempston'));
-export const [joyP2, setJoyP2] = createSignal(getSaved('joy-p2', 'sinclair2'));
-export const [joyMapP1, setJoyMapP1] = createSignal(getSaved('joy-map-p1', 'none'));
-export const [joyMapP2, setJoyMapP2] = createSignal(getSaved('joy-map-p2', 'none'));
+export const [joyP1, setJoyP1] = /*@once*/ createRoot(() => createSignal(getSaved('joy-p1', 'kempston')));
+export const [joyP2, setJoyP2] = /*@once*/ createRoot(() => createSignal(getSaved('joy-p2', 'sinclair2')));
+export const [joyMapP1, setJoyMapP1] = /*@once*/ createRoot(() => createSignal(getSaved('joy-map-p1', 'none')));
+export const [joyMapP2, setJoyMapP2] = /*@once*/ createRoot(() => createSignal(getSaved('joy-map-p2', 'none')));
 
 // ── Gamepad configuration ───────────────────────────────────────────────
 
@@ -62,8 +62,8 @@ function loadGamepadConfig(player: 1 | 2): GamepadConfig | null {
   }
 }
 
-export const [gamepadConfigP1, setGamepadConfigP1] = createSignal<GamepadConfig | null>(loadGamepadConfig(1));
-export const [gamepadConfigP2, setGamepadConfigP2] = createSignal<GamepadConfig | null>(loadGamepadConfig(2));
+export const [gamepadConfigP1, setGamepadConfigP1] = /*@once*/ createRoot(() => createSignal<GamepadConfig | null>(loadGamepadConfig(1)));
+export const [gamepadConfigP2, setGamepadConfigP2] = /*@once*/ createRoot(() => createSignal<GamepadConfig | null>(loadGamepadConfig(2)));
 
 export function saveGamepadConfig(player: 1 | 2, config: GamepadConfig): void {
   if (player === 1) {
@@ -76,29 +76,29 @@ export function saveGamepadConfig(player: 1 | 2, config: GamepadConfig): void {
 
 // ── Font settings ───────────────────────────────────────────────────────
 
-export const [fontName, setFontName] = createSignal(getSaved('font', ''));
+export const [fontName, setFontName] = /*@once*/ createRoot(() => createSignal(getSaved('font', '')));
 
 // ── Disk mode ───────────────────────────────────────────────────────────
 
-export const [diskMode, setDiskMode] = createSignal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios');
-export const [dualDrives, setDualDrives] = createSignal(getSaved('dual-drives', 'off') === 'on');
+export const [diskMode, setDiskMode] = /*@once*/ createRoot(() => createSignal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios'));
+export const [dualDrives, setDualDrives] = /*@once*/ createRoot(() => createSignal(getSaved('dual-drives', 'off') === 'on'));
 
 // ── Tape settings ───────────────────────────────────────────────────────
 
-export const [tapeAutoRewind, setTapeAutoRewind] = createSignal(getSaved('tape-auto-rewind', 'on') === 'on');
-export const [tapeCollapseBlocks, setTapeCollapseBlocks] = createSignal(getSaved('tape-collapse-blocks', 'on') === 'on');
-export const [tapeInstantLoad, setTapeInstantLoad] = createSignal(getSaved('tape-instant-load', 'on') === 'on');
-export const [tapeAcceleration, setTapeAcceleration] = createSignal(getSaved('tape-acceleration', 'on') === 'on');
+export const [tapeAutoRewind, setTapeAutoRewind] = /*@once*/ createRoot(() => createSignal(getSaved('tape-auto-rewind', 'on') === 'on'));
+export const [tapeCollapseBlocks, setTapeCollapseBlocks] = /*@once*/ createRoot(() => createSignal(getSaved('tape-collapse-blocks', 'on') === 'on'));
+export const [tapeInstantLoad, setTapeInstantLoad] = /*@once*/ createRoot(() => createSignal(getSaved('tape-instant-load', 'on') === 'on'));
+export const [tapeAcceleration, setTapeAcceleration] = /*@once*/ createRoot(() => createSignal(getSaved('tape-acceleration', 'on') === 'on'));
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 
-export const [subFrameRendering, setSubFrameRendering] = createSignal(getSaved('sub-frame-rendering', 'off') === 'on');
+export const [subFrameRendering, setSubFrameRendering] = /*@once*/ createRoot(() => createSignal(getSaved('sub-frame-rendering', 'off') === 'on'));
 
 // ── Derived ─────────────────────────────────────────────────────────────
 
-export const needsGamepadPolling = createMemo(() =>
+export const needsGamepadPolling = /*@once*/ createRoot(() => createMemo(() =>
   joyMapP1() === 'gamepad' || joyMapP2() === 'gamepad'
-);
+));
 
 // ── Persistence helpers ─────────────────────────────────────────────────
 
