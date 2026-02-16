@@ -329,11 +329,12 @@ canvas {
 
 #status-bar {
   margin-top: 6px;
-  text-align: center;
+  width: 100%;
 }
 
 .status-controls {
   color: #000;
+  width: 100%;
 }
 
 #status {
@@ -346,7 +347,13 @@ canvas {
 
 #activity {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.led-group {
+  display: flex;
   gap: 8px;
 }
 
@@ -375,6 +382,8 @@ canvas {
 .led[data-kind="rainbow"].on { color: #f8f; }
 .led[data-kind="mouse"].on .led-dot { background: #0af; }
 .led[data-kind="mouse"].on { color: #8cf; }
+.led[data-kind="accel"].on .led-dot { background: #ff0; }
+.led[data-kind="accel"].on { color: #ff8; }
 
 /* Mouse pane */
 .mouse-pane { display: flex; flex-direction: column; gap: 6px; }
