@@ -9,10 +9,11 @@
  * seek/recalibrate succeed but read/write/format return "not ready."
  */
 
-import type { DskImage, DskTrack } from '@/plus3/dsk.ts';
+import type { DskImage, DskSector, DskTrack } from '@/plus3/dsk.ts';
 
 // ── Command codes (lower 5 bits of command byte) ────────────────────────
 
+const CMD_READ_TRACK    = 0x02;
 const CMD_SPECIFY       = 0x03;
 const CMD_SENSE_DRIVE   = 0x04;
 const CMD_WRITE_DATA    = 0x05;
@@ -48,6 +49,7 @@ const enum Phase { Idle, Command, Execution, Result }
 
 function paramCount(cmdByte: number): number {
   switch (cmdByte & 0x1F) {
+    case CMD_READ_TRACK:
     case CMD_READ_DATA: case CMD_READ_DELETED:
     case CMD_WRITE_DATA: case CMD_WRITE_DELETED:
     case CMD_SCAN_EQUAL: case CMD_SCAN_LOW_EQ: case CMD_SCAN_HIGH_EQ:
@@ -109,6 +111,8 @@ export class UPD765A {
   private exBuf: Uint8Array = new Uint8Array(0);
   private exPos = 0;
   private exWriting = false;
+  /** True if executing Read Track (read entire track, don't advance sectors) */
+  private exReadTrack = false;
   /** Current sector R value being read/written */
   private exR = 0;
   /** End-of-track R value */
@@ -246,9 +250,14 @@ export class UPD765A {
     if (this.exPos >= this.exBuf.length) return 0xFF;
     const val = this.exBuf[this.exPos++];
     if (this.exPos >= this.exBuf.length) {
-      // Current sector exhausted — try next sector
-      if (!this.advanceSector()) {
+      if (this.exReadTrack) {
+        // Read Track: entire track buffer exhausted, finish
         this.finishExecution();
+      } else {
+        // Read Data: current sector exhausted, try next sector
+        if (!this.advanceSector()) {
+          this.finishExecution();
+        }
       }
     }
     return val;
@@ -282,10 +291,43 @@ export class UPD765A {
       this.exBuf = new Uint8Array(sector.data.length);
       this.exPos = 0;
     } else {
-      this.exBuf = sector.data;
+      this.exBuf = this.prepareReadBuffer(sector);
       this.exPos = 0;
     }
     return true;
+  }
+
+  /**
+   * Prepare sector data for reading. For weak sectors (st2 & 0x40),
+   * return randomized data to emulate Speedlock copy protection.
+   */
+  private prepareReadBuffer(sector: DskSector): Uint8Array {
+    // TEMPORARILY DISABLED — weak sector randomization
+    // Will be enabled after Read Track implementation is complete
+    return sector.data;
+
+    /* DISABLED CODE — uncomment to enable weak sector randomization:
+    // Check if this is a weak sector (bit 6 of ST2)
+    if ((sector.st2 & 0x40) === 0) {
+      // Normal sector — return original data
+      return sector.data;
+    }
+
+    // Weak sector — create a copy with random variations
+    const buf = new Uint8Array(sector.data.length);
+    buf.set(sector.data);
+
+    // Randomize approximately 10% of bytes throughout the sector
+    // This ensures repeated reads return different data, defeating
+    // Speedlock's "read twice and compare" protection check
+    const numToRandomize = Math.max(1, Math.floor(buf.length * 0.1));
+    for (let i = 0; i < numToRandomize; i++) {
+      const pos = Math.floor(Math.random() * buf.length);
+      buf[pos] = Math.floor(Math.random() * 256);
+    }
+
+    return buf;
+    */
   }
 
   /** Write the execution buffer back into the current sector's data. */
@@ -312,6 +354,7 @@ export class UPD765A {
       case CMD_SENSE_INT:     this.cmdSenseInt(); break;
       case CMD_RECALIBRATE:   this.cmdRecalibrate(); break;
       case CMD_SEEK:          this.cmdSeek(); break;
+      case CMD_READ_TRACK:    this.cmdReadTrack(); break;
       case CMD_READ_DATA:     // fall through
       case CMD_READ_DELETED:  this.cmdReadWrite(); break;
       case CMD_WRITE_DATA:    // fall through
@@ -430,6 +473,7 @@ export class UPD765A {
     this.exEOT = eot;
     this.exTrack = track;
     this.exWriting = isWrite;
+    this.exReadTrack = false; // Reading individual sectors, not raw track
 
     // Latch for UI display (execution completes within one frame)
     this.latchR = r;
@@ -441,11 +485,188 @@ export class UPD765A {
       this.exBuf = new Uint8Array(sector.data.length);
       this.exPos = 0;
     } else {
-      this.exBuf = sector.data;
+      this.exBuf = this.prepareReadBuffer(sector);
       this.exPos = 0;
     }
 
     this.phase = Phase.Execution;
+  }
+
+  /**
+   * Read Track — return entire raw track data including gaps and IDs.
+   * Critical for Speedlock protection which checks gap sizes and timing.
+   */
+  private cmdReadTrack(): void {
+    const unit = this.cmdBuf[1] & 0x03;
+    const head = (this.cmdBuf[1] >> 2) & 1;
+    const c = this.cmdBuf[2], h = this.cmdBuf[3];
+    const r = this.cmdBuf[4], n = this.cmdBuf[5];
+    const eot = this.cmdBuf[6];
+
+    const track = this.getTrack(unit, h);
+
+    if (!track || track.sectors.length === 0) {
+      // No disk or empty track
+      const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
+      this.result([st0, 0x01, 0x00, c, h, r, n]);
+      return;
+    }
+
+    // Build raw track data with proper gaps and formatting
+    const trackData = this.buildRawTrack(track);
+
+    // Save execution state
+    this.exUnit = unit;
+    this.exHead = head;
+    this.exC = c;
+    this.exH = h;
+    this.exN = n;
+    this.exR = r;
+    this.exEOT = eot;
+    this.exTrack = track;
+    this.exWriting = false;
+    this.exReadTrack = true; // Flag: reading entire raw track
+
+    // Latch for UI display
+    this.latchR = r;
+    this.latchHead = head;
+    this.latchWriting = false;
+    this.latchFrames = 25;
+
+    this.exBuf = trackData;
+    this.exPos = 0;
+    this.phase = Phase.Execution;
+  }
+
+  /**
+   * Build raw track data including gaps, sync, address marks, and CRCs.
+   * This is what Speedlock reads to verify genuine disk timing/structure.
+   */
+  private buildRawTrack(track: DskTrack): Uint8Array {
+    const parts: Uint8Array[] = [];
+
+    // Gap 4a (post-index gap) — 80 bytes of 0x4E
+    parts.push(new Uint8Array(80).fill(0x4E));
+
+    // Sync — 12 bytes of 0x00
+    parts.push(new Uint8Array(12).fill(0x00));
+
+    // Index Address Mark — 3×0xC2 (with missing clock) + 0xFC
+    // Simplified: just use 0xC2 bytes (real hardware needs special encoding)
+    parts.push(new Uint8Array([0xC2, 0xC2, 0xC2, 0xFC]));
+
+    // Gap 1 — 50 bytes of 0x4E
+    parts.push(new Uint8Array(50).fill(0x4E));
+
+    // For each sector in the track
+    for (const sector of track.sectors) {
+      // Sync — 12 bytes of 0x00
+      parts.push(new Uint8Array(12).fill(0x00));
+
+      // ID Address Mark — 3×0xA1 (with missing clock) + 0xFE
+      parts.push(new Uint8Array([0xA1, 0xA1, 0xA1, 0xFE]));
+
+      // ID Field — C, H, R, N
+      const idField = new Uint8Array([sector.c, sector.h, sector.r, sector.n]);
+      parts.push(idField);
+
+      // CRC for ID field (simplified — calculate proper CRC)
+      const idCrc = this.calcCrc([0xA1, 0xA1, 0xA1, 0xFE, sector.c, sector.h, sector.r, sector.n]);
+      parts.push(idCrc);
+
+      // Gap 2 — 22 bytes of 0x4E
+      parts.push(new Uint8Array(22).fill(0x4E));
+
+      // Sync — 12 bytes of 0x00
+      parts.push(new Uint8Array(12).fill(0x00));
+
+      // Data Address Mark — 3×0xA1 + 0xFB (or 0xF8 for deleted data)
+      const dam = (sector.st2 & 0x40) ? 0xF8 : 0xFB; // Use 0xF8 for sectors with errors
+      parts.push(new Uint8Array([0xA1, 0xA1, 0xA1, dam]));
+
+      // Data Field — the actual sector data
+      parts.push(sector.data);
+
+      // CRC for data field
+      const dataCrc = this.calcCrcData([0xA1, 0xA1, 0xA1, dam], sector.data);
+      parts.push(dataCrc);
+
+      // Gap 3 — from track metadata (critical for Speedlock!)
+      const gap3Size = track.gap3 > 0 ? track.gap3 : 24; // default 24 if not specified
+      parts.push(new Uint8Array(gap3Size).fill(track.filler || 0x4E));
+    }
+
+    // Gap 4b — fill remainder to standard track size (~6250 bytes for DD)
+    // This ensures consistent track length
+    const currentSize = parts.reduce((sum, p) => sum + p.length, 0);
+    const targetSize = 6250; // Standard double-density track
+    if (currentSize < targetSize) {
+      parts.push(new Uint8Array(targetSize - currentSize).fill(track.filler || 0x4E));
+    }
+
+    // Concatenate all parts
+    const total = new Uint8Array(parts.reduce((sum, p) => sum + p.length, 0));
+    let offset = 0;
+    for (const part of parts) {
+      total.set(part, offset);
+      offset += part.length;
+    }
+
+    return total;
+  }
+
+  /**
+   * Calculate CRC-16-CCITT for ID field.
+   * Polynomial: 0x1021, initial: 0xFFFF
+   */
+  private calcCrc(data: number[]): Uint8Array {
+    let crc = 0xFFFF;
+    for (const byte of data) {
+      crc ^= (byte << 8);
+      for (let i = 0; i < 8; i++) {
+        if (crc & 0x8000) {
+          crc = (crc << 1) ^ 0x1021;
+        } else {
+          crc = crc << 1;
+        }
+      }
+    }
+    crc &= 0xFFFF;
+    return new Uint8Array([crc >> 8, crc & 0xFF]);
+  }
+
+  /**
+   * Calculate CRC for data field (address mark + data).
+   */
+  private calcCrcData(header: number[], data: Uint8Array): Uint8Array {
+    let crc = 0xFFFF;
+
+    // Process header bytes
+    for (const byte of header) {
+      crc ^= (byte << 8);
+      for (let i = 0; i < 8; i++) {
+        if (crc & 0x8000) {
+          crc = (crc << 1) ^ 0x1021;
+        } else {
+          crc = crc << 1;
+        }
+      }
+    }
+
+    // Process data bytes
+    for (const byte of data) {
+      crc ^= (byte << 8);
+      for (let i = 0; i < 8; i++) {
+        if (crc & 0x8000) {
+          crc = (crc << 1) ^ 0x1021;
+        } else {
+          crc = crc << 1;
+        }
+      }
+    }
+
+    crc &= 0xFFFF;
+    return new Uint8Array([crc >> 8, crc & 0xFF]);
   }
 
   /** Read ID — return CHRN of current sector under the head. */
@@ -512,6 +733,7 @@ export class UPD765A {
     this.exBuf = new Uint8Array(0);
     this.exPos = 0;
     this.exWriting = false;
+    this.exReadTrack = false;
     this.exTrack = null;
     this.latchR = 0;
     this.latchHead = 0;
