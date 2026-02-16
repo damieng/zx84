@@ -1,11 +1,11 @@
 import { createEffect, Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiOutlineBackward, HiOutlinePlay, HiOutlinePause, HiOutlineEllipsisVertical, HiOutlineChevronLeft, HiOutlineChevronRight } from 'solid-icons/hi';
+import { HiOutlineBackward, HiOutlinePlay, HiOutlinePause, HiOutlineStop, HiOutlineEllipsisVertical, HiOutlineChevronLeft, HiOutlineChevronRight } from 'solid-icons/hi';
 import {
-  tapeLoaded, tapeName, tapeBlocks, tapePosition, tapePaused,
-  tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
-  ejectTape, loadFile, tapePrev, tapeNext,
+  tapeLoaded, tapeName, tapeBlocks, tapePosition, tapePlaying, tapePaused,
+  tapeRewind, tapeTogglePlay, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
+  ejectTape, loadFile, tapePrev, tapeNext, applyDisplaySettings,
 } from '@/emulator.ts';
 import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeAcceleration, setTapeAcceleration } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
@@ -99,10 +99,15 @@ export function TapePane() {
         <button title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
         <button title="Previous block" onClick={tapePrev}><HiOutlineChevronLeft /></button>
         <button
-          title={tapePaused() ? 'Resume' : 'Pause'}
+          title={tapePlaying() ? 'Stop' : 'Play'}
+          class={tapePlaying() ? 'active' : ''}
+          onClick={tapeTogglePlay}
+        >{tapePlaying() ? <HiOutlineStop /> : <HiOutlinePlay />}</button>
+        <button
+          title="Pause"
           class={tapePaused() ? 'active' : ''}
           onClick={tapeTogglePause}
-        >{tapePaused() ? <HiOutlinePlay /> : <HiOutlinePause />}</button>
+        ><HiOutlinePause /></button>
         <button title="Next block" onClick={tapeNext}><HiOutlineChevronRight /></button>
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
@@ -117,9 +122,11 @@ export function TapePane() {
             if (value === 'instant-load') {
               setTapeInstantLoad(!tapeInstantLoad());
               persistSetting('tape-instant-load', tapeInstantLoad() ? 'on' : 'off');
+              applyDisplaySettings();
             } else if (value === 'edge-acceleration') {
               setTapeAcceleration(!tapeAcceleration());
               persistSetting('tape-acceleration', tapeAcceleration() ? 'on' : 'off');
+              applyDisplaySettings();
             } else if (value === 'auto-rewind') {
               toggleAutoRewind();
             } else if (value === 'collapse-blocks') {

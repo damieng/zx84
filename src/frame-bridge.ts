@@ -17,7 +17,7 @@ import {
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
   setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setTrapLogHtml, setShowTrapLog, setDisasmText,
   setClockSpeedText,
-  setTapePosition, tapePaused, setTapePaused, transcribeMode, setTranscribeText,
+  setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedRst16, setLedText,
   setLedBeep, setLedAy, setLedDsk, setLedRainbow, setLedMouse,
   setStatus, setEmulationPaused, setTracing,
@@ -324,9 +324,12 @@ export function onFrame(): void {
     setLedRst16(transcribeMode() === 'rst16' || a.rst16Calls > 0);
     setLedText(transcribeMode() === 'text');
 
-    // Tape position + pause state (pause may change via ROM trap auto-unpause)
+    // Tape position + play/pause state (may change via ROM trap or loader detector)
     if (spectrum!.tape.loaded) {
       setTapePosition(spectrum!.tape.position);
+      if (tapePlaying() !== spectrum!.tape.playing) {
+        setTapePlaying(spectrum!.tape.playing);
+      }
       if (tapePaused() !== spectrum!.tape.paused) {
         setTapePaused(spectrum!.tape.paused);
       }

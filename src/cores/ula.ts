@@ -128,12 +128,13 @@ export class ULA {
 
   /**
    * Read port 0xFE. Returns keyboard data in bits 0-4.
-   * Bit 5 = 1, Bit 7 = 1 (unused, always set).
-   * Bit 6 = EAR input: tape signal when playing, beeper feedback otherwise.
+   * Bit 5 = EAR input (read by loaders via AND $20).
+   * Bit 6 = EAR input (read by loaders via BIT 6,A).
+   * Bit 7 = 1 (unused, always set).
    */
   readPort(highByte: number): number {
     const ear = this.tapeActive ? this.tapeEarBit : this.beeperBit;
-    return this.keyboard.readHalfRows(highByte) | 0xA0 | (ear << 6);
+    return this.keyboard.readHalfRows(highByte) | 0x80 | (ear << 6) | (ear << 5);
   }
 
   /**

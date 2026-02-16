@@ -18,7 +18,7 @@ import { parseTZX } from '@/tape/tzx.ts';
 import { parseDSK } from '@/plus3/dsk.ts';
 import { showFilePicker } from '@/ui/zip-picker.ts';
 import { disassemble, stripMarkers } from '@/debug/z80-disasm.ts';
-import { dbSave, dbLoad, persistLastFile, restoreLastFile, clearLastFile } from '@/store/persistence.ts';
+import { dbSave, dbLoad, persistLastFile, clearLastFile, persistTape, restoreTape, clearTape, persistDisk, restoreDisk, clearDisk } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 import type { TapeBlock } from '@/tape/tap.ts';
@@ -738,11 +738,14 @@ export function applyTape(data: Uint8Array, filename: string): void {
     return;
   }
 
-  // Set tape state on the deck — start paused so the playback engine
-  // doesn't race ahead through blocks before the ROM actually tries to LOAD.
+  // Set tape state on the deck and start playing immediately —
+  // like pressing PLAY on a real cassette deck before typing LOAD.
+  // The 5+ second pilot tone gives the ROM plenty of time to boot
+  // and reach LD-BYTES before data starts.
   spectrum.tape.blocks = blocks;
   spectrum.tape.position = 0;
-  spectrum.tape.paused = true;
+  spectrum.tape.paused = false;
+  spectrum.tape.startPlayback();
 
   // Reset machine (preserves tape) and restart
   spectrum.reset();
@@ -754,7 +757,7 @@ export function applyTape(data: Uint8Array, filename: string): void {
     setTapeName(filename);
     setTapeBlocks([...blocks]);
     setTapePosition(0);
-    setTapePaused(true);
+    setTapePaused(false);
     setTapePlaying(true);
   });
 
@@ -775,6 +778,7 @@ export async function loadFile(data: Uint8Array, filename: string, unit?: number
   if (ext === 'tap' || ext === 'tzx') {
     applyTape(data, filename);
     persistLastFile(data, filename);
+    persistTape(data, filename);
     return;
   }
 
@@ -793,6 +797,7 @@ export async function loadFile(data: Uint8Array, filename: string, unit?: number
       spectrum.loadDisk(image, diskUnit);
       setStatus(`Disk ${diskUnit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
       if (diskUnit === 0) persistLastFile(data, filename);
+      persistDisk(diskUnit, data, filename);
     } catch (e) {
       setStatus(`DSK error: ${(e as Error).message}`);
     }
@@ -851,14 +856,20 @@ function downloadFile(data: Uint8Array, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function saveSnapshot(format: 'sna' | 'z80' = 'sna'): void {
+export function saveSnapshot(format: 'sna' | 'z80' | 'szx' = 'sna'): void {
   if (!spectrum) { setStatus('No machine running'); return; }
 
   const wasPaused = emulationPaused();
   if (!wasPaused) spectrum.stop();
 
-  // For now, .z80 saves as .sna (full .z80 writer not yet implemented)
-  const data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+  let data: Uint8Array;
+  if (format === 'szx') {
+    const ayRegs = spectrum.ay.getRegisters();
+    data = saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, ayRegs, spectrum.ay.selectedReg);
+  } else {
+    // For now, .z80 saves as .sna (full .z80 writer not yet implemented)
+    data = saveSNA(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor);
+  }
   const model = is128kClass(currentModel()) ? '128k' : '48k';
   const ext = format === 'z80' ? 'sna' : format; // TODO: implement .z80 writer
   const filename = `zx84-${model}.${ext}`;
@@ -926,6 +937,19 @@ export function tapePrev(): void {
   setTapePosition(spectrum.tape.position);
 }
 
+export function tapeTogglePlay(): void {
+  if (!spectrum) return;
+  if (spectrum.tape.playing) {
+    spectrum.tape.stopPlayback();
+    setTapePlaying(false);
+  } else {
+    spectrum.tape.paused = false;
+    spectrum.tape.startPlayback();
+    setTapePaused(false);
+    setTapePlaying(true);
+  }
+}
+
 export function tapeTogglePause(): void {
   if (!spectrum) return;
   spectrum.tape.paused = !spectrum.tape.paused;
@@ -951,6 +975,7 @@ export function toggleAutoRewind(): void {
 
 export function ejectTape(): void {
   if (!spectrum) return;
+  spectrum.tape.stopPlayback();
   spectrum.tape.blocks = [];
   spectrum.tape.position = 0;
   spectrum.tape.paused = true;
@@ -959,12 +984,15 @@ export function ejectTape(): void {
   setTapeBlocks([]);
   setTapePosition(0);
   setTapePaused(true);
+  setTapePlaying(false);
+  clearTape();
   setStatus('Tape ejected');
 }
 
 export function ejectDisk(unit: number = 0): void {
   if (!spectrum) return;
   if (spectrum.fdc) spectrum.fdc.ejectDisk(unit);
+  clearDisk(unit);
   if (unit === 0) {
     setCurrentDiskInfo(null);
     setCurrentDiskName('');
@@ -991,6 +1019,7 @@ export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number)
     spectrum.loadDisk(image, unit);
     setStatus(`Disk ${unit === 0 ? 'A' : 'B'}: loaded: ${filename}`);
     if (unit === 0) persistLastFile(data, filename);
+    persistDisk(unit, data, filename);
   } catch (e) {
     setStatus(`DSK error: ${(e as Error).message}`);
   }
@@ -1037,6 +1066,55 @@ export function setMouseButton(button: number, pressed: boolean, mode: MouseMode
   }
 }
 
+// ── Restore persisted media (tape + disks) without resetting ─────────
+
+async function restoreMedia(): Promise<void> {
+  if (!spectrum) return;
+
+  // Restore tape
+  const tape = await restoreTape();
+  if (tape) {
+    try {
+      const ext = tape.name.toLowerCase().split('.').pop();
+      const blocks = ext === 'tzx' ? parseTZX(tape.data) : spectrum.tape.parseTAP(tape.data);
+      spectrum.tape.blocks = blocks;
+      spectrum.tape.position = 0;
+      spectrum.tape.paused = true;
+      batch(() => {
+        setTapeLoaded(true);
+        setTapeName(tape.name);
+        setTapeBlocks([...blocks]);
+        setTapePosition(0);
+        setTapePaused(true);
+        setTapePlaying(false);
+      });
+      setStatus(`Tape restored: ${tape.name}`);
+    } catch { /* ignore corrupt data */ }
+  }
+
+  // Restore disk A
+  const diskA = await restoreDisk(0);
+  if (diskA) {
+    try {
+      const image = parseDSK(diskA.data);
+      spectrum.loadDisk(image, 0);
+      setCurrentDiskInfo(image);
+      setCurrentDiskName(diskA.name);
+    } catch { /* ignore corrupt data */ }
+  }
+
+  // Restore disk B
+  const diskB = await restoreDisk(1);
+  if (diskB) {
+    try {
+      const image = parseDSK(diskB.data);
+      spectrum.loadDisk(image, 1);
+      setCurrentDiskInfoB(image);
+      setCurrentDiskNameB(diskB.name);
+    } catch { /* ignore corrupt data */ }
+  }
+}
+
 // ── Init ────────────────────────────────────────────────────────────────
 
 export async function init(): Promise<void> {
@@ -1050,12 +1128,9 @@ export async function init(): Promise<void> {
     setRomStatus('');
     const hmrRestored = await createMachine();
 
-    // Only restore last file if HMR state wasn't just restored
+    // Only restore persisted media if HMR state wasn't just restored
     if (!hmrRestored) {
-      const last = await restoreLastFile();
-      if (last) {
-        await loadFile(last.data, last.name);
-      }
+      await restoreMedia();
     }
   }
 }

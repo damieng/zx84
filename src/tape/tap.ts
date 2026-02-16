@@ -148,6 +148,34 @@ export class TapeDeck {
   /** Per-block threshold for distinguishing short vs long pulses */
   private shortLongThreshold = DEFAULT_SHORT_LONG_THRESHOLD;
 
+  /** Diagnostic snapshot of playback engine internals (for debug logging). */
+  debugState(): {
+    phase: string; byteIdx: number; bitIdx: number; pulseHalf: number;
+    pulseLen: number; tInPulse: number; bBit0: number; bBit1: number;
+    rawByte: number; rawLen: number;
+  } {
+    const phaseNames = ['IDLE', 'PILOT', 'SYNC1', 'SYNC2', 'DATA', 'PAUSE', 'TONE', 'PULSES', 'DIRECT'];
+    return {
+      phase: phaseNames[this.phase] ?? '?',
+      byteIdx: this.byteIdx,
+      bitIdx: this.bitIdx,
+      pulseHalf: this.pulseHalf,
+      pulseLen: this.pulseLen,
+      tInPulse: this.tInPulse,
+      bBit0: this.bBit0,
+      bBit1: this.bBit1,
+      rawByte: this.rawData ? this.rawData[this.byteIdx] ?? -1 : -1,
+      rawLen: this.rawData ? this.rawData.length : 0,
+    };
+  }
+
+  /** Dump first N raw bytes of the current block as hex string (for debug). */
+  debugRawBytes(n: number): string {
+    if (!this.rawData) return '(no data)';
+    const count = Math.min(n, this.rawData.length);
+    return Array.from(this.rawData.slice(0, count), b => b.toString(16).padStart(2, '0')).join(' ');
+  }
+
   // ── TAP parser ─────────────────────────────────────────────────────────
 
   /** Parse a TAP file and return blocks without modifying deck state */
@@ -349,6 +377,10 @@ export class TapeDeck {
     if (!this.playing || this.paused || this.phase === TapePhase.IDLE) return;
 
     if (this.phase === TapePhase.PAUSE) {
+      // Don't reset earBit here — the last data pulse may have toggled it
+      // between port reads (via main-loop advanceTapeTo), and the ROM needs
+      // to see that toggle on its next IN A,($FE). earBit will naturally
+      // reset when the next block starts or playback stops.
       this.pauseRemaining -= tStates;
       if (this.pauseRemaining <= 0) {
         this.beginBlock(this.playbackIdx + 1);
@@ -624,8 +656,9 @@ export class TapeDeck {
 
   private enterPause(): void {
     this.phase = TapePhase.PAUSE;
-    this.earBit = 0;
-    // Advance deck position past this completed block
+    // Don't reset earBit here — the last data pulse just toggled it,
+    // and the ROM needs to see that final edge before we go low.
+    // earBit will be reset on the next advance() call in PAUSE phase.
     this.position = this.playbackIdx + 1;
   }
 

@@ -167,6 +167,9 @@ export class Spectrum {
   /** Loader detection: auto-start tape based on edge-detection loop patterns */
   loaderDetector = new LoaderDetector();
 
+  /** T-state at which the tape was last advanced (for sub-instruction accuracy) */
+  tapeLastAdvanceT = 0;
+
   /** ROM trap instant load: intercept LD-BYTES at 0x0556 and copy block
    *  data directly into memory.  Works for standard TAP/TZX data blocks. */
   tapeInstantLoad = true;
@@ -229,6 +232,25 @@ export class Spectrum {
       this.vramWriteVal[i] = val & 0xFF;
       this.vramWriteCount++;
     }
+  }
+
+  /**
+   * Advance the tape to the current cpu.tStates and update the ULA EAR bit.
+   * Called from the port-in handler (for sub-instruction accuracy) and from
+   * the main loop (to catch up after each instruction).
+   */
+  advanceTapeTo(): void {
+    if (!this.tape.playing || this.tape.paused) {
+      this.ula.tapeActive = false;
+      return;
+    }
+    const delta = this.cpu.tStates - this.tapeLastAdvanceT;
+    if (delta > 0) {
+      this.tape.advance(delta);
+      this.tapeLastAdvanceT = this.cpu.tStates;
+    }
+    this.ula.tapeActive = true;
+    this.ula.tapeEarBit = this.tape.earBit;
   }
 
   /** Log a port access for trace modes (called from io-ports.ts). */
@@ -418,6 +440,7 @@ export class Spectrum {
     // This keeps contention phase, sub-frame scanline boundaries, and floating
     // bus reads aligned with real ULA timing.
     this.contention.frameStartTStates = this.cpu.tStates;
+    this.tapeLastAdvanceT = this.cpu.tStates;
     const frameEnd = this.cpu.tStates + this.contention.timing.tStatesPerFrame;
 
     // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget)
@@ -518,14 +541,9 @@ export class Spectrum {
 
       const elapsed = this.cpu.tStates - tBefore;
 
-      // Advance tape playback and update ULA EAR bit
-      if (this.tape.playing && !this.tape.paused) {
-        this.tape.advance(elapsed);
-        this.ula.tapeActive = true;
-        this.ula.tapeEarBit = this.tape.earBit;
-      } else {
-        this.ula.tapeActive = false;
-      }
+      // Advance tape playback and update ULA EAR bit (catches up any
+      // T-states not already advanced by the port-in handler mid-instruction)
+      this.advanceTapeTo();
 
       // Accumulate beeper duty and generate audio samples
       this.mixer.accumulate(this.ula.beeperBit, elapsed);
