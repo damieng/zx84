@@ -1183,8 +1183,7 @@ export class Z80 {
         case 5:
           // RETI/RETN: 14T, reads@T+8,T+11. Auto: 8T
           this.pc = this.pop16();
-          this.iff1 = true;
-          this.iff2 = true;
+          this.iff1 = this.iff2;  // Restore interrupt state
           this.tStates += 3;
           break;
 
@@ -1323,12 +1322,34 @@ export class Z80 {
           this.tStates += 5;
           this.write8(this.hl, val);
           this.b = (this.b - 1) & 0xFF;
+
+          // Documented flag formula (verified against FUSE emulator)
+          const t = (y === 4 || y === 6)
+            ? (val + ((this.c + 1) & 0xFF)) & 0x1FF  // INI/INIR
+            : (val + ((this.c - 1) & 0xFF)) & 0x1FF; // IND/INDR
+          const c = t > 0xFF ? 1 : 0;
+          const h = c;
+          const pv_temp = ((t & 0x07) ^ this.b) & 0xFF;
+          let parity = pv_temp;
+          parity ^= parity >> 4;
+          parity ^= parity >> 2;
+          parity ^= parity >> 1;
+          const pv = (parity & 1) ? 0 : 0x04;
+
+          this.f = (this.b & 0x80) |              // S
+                   (this.b === 0 ? 0x40 : 0) |    // Z
+                   (pv_temp & 0x28) |              // undoc bits 3,5
+                   (h << 4) |                      // H
+                   pv |                            // P/V
+                   0x02 |                          // N
+                   c;                              // C
+
           if (y === 4 || y === 6) {
             this.hl = (this.hl + 1) & 0xFFFF;
           } else {
             this.hl = (this.hl - 1) & 0xFFFF;
           }
-          this.f = (this.b === 0 ? 0x40 : 0) | 0x02 | (this.b & 0x80);
+
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
             this.tStates += 8;   // INIR/INDR: 21T total (13+8)
@@ -1344,12 +1365,32 @@ export class Z80 {
           const val = this.read8(this.hl);
           this.b = (this.b - 1) & 0xFF;
           this.portOut(this.bc, val);
+
+          // Documented flag formula (verified against FUSE emulator)
+          const t = (val + this.l) & 0x1FF;
+          const c = t > 0xFF ? 1 : 0;
+          const h = c;
+          const pv_temp = ((t & 0x07) ^ this.b) & 0xFF;
+          let parity = pv_temp;
+          parity ^= parity >> 4;
+          parity ^= parity >> 2;
+          parity ^= parity >> 1;
+          const pv = (parity & 1) ? 0 : 0x04;
+
+          this.f = (this.b & 0x80) |              // S
+                   (this.b === 0 ? 0x40 : 0) |    // Z
+                   (pv_temp & 0x28) |              // undoc bits 3,5
+                   (h << 4) |                      // H
+                   pv |                            // P/V
+                   0x02 |                          // N
+                   c;                              // C
+
           if (y === 4 || y === 6) {
             this.hl = (this.hl + 1) & 0xFFFF;
           } else {
             this.hl = (this.hl - 1) & 0xFFFF;
           }
-          this.f = (this.b === 0 ? 0x40 : 0) | 0x02 | (this.b & 0x80);
+
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
             this.tStates += 12;  // OTIR/OTDR: 21T total (9+12)
