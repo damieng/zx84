@@ -194,8 +194,8 @@ export function applyDisplaySettings(): void {
   }
   spectrum['audio'].setVolume(settings.volume() / 100);
   const mix = settings.ayMix() / 100;
-  spectrum.beeperGain = Math.min(1, 2 * (1 - mix));
-  spectrum.ayGain = Math.min(1, 2 * mix);
+  spectrum.mixer.beeperGain = Math.min(1, 2 * (1 - mix));
+  spectrum.mixer.ayGain = Math.min(1, 2 * mix);
   spectrum.subFrameRendering = settings.subFrameRendering();
 }
 
@@ -999,63 +999,12 @@ function hex16(v: number): string { return v.toString(16).toUpperCase().padStart
 
 // ── Joystick helpers ────────────────────────────────────────────────────
 
-export const KEMPSTON_BITS: Record<string, number> = {
-  right: 0, left: 1, down: 2, up: 3, fire: 4,
-};
-
-export const CURSOR_KEYS: Record<string, { row: number; bit: number }> = {
-  left:  { row: 3, bit: 4 },
-  down:  { row: 4, bit: 4 },
-  up:    { row: 4, bit: 3 },
-  right: { row: 4, bit: 2 },
-  fire:  { row: 4, bit: 0 },
-};
-
-export const SINCLAIR2_KEYS: Record<string, { row: number; bit: number }> = {
-  left:  { row: 3, bit: 0 },
-  right: { row: 3, bit: 1 },
-  down:  { row: 3, bit: 2 },
-  up:    { row: 3, bit: 3 },
-  fire:  { row: 3, bit: 4 },
-};
-
-export const SINCLAIR1_KEYS: Record<string, { row: number; bit: number }> = {
-  left:  { row: 4, bit: 4 },
-  right: { row: 4, bit: 3 },
-  down:  { row: 4, bit: 2 },
-  up:    { row: 4, bit: 1 },
-  fire:  { row: 4, bit: 0 },
-};
-
-// Track how many cursor-joystick directions are currently held,
-// so Caps Shift stays pressed until all are released.
-let cursorShiftCount = 0;
+export { KEMPSTON_BITS, CURSOR_KEYS, SINCLAIR1_KEYS, SINCLAIR2_KEYS } from '@/peripherals/joysticks.ts';
+import { joyPressForType as _joyPress } from '@/peripherals/joysticks.ts';
 
 export function joyPressForType(dir: string, pressed: boolean, mode: string): void {
-  if (!spectrum || mode === 'none') return;
-
-  if (mode === 'kempston') {
-    const bit = KEMPSTON_BITS[dir];
-    if (pressed) {
-      spectrum.kempstonState |= (1 << bit);
-    } else {
-      spectrum.kempstonState &= ~(1 << bit);
-    }
-  } else {
-    const map = mode === 'cursor' ? CURSOR_KEYS
-              : mode === 'sinclair2' ? SINCLAIR2_KEYS
-              : SINCLAIR1_KEYS;
-    const key = map[dir];
-    if (key) {
-      spectrum.keyboard.setKey(key.row, key.bit, pressed);
-      // Cursor joystick requires Caps Shift held with the number keys
-      if (mode === 'cursor') {
-        cursorShiftCount += pressed ? 1 : -1;
-        if (cursorShiftCount < 0) cursorShiftCount = 0;
-        spectrum.keyboard.setKey(0, 0, cursorShiftCount > 0);
-      }
-    }
-  }
+  if (!spectrum) return;
+  _joyPress(spectrum, dir, pressed, mode);
 }
 
 // ── Mouse helpers ────────────────────────────────────────────────────
@@ -1064,45 +1013,25 @@ export type MouseMode = 'kempston' | 'amx' | null;
 
 export function setMouseMode(mode: MouseMode): void {
   if (!spectrum) return;
-  spectrum.kempstonMouseEnabled = mode === 'kempston';
-  spectrum.amxMouseEnabled = mode === 'amx';
+  spectrum.kempstonMouse.enabled = mode === 'kempston';
+  spectrum.amxMouse.enabled = mode === 'amx';
 }
 
 export function updateMousePosition(dx: number, dy: number, mode: MouseMode): void {
   if (!spectrum) return;
   if (mode === 'kempston') {
-    spectrum.kempstonMouseX = (spectrum.kempstonMouseX + dx) & 0xFF;
-    spectrum.kempstonMouseY = (spectrum.kempstonMouseY + dy) & 0xFF;
+    spectrum.kempstonMouse.updatePosition(dx, dy);
   } else if (mode === 'amx') {
-    // Queue steps for PIO interrupt delivery in runFrame
-    spectrum.amxPendingX += dx;
-    spectrum.amxPendingY += dy;
+    spectrum.amxMouse.queueMovement(dx, dy);
   }
 }
 
 export function setMouseButton(button: number, pressed: boolean, mode: MouseMode): void {
   if (!spectrum) return;
   if (mode === 'kempston') {
-    // Active-low: bit clear = pressed, bit set = released
-    // button 0 = left (bit 0), 1 = middle (bit 2), 2 = right (bit 1)
-    const bitMap: Record<number, number> = { 0: 0, 1: 2, 2: 1 };
-    const bit = bitMap[button];
-    if (bit === undefined) return;
-    if (pressed) {
-      spectrum.kempstonMouseButtons &= ~(1 << bit);
-    } else {
-      spectrum.kempstonMouseButtons |= (1 << bit);
-    }
+    spectrum.kempstonMouse.setButton(button, pressed);
   } else if (mode === 'amx') {
-    // Active-low: bit 6=LMB, bit 5=MMB, bit 7=RMB
-    const bitMap: Record<number, number> = { 0: 6, 1: 5, 2: 7 };
-    const bit = bitMap[button];
-    if (bit === undefined) return;
-    if (pressed) {
-      spectrum.amxMouseButtons &= ~(1 << bit);
-    } else {
-      spectrum.amxMouseButtons |= (1 << bit);
-    }
+    spectrum.amxMouse.setButton(button, pressed);
   }
 }
 

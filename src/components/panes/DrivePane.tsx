@@ -2,7 +2,7 @@ import { Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiOutlineFolderOpen, HiOutlineEllipsisVertical } from 'solid-icons/hi';
+import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,

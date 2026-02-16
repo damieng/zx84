@@ -59,9 +59,9 @@ export function wirePortIO(s: Spectrum): void {
     // ULA port: any port with bit 0 = 0
     if ((port & 0x01) === 0) {
       const newBeeperBit = (val >> 4) & 1;
-      if (newBeeperBit !== s.prevBeeperBit) {
+      if (newBeeperBit !== s.mixer.prevBeeperBit) {
         s.activity.beeperToggled = true;
-        s.prevBeeperBit = newBeeperBit;
+        s.mixer.prevBeeperBit = newBeeperBit;
       }
       // Log border color changes for sub-frame rendering
       if (s.subFrameRendering) {
@@ -101,10 +101,10 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // AMX mouse PIO control ports (active when AMX enabled, A7=0)
-    if (s.amxMouseEnabled && (port & 0x80) === 0) {
+    if (s.amxMouse.enabled && (port & 0x80) === 0) {
       const lo = port & 0xE0;
-      if (lo === 0x40) { s.amxPioControlWrite('A', val); }  // 0x5F: Port A control
-      if (lo === 0x60) { s.amxPioControlWrite('B', val); }  // 0x7F: Port B control
+      if (lo === 0x40) { s.amxMouse.pioControlWrite('A', val); }  // 0x5F: Port A control
+      if (lo === 0x60) { s.amxMouse.pioControlWrite('B', val); }  // 0x7F: Port B control
     }
 
     // AY ports — 128K only (48K has no AY chip)
@@ -153,30 +153,30 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // AMX mouse PIO data ports (A7=0) and button port (0xDF)
-    if (s.amxMouseEnabled) {
+    if (s.amxMouse.enabled) {
       if ((port & 0x80) === 0) {
         const lo = port & 0xE0;
-        if (lo === 0x00) { s.activity.mouseReads++; return s.amxDirX & 1; }  // 0x1F: X direction
-        if (lo === 0x20) { s.activity.mouseReads++; return s.amxDirY & 1; }  // 0x3F: Y direction
+        if (lo === 0x00) { s.activity.mouseReads++; return s.amxMouse.dirX & 1; }  // 0x1F: X direction
+        if (lo === 0x20) { s.activity.mouseReads++; return s.amxMouse.dirY & 1; }  // 0x3F: Y direction
       }
       if ((port & 0xFF) === 0xDF) {
         s.activity.mouseReads++;
-        return s.amxMouseButtons;
+        return s.amxMouse.buttons;
       }
     }
 
     // Kempston mouse: port low byte = 0xDF, high byte selects X/Y/buttons
-    if (s.kempstonMouseEnabled && (port & 0xFF) === 0xDF) {
+    if (s.kempstonMouse.enabled && (port & 0xFF) === 0xDF) {
       const hi = (port >> 8) & 0xFF;
-      if (hi === 0xFB) { s.activity.mouseReads++; return s.kempstonMouseX & 0xFF; }
-      if (hi === 0xFF) { s.activity.mouseReads++; return s.kempstonMouseY & 0xFF; }
-      if (hi === 0xFA) { s.activity.mouseReads++; return s.kempstonMouseButtons; }
+      if (hi === 0xFB) { s.activity.mouseReads++; return s.kempstonMouse.x & 0xFF; }
+      if (hi === 0xFF) { s.activity.mouseReads++; return s.kempstonMouse.y & 0xFF; }
+      if (hi === 0xFA) { s.activity.mouseReads++; return s.kempstonMouse.buttons; }
     }
 
     // Kempston joystick: bits 5-7 of low byte all zero
     if ((port & 0x00E0) === 0) {
       s.activity.kempstonReads++;
-      return s.kempstonState;
+      return s.joystick.state;
     }
 
     // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
