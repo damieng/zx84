@@ -7,7 +7,7 @@ import {
   tapeRewind, tapeTogglePause, tapeSetPosition, toggleAutoRewind,
   ejectTape, loadFile, tapePrev, tapeNext,
 } from '@/emulator.ts';
-import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks } from '@/store/settings.ts';
+import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeAcceleration, setTapeAcceleration } from '@/store/settings.ts';
 import { persistSetting } from '@/store/settings.ts';
 import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
@@ -108,11 +108,19 @@ export function TapePane() {
           icon={<HiOutlineEllipsisVertical />}
           title="Tape options"
           items={[
+            { value: 'instant-load', label: 'Instant loading (ROM trap)', checked: tapeInstantLoad() },
+            { value: 'edge-acceleration', label: 'Edge acceleration (TZX)', checked: tapeAcceleration() },
             { value: 'auto-rewind', label: 'Auto-rewind', checked: tapeAutoRewind() },
             { value: 'collapse-blocks', label: 'Collapse matching blocks', checked: tapeCollapseBlocks() },
           ]}
           onSelect={(value) => {
-            if (value === 'auto-rewind') {
+            if (value === 'instant-load') {
+              setTapeInstantLoad(!tapeInstantLoad());
+              persistSetting('tape-instant-load', tapeInstantLoad() ? 'on' : 'off');
+            } else if (value === 'edge-acceleration') {
+              setTapeAcceleration(!tapeAcceleration());
+              persistSetting('tape-acceleration', tapeAcceleration() ? 'on' : 'off');
+            } else if (value === 'auto-rewind') {
               toggleAutoRewind();
             } else if (value === 'collapse-blocks') {
               setTapeCollapseBlocks(!tapeCollapseBlocks());

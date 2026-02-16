@@ -8,6 +8,7 @@
 
 import type { Spectrum } from '@/spectrum.ts';
 import { is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
+import { accelerateTape } from '@/tape/loader-accel.ts';
 
 /**
  * Override Z80 read8/write8 to apply per-access ULA contention and
@@ -127,6 +128,29 @@ export function wirePortIO(s: Spectrum): void {
     if ((port & 0x01) === 0) {
       s.activity.ulaReads++;
       if (s.ula.tapeActive) s.activity.earReads++;
+
+      // Loader detection + acceleration for custom loaders (Speedlock etc.)
+      if (s.tape.loaded && !s.tape.finished) {
+        if (!s.tape.playing || s.tape.paused) {
+          // Tape not playing: detect edge-detection loops to auto-start.
+          // Only when the next blocks are custom-loader blocks (not
+          // ROM-loadable) and code is running from RAM (not ROM routines).
+          if (!s.tape.hasRomBlock() && s.cpu.pc >= 0x4000 &&
+              s.loaderDetector.onPortRead(s.cpu.tStates, s.cpu.b)) {
+            s.tape.paused = false;
+            if (!s.tape.playing) s.tape.startPlayback();
+            s.loaderDetector.reset();
+          }
+        } else if (s.tapeAcceleration) {
+          // Tape playing + acceleration enabled: fast-forward the tape to
+          // the next edge so the loader sees the EAR toggle immediately
+          // instead of spinning in a tight poll loop.  The loader's own
+          // code still runs (border stripes etc.) — we just eliminate the
+          // multi-thousand-iteration wait for each edge.
+          accelerateTape(s.tape);
+        }
+      }
+
       return s.ula.readPort((port >> 8) & 0xFF);
     }
 

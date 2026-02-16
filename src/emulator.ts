@@ -197,6 +197,8 @@ export function applyDisplaySettings(): void {
   spectrum.mixer.beeperGain = Math.min(1, 2 * (1 - mix));
   spectrum.mixer.ayGain = Math.min(1, 2 * mix);
   spectrum.subFrameRendering = settings.subFrameRendering();
+  spectrum.tapeInstantLoad = settings.tapeInstantLoad();
+  spectrum.tapeAcceleration = settings.tapeAcceleration();
 }
 
 export async function createMachine(): Promise<boolean> {

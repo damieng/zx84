@@ -26,6 +26,7 @@ import type { DskImage } from '@/plus3/dsk.ts';
 import { Contention } from '@/contention.ts';
 import { ScreenText } from '@/debug/screen-text.ts';
 import { trapTapeLoad } from '@/tape/tape-loader.ts';
+import { LoaderDetector } from '@/tape/loader-detect.ts';
 import { installMemoryHooks, wirePortIO } from '@/io-ports.ts';
 import { KempstonJoystick } from '@/peripherals/joysticks.ts';
 import { KempstonMouse } from '@/peripherals/kempston-mouse.ts';
@@ -163,6 +164,18 @@ export class Spectrum {
   private _portTallyIn: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
   private _portTallyOut: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
 
+  /** Loader detection: auto-start tape based on edge-detection loop patterns */
+  loaderDetector = new LoaderDetector();
+
+  /** ROM trap instant load: intercept LD-BYTES at 0x0556 and copy block
+   *  data directly into memory.  Works for standard TAP/TZX data blocks. */
+  tapeInstantLoad = true;
+
+  /** Edge acceleration: fast-forward tape to next edge on each port read
+   *  during custom loader playback, eliminating the multi-iteration wait.
+   *  Produces fast loading while preserving border stripes. */
+  tapeAcceleration = true;
+
   /** Breakpoints (checked every instruction in runFrame) */
   breakpoints = new Set<number>();
   /** Set to the hit address when a breakpoint fires mid-frame */
@@ -282,6 +295,7 @@ export class Spectrum {
     this.kempstonMouse.reset();
     this.amxMouse.reset();
     this.mixer.reset();
+    this.loaderDetector.reset();
     this.contention.frameStartTStates = 0;
     this.needsDisplay = true;
     this.setStatus('Reset');
@@ -447,7 +461,7 @@ export class Spectrum {
       // LD-BYTES code so custom loaders can read EAR naturally.
       // Auto-unpause: the tape starts paused on mount so the playback engine
       // doesn't race ahead; we unpause here when the ROM actually tries to LOAD.
-      if (this.tape.loaded && this.cpu.pc === 0x0556 &&
+      if (this.tapeInstantLoad && this.tape.loaded && this.cpu.pc === 0x0556 &&
           this.cpu.memory[0x0556] === 0x14 && this.tape.hasRomBlock()) {
         if (this.tape.paused) {
           this.tape.paused = false;
@@ -517,6 +531,9 @@ export class Spectrum {
       this.mixer.accumulate(this.ula.beeperBit, elapsed);
       this.mixer.generateSamples(this.audio, this.ay, is128kClass(this.model));
     }
+
+    // Adjust loader detector T-state tracking across frame boundary
+    this.loaderDetector.onFrameEnd(this.tStatesPerFrame);
 
     // Sub-frame rendering: replay VRAM writes per-scanline and render full frame
     if (subFrame) this.renderSubFrame();

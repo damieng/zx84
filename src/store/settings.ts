@@ -87,6 +87,8 @@ export const [dualDrives, setDualDrives] = createSignal(getSaved('dual-drives', 
 
 export const [tapeAutoRewind, setTapeAutoRewind] = createSignal(getSaved('tape-auto-rewind', 'on') === 'on');
 export const [tapeCollapseBlocks, setTapeCollapseBlocks] = createSignal(getSaved('tape-collapse-blocks', 'on') === 'on');
+export const [tapeInstantLoad, setTapeInstantLoad] = createSignal(getSaved('tape-instant-load', 'on') === 'on');
+export const [tapeAcceleration, setTapeAcceleration] = createSignal(getSaved('tape-acceleration', 'on') === 'on');
 
 // ── Sub-frame rendering ────────────────────────────────────────────────
 
