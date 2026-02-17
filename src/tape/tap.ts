@@ -52,7 +52,6 @@ const SYNC_2 = 735;
 const BIT_0 = 855;
 const BIT_1 = 1710;
 const PAUSE_DEFAULT_MS = 1000;
-const Z80_CLOCK = 3500000;
 
 
 const enum TapePhase {
@@ -74,6 +73,9 @@ export class TapeDeck {
 
   /** Whether the machine is a 48K model (used by stop-if-48k blocks) */
   is48K = false;
+
+  /** CPU clock speed in Hz (affects pause/timing calculations) */
+  cpuClock = 3500000;
 
   // ── Playback engine state ──────────────────────────────────────────────
 
@@ -375,7 +377,7 @@ export class TapeDeck {
         this.position = idx + 1;
         this.phase = TapePhase.PAUSE;
         this.earBit = 0;
-        this.pauseRemaining = Math.round(block.duration * Z80_CLOCK / 1000);
+        this.pauseRemaining = Math.round(block.duration * this.cpuClock / 1000);
         break;
 
       case 'direct':
@@ -419,7 +421,7 @@ export class TapeDeck {
     this.bBit0 = block.bit0Pulse;
     this.bBit1 = block.bit1Pulse;
     this.usedBitsLast = block.usedBits;
-    this.pauseRemaining = Math.round(block.pause * Z80_CLOCK / 1000);
+    this.pauseRemaining = Math.round(block.pause * this.cpuClock / 1000);
 
     if (block.pilotCount === 0) {
       // Pure data blocks: no pilot or sync, straight to data
@@ -466,7 +468,7 @@ export class TapeDeck {
         if (this.directPauseMs > 0) {
           this.phase = TapePhase.PAUSE;
           this.earBit = 0;
-          this.pauseRemaining = Math.round(this.directPauseMs * Z80_CLOCK / 1000);
+          this.pauseRemaining = Math.round(this.directPauseMs * this.cpuClock / 1000);
         } else {
           this.beginBlock(this.playbackIdx + 1);
         }
@@ -482,7 +484,7 @@ export class TapeDeck {
           if (this.directPauseMs > 0) {
             this.phase = TapePhase.PAUSE;
             this.earBit = 0;
-            this.pauseRemaining = Math.round(this.directPauseMs * Z80_CLOCK / 1000);
+            this.pauseRemaining = Math.round(this.directPauseMs * this.cpuClock / 1000);
           } else {
             this.beginBlock(this.playbackIdx + 1);
           }

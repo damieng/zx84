@@ -6,8 +6,6 @@
 import type { Audio } from '@/audio.ts';
 import type { AY3891x } from '@/cores/ay-3-8910.ts';
 
-const Z80_CLOCK = 3500000;
-
 export class AudioMixer {
   /** Gain factors for AY/beeper balance (0.0-1.0, set from ayMix slider) */
   beeperGain = 1.0;
@@ -19,6 +17,9 @@ export class AudioMixer {
   /** T-states per audio sample */
   tStatesPerSample: number;
 
+  /** CPU clock speed in Hz */
+  private cpuClock: number;
+
   /** Beeper duty cycle accumulator for current audio sample */
   private beeperAccum = 0;
   beeperTStatesAccum = 0;
@@ -28,13 +29,14 @@ export class AudioMixer {
   private beeperDCPrev = 0;
   private beeperDCOut = 0;
 
-  constructor() {
-    this.tStatesPerSample = Z80_CLOCK / 44100;
+  constructor(cpuClock = 3500000) {
+    this.cpuClock = cpuClock;
+    this.tStatesPerSample = cpuClock / 44100;
   }
 
   /** Compute tStatesPerSample and DC alpha from actual audio sample rate. */
   init(sampleRate: number): void {
-    this.tStatesPerSample = Z80_CLOCK / sampleRate;
+    this.tStatesPerSample = this.cpuClock / sampleRate;
     // DC-blocking filter: ~20Hz cutoff, same as AY core
     this.beeperDCAlpha = 1 - (2 * Math.PI * 20 / sampleRate);
   }

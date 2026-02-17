@@ -13,6 +13,7 @@ import type { SpectrumMemory } from '@/memory.ts';
 
 /** Model-dependent ULA timing parameters. */
 export interface MachineTiming {
+  cpuClock: number;
   tStatesPerFrame: number;
   tStatesPerLine: number;
   /** Frame-relative T-state at which contention begins (first pixel line). */
@@ -20,12 +21,14 @@ export interface MachineTiming {
 }
 
 export const TIMING_48K: MachineTiming = {
+  cpuClock: 3500000,
   tStatesPerFrame: 69888,   // 224 × 312
   tStatesPerLine: 224,
   contentionStart: 14335,
 };
 
 export const TIMING_128K: MachineTiming = {
+  cpuClock: 3546900,
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
   contentionStart: 14361,
