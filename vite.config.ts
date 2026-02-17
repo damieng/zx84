@@ -2,7 +2,6 @@ import { defineConfig, Plugin } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
-import obfuscatorPlugin from 'rollup-plugin-obfuscator';
 import viteCompression from 'vite-plugin-compression';
 
 // ── HMR freeze: shared state between plugins ────────────────────────────
@@ -94,27 +93,6 @@ export default defineConfig(({ mode }) => ({
     },
     rollupOptions: {
       plugins: [
-        obfuscatorPlugin({
-          options: {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.5,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.2,
-            stringArray: true,
-            stringArrayThreshold: 0.5,
-            stringArrayEncoding: ['rc4'],
-            stringArrayRotate: true,
-            stringArrayShuffle: true,
-            splitStrings: true,
-            splitStringsChunkLength: 5,
-            identifierNamesGenerator: 'hexadecimal',
-            renameGlobals: true,
-            selfDefending: false,
-            transformObjectKeys: true,
-            unicodeEscapeSequence: false,
-          },
-        }),
       ],
     },
     assetsInlineLimit: 4096,
