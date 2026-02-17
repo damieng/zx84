@@ -76,7 +76,7 @@
 - [ ] Printer support (ZX Printer, Epson, etc.)
 
 ### Hardware Fixes
-- [ ] +3 Ghost fix (artifact reduction)
+- [ ] +3 Ghost fix
 - [x] External 3" / 3.5" drive support
 
 ### Sound Enhancements
