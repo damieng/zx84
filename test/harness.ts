@@ -319,7 +319,39 @@ async function main(): Promise<void> {
             diskUnit = (last === '1' || last === 'b' || last === 'b:') ? 1 : 0;
             fileParts = fileParts.slice(0, -1);
           }
-          loadFileInto(spec, fileParts.join(' '), diskUnit);
+          // Strip surrounding quotes (single or double) the user may have typed
+          const filepath = fileParts.join(' ').replace(/^["']|["']$/g, '');
+          loadFileInto(spec, filepath, diskUnit);
+          break;
+        }
+
+        case 'diskboot': {
+          // Boot from disk in drive A:. Lets the +3 start up normally (500
+          // frames for the menu to appear), then simulates pressing Enter on
+          // the "Loader" option. This exercises the real DOS BOOT path with
+          // all +3DOS internal state properly initialised.
+          if (spec.model !== '+3') {
+            console.log('diskboot requires +3 model. Use: model +3');
+            break;
+          }
+          if (!spec.fdc.getDiskImage(0)) {
+            console.log('No disk in drive A:. Use: load <file.dsk>');
+            break;
+          }
+
+          // Let the +3 boot to its startup menu
+          console.log('Booting +3 to startup menu...');
+          spec.runUntil(500);
+
+          // Press Enter to select "Loader" (default highlighted option)
+          spec.keyboard.handleKeyEvent('Enter', true);
+          for (let i = 0; i < 5; i++) spec.tick();
+          spec.keyboard.handleKeyEvent('Enter', false);
+          spec.tick();
+
+          console.log(`DOS BOOT initiated via Loader menu.`);
+          console.log(`  Bootstrap loads to FE00h, enters at FE10h.`);
+          console.log(`  Suggested: bp FE10  →  cont`);
           break;
         }
 
@@ -612,6 +644,7 @@ Commands:
   trace <mode>         Start trace: full, contention, portio
   stop                 Stop trace, print/save result
   load <file> [unit]   Load TAP/TZX/SNA/Z80/DSK (DSK: optional 0|1|A|B for drive)
+  diskboot             Page in +3DOS ROM, call BOOT routine at 012Ah (no keypress needed)
   eject disk [0|1|A|B] Eject disk from drive A or B
   eject tape           Unload tape
   out <port> <val>     Write byte to I/O port (triggers port handler; use to bank-switch)
