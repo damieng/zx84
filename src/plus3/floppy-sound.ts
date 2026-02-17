@@ -82,17 +82,20 @@ export class FloppySound {
     this.motorGain.gain.linearRampToValueAtTime(1, now + 0.1);
     this.motorGain.connect(this.masterGain);
 
-    // Low sine drone (gentle hum, not buzzy)
+    // Mechanical engage "kurlick" — short downward sweep + noise burst
+    this.motorStartClick(now);
+
+    // Subtle motor hum
     this.motorOsc = ctx.createOscillator();
     this.motorOsc.type = 'sine';
-    this.motorOsc.frequency.value = 60;
+    this.motorOsc.frequency.value = 120;
     const oscGain = ctx.createGain();
-    oscGain.gain.value = 0.4;
+    oscGain.gain.value = 0.06;
     this.motorOsc.connect(oscGain);
     oscGain.connect(this.motorGain);
     this.motorOsc.start(now);
 
-    // Band-pass filtered white noise (mechanical rumble)
+    // Gentle filtered noise (soft whirr)
     const noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const noise = noiseBuf.getChannelData(0);
     for (let i = 0; i < noise.length; i++) noise[i] = Math.random() * 2 - 1;
@@ -103,11 +106,11 @@ export class FloppySound {
 
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 80;
-    bp.Q.value = 2;
+    bp.frequency.value = 160;
+    bp.Q.value = 4;
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.6;
+    noiseGain.gain.value = 0.1;
     this.motorNoise.connect(bp);
     bp.connect(noiseGain);
     noiseGain.connect(this.motorGain);
@@ -136,6 +139,61 @@ export class FloppySound {
       this.motorGain = null;
     };
     setTimeout(cleanup, 200);
+  }
+
+  // ── Motor start "kurlick" ───────────────────────────────────────────
+
+  private motorStartClick(now: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    const ctx = this.ctx;
+    const dur = 0.09;
+    const samples = Math.ceil(ctx.sampleRate * dur);
+
+    // "shuhh" — filtered noise that sweeps downward, like a mechanism sliding
+    const noiseBuf = ctx.createBuffer(1, samples, ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < samples; i++) data[i] = Math.random() * 2 - 1;
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuf;
+
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(3000, now);
+    hp.frequency.exponentialRampToValueAtTime(400, now + 0.06);
+
+    const noiseEnv = ctx.createGain();
+    noiseEnv.gain.setValueAtTime(0.3, now);
+    noiseEnv.gain.linearRampToValueAtTime(0.15, now + 0.04);
+    noiseEnv.gain.exponentialRampToValueAtTime(0.01, now + dur);
+
+    noiseSrc.connect(hp);
+    hp.connect(noiseEnv);
+    noiseEnv.connect(this.masterGain);
+    noiseSrc.start(now);
+    noiseSrc.stop(now + dur);
+
+    // "ckl" — sharp resonant click at the end, like a latch catching
+    const clickTime = now + 0.05;
+    const clickBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.015), ctx.sampleRate);
+    const clickData = clickBuf.getChannelData(0);
+    for (let i = 0; i < clickData.length; i++) clickData[i] = Math.random() * 2 - 1;
+    const clickSrc = ctx.createBufferSource();
+    clickSrc.buffer = clickBuf;
+
+    const clickBp = ctx.createBiquadFilter();
+    clickBp.type = 'bandpass';
+    clickBp.frequency.value = 1800;
+    clickBp.Q.value = 5;
+
+    const clickEnv = ctx.createGain();
+    clickEnv.gain.setValueAtTime(0.45, clickTime);
+    clickEnv.gain.exponentialRampToValueAtTime(0.01, clickTime + 0.015);
+
+    clickSrc.connect(clickBp);
+    clickBp.connect(clickEnv);
+    clickEnv.connect(this.masterGain);
+    clickSrc.start(clickTime);
+    clickSrc.stop(clickTime + 0.015);
   }
 
   // ── Step click ───────────────────────────────────────────────────────
