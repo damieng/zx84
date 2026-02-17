@@ -67,8 +67,6 @@ export interface IOActivity {
   ayWrites: number;
   /** Number of LD-BYTES (0x0556) calls this frame */
   tapeLoads: number;
-  /** Number of RST 16 (0x0010) calls this frame */
-  rst16Calls: number;
   /** Number of FDC data port accesses this frame */
   fdcAccesses: number;
   /** Number of ULA reads while tape is active (EAR sampling) */
@@ -100,7 +98,7 @@ export class Spectrum {
 
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
 
   /** Kempston joystick peripheral */
   joystick = new KempstonJoystick();
@@ -435,7 +433,6 @@ export class Spectrum {
     this.activity.beeperToggled = false;
     this.activity.ayWrites = 0;
     this.activity.tapeLoads = 0;
-    this.activity.rst16Calls = 0;
     this.activity.fdcAccesses = 0;
     this.activity.earReads = 0;
     this.activity.attrWrites = 0;
@@ -474,10 +471,6 @@ export class Spectrum {
 
       // ROM routine activity detection
       if (this.cpu.pc === 0x0556) this.activity.tapeLoads++;
-      if (this.cpu.pc === 0x0010) {
-        this.activity.rst16Calls++;
-        this.screenText.captureChar(this.cpu.a, this.cpu.memory);
-      }
       // Screen grid maintenance — keep shadow copy in sync with ROM routines.
       const pc = this.cpu.pc;
       this.screenText.checkROMRoutines(pc, this.cpu.memory, this.cpu.bc);

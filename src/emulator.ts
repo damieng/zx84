@@ -84,10 +84,10 @@ import {
 
 import {
   ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo,
-  ledDsk, ledBeep, ledAy, ledRainbow, ledRst16, ledText,
+  ledDsk, ledBeep, ledAy, ledRainbow, ledText,
   transcribeMode, transcribeText,
   setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo,
-  setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedRst16, setLedText,
+  setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedText,
   setTranscribeMode, setTranscribeText,
 } from '@/state/activity-state.ts';
 
@@ -108,8 +108,8 @@ export { regsHtml, regsRev, sysvarHtml, sysvarRev, basicHtml, basicVarsHtml, ban
 export { setRegsHtml, setRegsRev, setSysvarHtml, setSysvarRev, setBasicHtml, setBasicVarsHtml, setBanksHtml, setDisasmText, setTracing, setTrapLogHtml, setShowTrapLog };
 
 // Re-export activity state
-export { ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo, ledDsk, ledBeep, ledAy, ledRainbow, ledRst16, ledText, transcribeMode, transcribeText };
-export { setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo, setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedRst16, setLedText, setTranscribeMode, setTranscribeText };
+export { ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo, ledDsk, ledBeep, ledAy, ledRainbow, ledText, transcribeMode, transcribeText };
+export { setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo, setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedText, setTranscribeMode, setTranscribeText };
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
 
@@ -836,7 +836,7 @@ export async function init(): Promise<void> {
 
 // ── Transcribe ──────────────────────────────────────────────────────────
 
-export function toggleTranscribeMode(mode: 'rst16' | 'text'): void {
+export function toggleTranscribeMode(mode: 'text'): void {
   if (transcribeMode() === mode) {
     setTranscribeMode('off');
   } else {

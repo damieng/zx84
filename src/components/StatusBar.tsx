@@ -3,7 +3,7 @@
  */
 
 import {
-  statusText, ledKbd, ledKemp, ledEar, ledLoad, ledTapeTurbo, ledRst16, ledText,
+  statusText, ledKbd, ledKemp, ledEar, ledLoad, ledTapeTurbo, ledText,
   ledBeep, ledAy, ledDsk, ledRainbow, ledMouse, toggleTranscribeMode, spectrum,
 } from '@/emulator.ts';
 
@@ -50,10 +50,7 @@ export function StatusBar() {
             tip="Floppy disk controller is being accessed" />
         </div>
         <div class="led-group">
-          {/* Group 3: Transcription and effects */}
-          <Led id="led-rst16" kind="rst16" label="RST16" on={ledRst16()}
-            tip="RST 16 character output — click to toggle capture overlay"
-            onClick={() => spectrum && toggleTranscribeMode('rst16')} />
+          {/* Group 3: Screen effects and transcription */}
           <Led id="led-text" kind="text" label="TEXT" on={ledText()}
             tip="Pixel-based screen OCR — click to toggle overlay"
             onClick={() => spectrum && toggleTranscribeMode('text')} />

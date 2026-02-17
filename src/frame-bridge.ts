@@ -15,10 +15,10 @@ import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
-  setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setTrapLogHtml, setShowTrapLog, setDisasmText,
+  setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
   setClockSpeedText,
   setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText,
-  setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedRst16, setLedText,
+  setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedText,
   setLedBeep, setLedAy, setLedDsk, setLedRainbow, setLedMouse, setLedTapeTurbo,
   setStatus, setEmulationPaused, setTracing,
   getPendingRunTo, clearPendingRunTo,
@@ -310,8 +310,7 @@ export function onFrame(): void {
     setLedTapeTurbo(spectrum!.tapeTurboActive);
 
     // Transcribe mode LEDs
-    setLedRst16(transcribeMode() === 'rst16' || a.rst16Calls > 0);
-    setLedText(transcribeMode() === 'text');
+    setLedText(transcribeMode() === 'text' || a.earReads > 0);
 
     // Tape position + play/pause state (may change via ROM trap or loader detector)
     if (spectrum!.tape.loaded) {
@@ -365,20 +364,7 @@ export function onFrame(): void {
 
     // Transcribe overlay
     if (transcribeMode() !== 'off') {
-      if (transcribeMode() === 'text') {
-        setTranscribeText(spectrum!.ocrScreen());
-      } else {
-        const grid = spectrum!.screenGrid;
-        let text = '';
-        for (let row = 0; row < 24; row++) {
-          const offset = row * 32;
-          for (let col = 0; col < 32; col++) {
-            text += grid[offset + col];
-          }
-          if (row < 23) text += '\n';
-        }
-        setTranscribeText(text);
-      }
+      setTranscribeText(spectrum!.ocrScreen());
     }
   });
 

@@ -56,15 +56,11 @@ export const ledRainbow = _ledRainbow[0];
 export const setLedRainbow = _ledRainbow[1];
 
 // Transcription
-const _ledRst16 = createSignal(false);
-export const ledRst16 = _ledRst16[0];
-export const setLedRst16 = _ledRst16[1];
-
 const _ledText = createSignal(false);
 export const ledText = _ledText[0];
 export const setLedText = _ledText[1];
 
-const _transcribeMode = createSignal<'off' | 'rst16' | 'text'>('off');
+const _transcribeMode = createSignal<'off' | 'text'>('off');
 export const transcribeMode = _transcribeMode[0];
 export const setTranscribeMode = _transcribeMode[1];
 
