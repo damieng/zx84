@@ -6,7 +6,7 @@
 
 import { createEffect, onMount, onCleanup } from 'solid-js';
 import { spectrum, regsRev } from '@/emulator.ts';
-import { Z80 } from '@/cores/z80.ts';
+import { Z80 } from '@/cores/Z80.ts';
 
 // Pre-built lookup tables — zero allocation on use
 const HEX8: string[] = new Array(256);

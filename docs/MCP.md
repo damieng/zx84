@@ -104,7 +104,6 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `screen` | — | RST 16 character grid as text. |
 | `ocr` | — | Bitmap OCR of the screen. |
 
 ### Model

@@ -9,7 +9,7 @@
  */
 
 import type { Spectrum } from '@/spectrum.ts';
-import { Z80 } from '@/cores/z80.ts';
+import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne } from '@/debug/z80-disasm.ts';
 
 export type TraceMode = 'full' | 'contention' | 'portio';

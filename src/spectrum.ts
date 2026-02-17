@@ -9,7 +9,7 @@
  * emulator locked to real-time without drift.
  */
 
-import { Z80 } from '@/cores/z80.ts';
+import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne, stripMarkers } from '@/debug/z80-disasm.ts';
 import { AY3891x } from '@/cores/ay-3-8910.ts';
 import { SpectrumMemory } from '@/memory.ts';
@@ -93,9 +93,7 @@ export class Spectrum {
   tape: TapeDeck;
   fdc: UPD765A;
   contention: Contention;
-  screenText: ScreenText;
-
-
+  screenText = new ScreenText();
 
   /** Per-frame I/O activity counters */
   activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
@@ -111,9 +109,6 @@ export class Spectrum {
 
   /** Audio mixer peripheral (beeper + AY mixing, DC filter) */
   mixer!: AudioMixer;
-
-  /** 32x24 character grid mirroring what RST 16 prints to the display */
-  get screenGrid(): string[] { return this.screenText.screenGrid; }
 
   private running = false;
   private starting = false;
@@ -213,8 +208,6 @@ export class Spectrum {
     this.tape.is48K = model === '48k';
     this.tape.cpuClock = this.contention.timing.cpuClock;
     this.fdc = new UPD765A();
-    this.screenText = new ScreenText();
-
     installMemoryHooks(this);
     wirePortIO(this);
   }
@@ -312,7 +305,6 @@ export class Spectrum {
     this.fdc.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
-    this.screenText.clear();
     this.joystick.reset();
     this.kempstonMouse.reset();
     this.amxMouse.reset();
@@ -471,11 +463,6 @@ export class Spectrum {
 
       // ROM routine activity detection
       if (this.cpu.pc === 0x0556) this.activity.tapeLoads++;
-      // Screen grid maintenance — keep shadow copy in sync with ROM routines.
-      const pc = this.cpu.pc;
-      this.screenText.checkROMRoutines(pc, this.cpu.memory, this.cpu.bc);
-      this.screenText.checkLDIRClear(pc, this.cpu.memory, this.cpu.de, this.cpu.bc);
-
       // ROM trap: intercept LD-BYTES for instant tape loading.
       // Only trap when a ROM-loadable block is ahead; if only custom loader
       // blocks remain (tone/pulses/pure-data), let the ROM execute its real
@@ -695,14 +682,6 @@ export class Spectrum {
 
   loadDisk(image: DskImage, unit: number = 0): void {
     this.fdc.insertDisk(image, unit);
-  }
-
-  getScreenText(): string {
-    return this.screenText.getText();
-  }
-
-  clearScreenGrid(): void {
-    this.screenText.clear();
   }
 
   ocrScreen(): string {

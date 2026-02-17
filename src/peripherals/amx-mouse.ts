@@ -12,7 +12,7 @@
  * spread evenly across the frame.
  */
 
-import type { Z80 } from '@/cores/z80.ts';
+import type { Z80 } from '@/cores/Z80.ts';
 import type { IOActivity } from '@/spectrum.ts';
 
 type PioCtrlState = 'normal' | 'await_io' | 'await_int';

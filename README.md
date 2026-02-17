@@ -81,7 +81,6 @@ Watch your Spectrum work in real-time:
 
 ### 🎯 Transcription Tools
 Extract text and graphics from running programs:
-- **RST 16 Capture** — Monitor PRINT AT commands with overlay
 - **Pixel OCR** — Live character recognition from screen
 
 ---
