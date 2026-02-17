@@ -31,7 +31,8 @@
       "mcp__zx84__find",
       "mcp__zx84__key",
       "mcp__zx84__peek",
-      "mcp__zx84__step"
+      "mcp__zx84__step",
+      "Bash(python3:*)"
     ]
   },
   "enabledMcpjsonServers": [

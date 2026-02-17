@@ -11,10 +11,18 @@ export function Screen() {
   let overlayRef!: HTMLPreElement;
   let natSize = { w: 0, h: 0 };
 
-  // When renderer changes, re-register canvas
+  // When renderer changes, create a fresh canvas element.
+  // Browsers only allow one context type per canvas — once getContext('2d')
+  // has been called, getContext('webgl') returns null on the same element.
   createEffect(() => {
     renderer(); // track
-    if (canvasRef) setCanvas(canvasRef);
+    if (!canvasRef) return;
+    const fresh = document.createElement('canvas');
+    fresh.id = canvasRef.id;
+    fresh.className = canvasRef.className;
+    canvasRef.replaceWith(fresh);
+    canvasRef = fresh;
+    setCanvas(fresh);
   });
 
   // Position the transcribe overlay

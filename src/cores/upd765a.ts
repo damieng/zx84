@@ -314,7 +314,6 @@ export class UPD765A {
 
     const idx = track.sectorMap.get(this.exR);
     if (idx === undefined) {
-      this.exHitEOT = true;  // sector not found past EOT boundary
       return false;
     }
 
