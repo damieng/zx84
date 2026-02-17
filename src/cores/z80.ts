@@ -74,6 +74,9 @@ export class Z80 {
   d = 0; e = 0;
   h = 0; l = 0;
 
+  // MEMPTR (WZ) - internal 16-bit register for undocumented flags
+  memptr = 0;
+
   // Shadow registers
   a_ = 0; f_ = 0;
   b_ = 0; c_ = 0;
@@ -143,6 +146,7 @@ export class Z80 {
     this.im = 1;
     this.halted = false;
 
+    this.memptr = 0;
     this.tStates = 0;
     this._pendingVector = 0xFF;
   }
@@ -373,10 +377,11 @@ export class Z80 {
 
   add16(a: number, b: number): number {
     const result = a + b;
+    this.memptr = (a + 1) & 0xFFFF;  // MEMPTR = original value + 1
     this.f = (this.f & 0xC4) |
              ((result >> 16) & 0x01) |
-             ((a ^ b ^ result) >> 8 & 0x10) |
-             ((result >> 8) & 0x28);
+             (((a ^ b ^ result) >> 8) & 0x10) |
+             ((result >> 8) & 0x28);  // Undoc flags from result high byte
     return result & 0xFFFF;
   }
 
@@ -384,11 +389,12 @@ export class Z80 {
     const c = this.f & 0x01;
     const result = a + b + c;
     const r16 = result & 0xFFFF;
+    this.memptr = (a + 1) & 0xFFFF;  // MEMPTR = original value + 1
     this.f = ((r16 >> 8) & 0x80) |
              (r16 === 0 ? 0x40 : 0) |
-             ((r16 >> 8) & 0x28) |
+             ((r16 >> 8) & 0x28) |  // Undoc flags from result high byte
              ((result >> 16) & 0x01) |
-             ((a ^ b ^ r16) >> 8 & 0x10) |
+             (((a ^ b ^ r16) >> 8) & 0x10) |
              (((a ^ ~b) & (a ^ r16) & 0x8000) ? 0x04 : 0);
     return r16;
   }
@@ -397,12 +403,13 @@ export class Z80 {
     const c = this.f & 0x01;
     const result = a - b - c;
     const r16 = result & 0xFFFF;
+    this.memptr = (a + 1) & 0xFFFF;  // MEMPTR = original value + 1
     this.f = ((r16 >> 8) & 0x80) |
              (r16 === 0 ? 0x40 : 0) |
-             ((r16 >> 8) & 0x28) |
+             ((r16 >> 8) & 0x28) |  // Undoc flags from result high byte
              0x02 |
              (result < 0 ? 0x01 : 0) |
-             ((a ^ b ^ r16) >> 8 & 0x10) |
+             (((a ^ b ^ r16) >> 8) & 0x10) |
              (((a ^ b) & (a ^ r16) & 0x8000) ? 0x04 : 0);
     return r16;
   }
@@ -635,6 +642,7 @@ export class Z80 {
                 this.b = (this.b - 1) & 0xFF;
                 if (this.b !== 0) {
                   this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
+                  this.memptr = this.pc;  // DJNZ (taken): MEMPTR = jump target
                   this.tStates += 6;
                 } else {
                   this.tStates += 1;
@@ -675,18 +683,18 @@ export class Z80 {
             if (q === 0) {
               // Write instructions — M1 auto-counted (4T), contention at correct sub-cycle
               switch (p) {
-                case 0: this.write8(this.bc, this.a); this.tStates += 3; break;  // LD (BC),A: 7T, write@T+4
-                case 1: this.write8(this.de, this.a); this.tStates += 3; break;  // LD (DE),A: 7T, write@T+4
-                case 2: { const addr = this.fetch16(); this.write16(addr, this.hl); this.tStates += 3; break; }  // LD (nn),HL: 16T, writes@T+10,T+13
-                case 3: { const addr = this.fetch16(); this.write8(addr, this.a); this.tStates += 3; break; }    // LD (nn),A: 13T, write@T+10
+                case 0: this.write8(this.bc, this.a); this.memptr = ((this.bc + 1) & 0xFF) | (this.a << 8); this.tStates += 3; break;  // LD (BC),A: 7T, write@T+4
+                case 1: this.write8(this.de, this.a); this.memptr = ((this.de + 1) & 0xFF) | (this.a << 8); this.tStates += 3; break;  // LD (DE),A: 7T, write@T+4
+                case 2: { const addr = this.fetch16(); this.write16(addr, this.hl); this.memptr = (addr + 1) & 0xFFFF; this.tStates += 3; break; }  // LD (nn),HL: 16T, writes@T+10,T+13
+                case 3: { const addr = this.fetch16(); this.write8(addr, this.a); this.memptr = ((addr + 1) & 0xFF) | (this.a << 8); this.tStates += 3; break; }    // LD (nn),A: 13T, write@T+10
               }
             } else {
               // Read instructions — M1 auto-counted (4T), contention at correct sub-cycle
               switch (p) {
-                case 0: this.a = this.read8(this.bc); this.tStates += 3; break;  // LD A,(BC): 7T, read@T+4
-                case 1: this.a = this.read8(this.de); this.tStates += 3; break;  // LD A,(DE): 7T, read@T+4
-                case 2: { const addr = this.fetch16(); this.hl = this.read16(addr); this.tStates += 3; break; }  // LD HL,(nn): 16T, reads@T+10,T+13
-                case 3: { const addr = this.fetch16(); this.a = this.read8(addr); this.tStates += 3; break; }    // LD A,(nn): 13T, read@T+10
+                case 0: this.a = this.read8(this.bc); this.memptr = (this.bc + 1) & 0xFFFF; this.tStates += 3; break;  // LD A,(BC): 7T, read@T+4
+                case 1: this.a = this.read8(this.de); this.memptr = (this.de + 1) & 0xFFFF; this.tStates += 3; break;  // LD A,(DE): 7T, read@T+4
+                case 2: { const addr = this.fetch16(); this.hl = this.read16(addr); this.memptr = (addr + 1) & 0xFFFF; this.tStates += 3; break; }  // LD HL,(nn): 16T, reads@T+10,T+13
+                case 3: { const addr = this.fetch16(); this.a = this.read8(addr); this.memptr = (addr + 1) & 0xFFFF; this.tStates += 3; break; }    // LD A,(nn): 13T, read@T+10
               }
             }
             break;
@@ -921,13 +929,17 @@ export class Z80 {
                 // OUT (n),A: 11T. Auto: 4T M1 + 3T operand = 7T
                 const port = (this.a << 8) | this.fetch8();
                 this.portOut(port, this.a);
+                this.memptr = ((port + 1) & 0xFF) | (this.a << 8);  // OUT (port),A: MEMPTR_low = (port+1) & 0xFF, MEMPTR_hi = A
                 this.tStates += 4;
                 break;
               }
               case 3: {
                 // IN A,(n): 11T. Auto: 4T M1 + 3T operand = 7T
-                const port = (this.a << 8) | this.fetch8();
+                const aBeforeOp = this.a;
+                const portLow = this.fetch8();
+                const port = (this.a << 8) | portLow;
                 this.a = this.portIn(port);
+                this.memptr = ((aBeforeOp << 8) + portLow + 1) & 0xFFFF;  // IN A,(port): MEMPTR = (A_before << 8) + port_low + 1
                 this.tStates += 4;
                 break;
               }
@@ -941,6 +953,7 @@ export class Z80 {
                 this.tStates += 3;
                 this.write8((this.sp + 1) & 0xFFFF, this.h);
                 this.l = lo; this.h = hi;
+                this.memptr = (hi << 8) | lo;  // EX (SP),rp: MEMPTR = rp value after the operation
                 this.tStates += 5;
                 break;
               }
@@ -1084,7 +1097,8 @@ export class Z80 {
         this.bit(y, val);
         if (isMem) {
           // BIT n,(HL): 12T. Auto: 8T
-          this.f = (this.f & ~0x28) | ((this.hl >> 8) & 0x28);
+          // Use MEMPTR high byte for undocumented flags (don't modify MEMPTR)
+          this.f = (this.f & ~0x28) | ((this.memptr >> 8) & 0x28);
           this.tStates += 4;
         }
         // BIT n,r: 8T (auto-counted)
@@ -1134,6 +1148,7 @@ export class Z80 {
         case 0: {
           // IN r,(C): 12T. Auto: 8T
           const val = this.portIn(this.bc);
+          this.memptr = (this.bc + 1) & 0xFFFF;  // IN r,(C): MEMPTR = BC + 1
           if (y !== 6) {
             this.setReg8(y, val);
           }
@@ -1145,6 +1160,7 @@ export class Z80 {
         case 1:
           // OUT (C),r: 12T. Auto: 8T
           this.portOut(this.bc, y === 6 ? 0 : this.getReg8(y));
+          this.memptr = (this.bc + 1) & 0xFFFF;  // OUT (C),r: MEMPTR = BC + 1
           this.tStates += 4;
           break;
 
@@ -1161,6 +1177,7 @@ export class Z80 {
         case 3: {
           // ED LD (nn),rr / LD rr,(nn): 20T. Auto: 8T + 6T fetch16 = 14T
           const addr = this.fetch16();
+          this.memptr = (addr + 1) & 0xFFFF;  // LD rp,(addr) / LD (addr),rp: MEMPTR = addr + 1
           if (q === 0) {
             // ED LD (nn),rr: writes@T+14,T+17
             this.write16(addr, this.getReg16(p));
@@ -1205,7 +1222,8 @@ export class Z80 {
               break;
             case 1:
               // LD R,A: 9T. Auto: 8T
-              this.r = this.a;
+              // Bit 7 of R is never changed (only bits 0-6 are writable)
+              this.r = (this.r & 0x80) | (this.a & 0x7F);
               this.tStates += 1;
               break;
             case 2:
@@ -1226,6 +1244,7 @@ export class Z80 {
               const newHL = ((this.a & 0x0F) << 4) | (hlVal >> 4);
               this.a = (this.a & 0xF0) | (hlVal & 0x0F);
               this.f = (this.f & 0x01) | SZP[this.a];
+              this.memptr = (this.hl + 1) & 0xFFFF;  // RRD: MEMPTR = HL + 1
               this.tStates += 7;
               this.write8(this.hl, newHL);
               this.tStates += 3;
@@ -1237,6 +1256,7 @@ export class Z80 {
               const newHL = ((hlVal << 4) | (this.a & 0x0F)) & 0xFF;
               this.a = (this.a & 0xF0) | (hlVal >> 4);
               this.f = (this.f & 0x01) | SZP[this.a];
+              this.memptr = (this.hl + 1) & 0xFFFF;  // RLD: MEMPTR = HL + 1
               this.tStates += 7;
               this.write8(this.hl, newHL);
               this.tStates += 3;
@@ -1277,6 +1297,7 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.bc !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
+            this.memptr = (this.pc + 1) & 0xFFFF;  // MEMPTR = PC + 1 during iteration
             this.tStates += 10;  // LDIR/LDDR: 21T total
           } else {
             this.tStates += 5;   // LDI/LDD: 16T total
@@ -1293,8 +1314,10 @@ export class Z80 {
 
           if (y === 4 || y === 6) {
             this.hl = (this.hl + 1) & 0xFFFF;
+            this.memptr = (this.memptr + 1) & 0xFFFF;  // CPI/CPIR: MEMPTR = MEMPTR + 1
           } else {
             this.hl = (this.hl - 1) & 0xFFFF;
+            this.memptr = (this.memptr - 1) & 0xFFFF;  // CPD/CPDR: MEMPTR = MEMPTR - 1
           }
 
           this.bc = (this.bc - 1) & 0xFFFF;
@@ -1309,6 +1332,7 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.bc !== 0 && result !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
+            this.memptr = (this.pc + 1) & 0xFFFF;  // CPIR/CPDR repeating: MEMPTR = PC + 1
             this.tStates += 13;  // CPIR/CPDR: 21T total (8+13)
           } else {
             this.tStates += 8;   // CPI/CPD: 16T total (8+8)
@@ -1318,10 +1342,18 @@ export class Z80 {
 
         case 2: {
           // INI/IND/INIR/INDR: I/O@T+9, write@T+13. Auto: 8T
+          const bcBeforeDec = this.bc;
           const val = this.portIn(this.bc);
           this.tStates += 5;
           this.write8(this.hl, val);
           this.b = (this.b - 1) & 0xFF;
+
+          // INI/IND: MEMPTR = BC_before_decrementing_B ± 1
+          if (y === 4 || y === 6) {
+            this.memptr = (bcBeforeDec + 1) & 0xFFFF;  // INI/INIR
+          } else {
+            this.memptr = (bcBeforeDec - 1) & 0xFFFF;  // IND/INDR
+          }
 
           // Documented flag formula (verified against FUSE emulator)
           const t = (y === 4 || y === 6)
@@ -1336,12 +1368,11 @@ export class Z80 {
           parity ^= parity >> 1;
           const pv = (parity & 1) ? 0 : 0x04;
 
-          this.f = (this.b & 0x80) |              // S
+          this.f = (this.b & 0xA8) |              // S, Y, X from B after decrement
                    (this.b === 0 ? 0x40 : 0) |    // Z
-                   (pv_temp & 0x28) |              // undoc bits 3,5
                    (h << 4) |                      // H
                    pv |                            // P/V
-                   0x02 |                          // N
+                   ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
                    c;                              // C
 
           if (y === 4 || y === 6) {
@@ -1352,6 +1383,7 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
+            // Don't update MEMPTR here - it was already set above and repeats with same formula
             this.tStates += 8;   // INIR/INDR: 21T total (13+8)
           } else {
             this.tStates += 3;   // INI/IND: 16T total (13+3)
@@ -1363,10 +1395,25 @@ export class Z80 {
           // OUTI/OUTD/OTIR/OTDR: read@T+9. Auto: 8T
           this.tStates += 1;
           const val = this.read8(this.hl);
+
+          // Modify HL first (C code uses HL++ or HL-- in the READ itself)
+          if (y === 4 || y === 6) {
+            this.hl = (this.hl + 1) & 0xFFFF;  // OUTI/OTIR
+          } else {
+            this.hl = (this.hl - 1) & 0xFFFF;  // OUTD/OTDR
+          }
+
           this.b = (this.b - 1) & 0xFF;
           this.portOut(this.bc, val);
 
-          // Documented flag formula (verified against FUSE emulator)
+          // OUTI/OUTD: MEMPTR = BC_after_decrementing_B ± 1
+          if (y === 4 || y === 6) {
+            this.memptr = (this.bc + 1) & 0xFFFF;  // OUTI/OTIR
+          } else {
+            this.memptr = (this.bc - 1) & 0xFFFF;  // OUTD/OTDR
+          }
+
+          // Compute t using L AFTER HL modification (C code: t = io + L after HL++)
           const t = (val + this.l) & 0x1FF;
           const c = t > 0xFF ? 1 : 0;
           const h = c;
@@ -1377,22 +1424,16 @@ export class Z80 {
           parity ^= parity >> 1;
           const pv = (parity & 1) ? 0 : 0x04;
 
-          this.f = (this.b & 0x80) |              // S
+          this.f = (this.b & 0xA8) |              // S, Y, X from B after decrement
                    (this.b === 0 ? 0x40 : 0) |    // Z
-                   (pv_temp & 0x28) |              // undoc bits 3,5
                    (h << 4) |                      // H
                    pv |                            // P/V
-                   0x02 |                          // N
+                   ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
                    c;                              // C
-
-          if (y === 4 || y === 6) {
-            this.hl = (this.hl + 1) & 0xFFFF;
-          } else {
-            this.hl = (this.hl - 1) & 0xFFFF;
-          }
 
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
+            // Don't update MEMPTR here - it was already set above and repeats with same formula
             this.tStates += 12;  // OTIR/OTDR: 21T total (9+12)
           } else {
             this.tStates += 7;   // OUTI/OUTD: 16T total (9+7)
@@ -1441,6 +1482,7 @@ export class Z80 {
     if (x === 1 && (y === 6 || z === 6) && !(y === 6 && z === 6)) {
       const d = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
 
       if (y === 6) {
@@ -1459,6 +1501,7 @@ export class Z80 {
       // ALU A,(IX+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 5;
       this.aluOp(y, this.read8(addr));
@@ -1469,6 +1512,7 @@ export class Z80 {
         const d = this.fetch8();
         const n = this.fetch8();
         const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
+        this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
         this.h = savedH; this.l = savedL;
         this.tStates += 1;
         this.write8(addr, n);
@@ -1491,6 +1535,7 @@ export class Z80 {
       // INC/DEC (IX+d): 23T, read@T+16, write@T+20. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 5;
       const val = this.read8(addr);
@@ -1502,6 +1547,7 @@ export class Z80 {
       const d = this.fetch8();
       const n = this.fetch8();
       const addr = (this.ix + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 1;
       this.write8(addr, n);
@@ -1550,6 +1596,7 @@ export class Z80 {
     if (x === 1 && (y === 6 || z === 6) && !(y === 6 && z === 6)) {
       const d = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       if (y === 6) {
         // LD (IY+d),r: 19T, write@T+15. Auto: 8T + 3T(d) = 11T
@@ -1567,6 +1614,7 @@ export class Z80 {
       // ALU A,(IY+d): 19T, read@T+16. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 5;
       this.aluOp(y, this.read8(addr));
@@ -1577,6 +1625,7 @@ export class Z80 {
         const d = this.fetch8();
         const n = this.fetch8();
         const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
+        this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
         this.h = savedH; this.l = savedL;
         this.tStates += 1;
         this.write8(addr, n);
@@ -1599,6 +1648,7 @@ export class Z80 {
       // INC/DEC (IY+d): 23T, read@T+16, write@T+20. Auto: 8T + 3T(d) = 11T
       const d = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 5;
       const val = this.read8(addr);
@@ -1610,6 +1660,7 @@ export class Z80 {
       const d = this.fetch8();
       const n = this.fetch8();
       const addr = (this.iy + (d < 128 ? d : d - 256)) & 0xFFFF;
+      this.memptr = addr;  // Any instruction with (INDEX+d): MEMPTR = INDEX+d
       this.h = savedH; this.l = savedL;
       this.tStates += 1;
       this.write8(addr, n);
@@ -1649,6 +1700,9 @@ export class Z80 {
     const y = (op >> 3) & 7;
     const z = op & 7;
 
+    // Any instruction with (INDEX+d): MEMPTR = INDEX+d
+    this.memptr = addr;
+
     // DDCB/FDCB: read@T+16, write@T+20 (23T), BIT: read@T+16 (20T)
     // Auto: 4T(DD/FD M1) + 4T(CB M1) + 3T(d) + 3T(op) = 14T; +2T extra wait on op byte
     this.tStates += 2;
@@ -1674,7 +1728,8 @@ export class Z80 {
 
       case 1:
         this.bit(y, val);
-        this.f = (this.f & ~0x28) | ((addr >> 8) & 0x28);
+        // BIT n,(IX+d) / BIT n,(IY+d): undocumented flags from MEMPTR high byte
+        this.f = (this.f & ~0x28) | ((this.memptr >> 8) & 0x28);
         this.tStates += 4;
         break;
 
