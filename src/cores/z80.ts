@@ -1343,33 +1343,32 @@ export class Z80 {
           this.tStates += 3;
           this.write8(this.de, val);
           const n = (val + this.a) & 0xFF;
-          this.f = (this.f & 0xC1) | (n & 0x08) | ((n << 4) & 0x20);
 
-          if (y === 4) {
-            this.hl = (this.hl + 1) & 0xFFFF;
-            this.de = (this.de + 1) & 0xFFFF;
-          } else if (y === 5) {
+          if (y & 1) {
+            // LDD/LDDR: decrement
             this.hl = (this.hl - 1) & 0xFFFF;
             this.de = (this.de - 1) & 0xFFFF;
-          } else if (y === 6) {
-            this.hl = (this.hl + 1) & 0xFFFF;
-            this.de = (this.de + 1) & 0xFFFF;
           } else {
-            this.hl = (this.hl - 1) & 0xFFFF;
-            this.de = (this.de - 1) & 0xFFFF;
+            // LDI/LDIR: increment
+            this.hl = (this.hl + 1) & 0xFFFF;
+            this.de = (this.de + 1) & 0xFFFF;
           }
 
           this.bc = (this.bc - 1) & 0xFFFF;
-          if (this.bc !== 0) this.f |= 0x04;
-          this._qReg = this.f;
 
           if ((y === 6 || y === 7) && this.bc !== 0) {
+            // LDIR/LDDR repeating: bits 3,5 from high byte of PC (instruction address)
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.memptr = (this.pc + 1) & 0xFFFF;  // MEMPTR = PC + 1 during iteration
+            this.f = (this.f & 0xC1) | ((this.pc >> 8) & 0x28) | 0x04;
+            this.memptr = (this.pc + 1) & 0xFFFF;
             this.tStates += 10;  // LDIR/LDDR: 21T total
           } else {
+            // LDI/LDD or LDIR/LDDR final: bits 3,5 from (val + A)
+            this.f = (this.f & 0xC1) | (n & 0x08) | ((n << 4) & 0x20);
+            if (this.bc !== 0) this.f |= 0x04;
             this.tStates += 5;   // LDI/LDD: 16T total
           }
+          this._qReg = this.f;
           break;
         }
 
@@ -1424,26 +1423,12 @@ export class Z80 {
             this.memptr = (bcBeforeDec - 1) & 0xFFFF;  // IND/INDR
           }
 
-          // Documented flag formula (verified against FUSE emulator)
+          const nf = (val >> 6) & 0x02;  // N = bit 7 of I/O value
           const t = (y === 4 || y === 6)
             ? (val + ((this.c + 1) & 0xFF)) & 0x1FF  // INI/INIR
             : (val + ((this.c - 1) & 0xFF)) & 0x1FF; // IND/INDR
-          const c = t > 0xFF ? 1 : 0;
-          const h = c;
-          const pv_temp = ((t & 0x07) ^ this.b) & 0xFF;
-          let parity = pv_temp;
-          parity ^= parity >> 4;
-          parity ^= parity >> 2;
-          parity ^= parity >> 1;
-          const pv = (parity & 1) ? 0 : 0x04;
-
-          this.f = (this.b & 0xA8) |              // S, Y, X from B after decrement
-                   (this.b === 0 ? 0x40 : 0) |    // Z
-                   (h << 4) |                      // H
-                   pv |                            // P/V
-                   ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
-                   c;                              // C
-          this._qReg = this.f;
+          const hcf = t > 0xFF;
+          const p = ((t & 0x07) ^ this.b) & 0xFF;
 
           if (y === 4 || y === 6) {
             this.hl = (this.hl + 1) & 0xFFFF;
@@ -1452,12 +1437,48 @@ export class Z80 {
           }
 
           if ((y === 6 || y === 7) && this.b !== 0) {
+            // INIR/INDR repeating: Y,X from PCH; complex PF/HF
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.memptr = this.pc + 1;  // During repeat: MEMPTR = PC + 1
+            const pch = (this.pc >> 8) & 0xFF;
+            let f = (this.b & 0x80) |               // S from B
+                    (pch & 0x28) |                   // Y, X from PCH
+                    nf;                              // N
+            if (hcf) {
+              f |= 0x01;   // C
+              let pAdj: number;
+              if (nf) {
+                // N set: HF = !(B & 0xF), PF uses (B-1)&7
+                if (!(this.b & 0x0F)) f |= 0x10;  // H
+                pAdj = (this.b - 1) & 7;
+              } else {
+                // N clear: HF = ((B & 0xF) == 0xF), PF uses (B+1)&7
+                if ((this.b & 0x0F) === 0x0F) f |= 0x10;  // H
+                pAdj = (this.b + 1) & 7;
+              }
+              let par = (p ^ pAdj) & 0xFF;
+              par ^= par >> 4; par ^= par >> 2; par ^= par >> 1;
+              if (!(par & 1)) f |= 0x04;  // PV (even parity)
+            } else {
+              // No carry: HF=0, CF=0
+              let par = (p ^ (this.b & 7)) & 0xFF;
+              par ^= par >> 4; par ^= par >> 2; par ^= par >> 1;
+              if (!(par & 1)) f |= 0x04;  // PV
+            }
+            this.f = f;
+            this.memptr = (this.pc + 1) & 0xFFFF;  // During repeat: MEMPTR = PC + 1
             this.tStates += 8;   // INIR/INDR: 21T total (13+8)
           } else {
+            // INI/IND or INIR/INDR final (B==0): Y,X from B; standard PF
+            let par = p;
+            par ^= par >> 4; par ^= par >> 2; par ^= par >> 1;
+            this.f = (this.b & 0xA8) |              // S, Y, X from B
+                     (this.b === 0 ? 0x40 : 0) |    // Z
+                     (hcf ? 0x11 : 0) |             // H, C
+                     ((par & 1) ? 0 : 0x04) |       // P/V
+                     nf;                             // N
             this.tStates += 3;   // INI/IND: 16T total (13+3)
           }
+          this._qReg = this.f;
           break;
         }
 
@@ -1484,31 +1505,51 @@ export class Z80 {
           }
 
           // Compute t using L AFTER HL modification (C code: t = io + L after HL++)
-          const t = (val + this.l) & 0x1FF;
-          const c = t > 0xFF ? 1 : 0;
-          const h = c;
-          const pv_temp = ((t & 0x07) ^ this.b) & 0xFF;
-          let parity = pv_temp;
-          parity ^= parity >> 4;
-          parity ^= parity >> 2;
-          parity ^= parity >> 1;
-          const pv = (parity & 1) ? 0 : 0x04;
-
-          this.f = (this.b & 0xA8) |              // S, Y, X from B after decrement
-                   (this.b === 0 ? 0x40 : 0) |    // Z
-                   (h << 4) |                      // H
-                   pv |                            // P/V
-                   ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
-                   c;                              // C
-          this._qReg = this.f;
+          const nfO = (val >> 6) & 0x02;  // N = bit 7 of value
+          const tO = (val + this.l) & 0x1FF;
+          const hcfO = tO > 0xFF;
+          const pO = ((tO & 0x07) ^ this.b) & 0xFF;
 
           if ((y === 6 || y === 7) && this.b !== 0) {
+            // OTIR/OTDR repeating: Y,X from PCH; complex PF/HF
             this.pc = (this.pc - 2) & 0xFFFF;
-            this.memptr = this.pc + 1;  // During repeat: MEMPTR = PC + 1
+            const pchO = (this.pc >> 8) & 0xFF;
+            let fO = (this.b & 0x80) |              // S from B
+                     (pchO & 0x28) |                 // Y, X from PCH
+                     nfO;                            // N
+            if (hcfO) {
+              fO |= 0x01;   // C
+              let pAdjO: number;
+              if (nfO) {
+                if (!(this.b & 0x0F)) fO |= 0x10;  // H
+                pAdjO = (this.b - 1) & 7;
+              } else {
+                if ((this.b & 0x0F) === 0x0F) fO |= 0x10;  // H
+                pAdjO = (this.b + 1) & 7;
+              }
+              let parO = (pO ^ pAdjO) & 0xFF;
+              parO ^= parO >> 4; parO ^= parO >> 2; parO ^= parO >> 1;
+              if (!(parO & 1)) fO |= 0x04;  // PV
+            } else {
+              let parO = (pO ^ (this.b & 7)) & 0xFF;
+              parO ^= parO >> 4; parO ^= parO >> 2; parO ^= parO >> 1;
+              if (!(parO & 1)) fO |= 0x04;  // PV
+            }
+            this.f = fO;
+            this.memptr = (this.pc + 1) & 0xFFFF;  // During repeat: MEMPTR = PC + 1
             this.tStates += 12;  // OTIR/OTDR: 21T total (9+12)
           } else {
+            // OUTI/OUTD or final: Y,X from B; standard PF
+            let parO = pO;
+            parO ^= parO >> 4; parO ^= parO >> 2; parO ^= parO >> 1;
+            this.f = (this.b & 0xA8) |              // S, Y, X from B
+                     (this.b === 0 ? 0x40 : 0) |    // Z
+                     (hcfO ? 0x11 : 0) |            // H, C
+                     ((parO & 1) ? 0 : 0x04) |      // P/V
+                     nfO;                            // N
             this.tStates += 7;   // OUTI/OUTD: 16T total (9+7)
           }
+          this._qReg = this.f;
           break;
         }
 

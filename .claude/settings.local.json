@@ -36,7 +36,8 @@
       "Bash(npx madge:*)",
       "mcp__zx84__port_out",
       "mcp__zx84__poke",
-      "mcp__zx84__type"
+      "mcp__zx84__type",
+      "Bash(gh api:*)"
     ]
   },
   "enabledMcpjsonServers": [
