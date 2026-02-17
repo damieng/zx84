@@ -1094,14 +1094,21 @@ export class Z80 {
         break;
 
       case 1:
-        this.bit(y, val);
         if (isMem) {
           // BIT n,(HL): 12T. Auto: 8T
-          // Use MEMPTR high byte for undocumented flags (don't modify MEMPTR)
-          this.f = (this.f & ~0x28) | ((this.memptr >> 8) & 0x28);
+          // Undocumented flags come from MEMPTR high byte, not the value
+          const r = val & (1 << y);
+          const memptrH = (this.memptr >> 8) & 0xFF;
+          this.f = (this.f & 0x01) |         // Preserve C
+                   0x10 |                     // Set H
+                   (r ? 0 : 0x44) |           // Set Z and P/V if bit is 0
+                   (r & 0x80) |               // Set S if testing bit 7 and it's set
+                   (memptrH & 0x28);          // Copy bits 3,5 from MEMPTR high byte
           this.tStates += 4;
+        } else {
+          // BIT n,r: 8T (auto-counted)
+          this.bit(y, val);
         }
-        // BIT n,r: 8T (auto-counted)
         break;
 
       case 2:
@@ -1222,8 +1229,8 @@ export class Z80 {
               break;
             case 1:
               // LD R,A: 9T. Auto: 8T
-              // Bit 7 of R is never changed (only bits 0-6 are writable)
-              this.r = (this.r & 0x80) | (this.a & 0x7F);
+              // All 8 bits of A are copied to R (including bit 7)
+              this.r = this.a;
               this.tStates += 1;
               break;
             case 2:
