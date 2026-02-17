@@ -339,6 +339,83 @@ async function main(): Promise<void> {
           break;
         }
 
+        case 'out': {
+          if (parts.length < 3) { console.log('Usage: out <port> <val>'); break; }
+          const port = parseAddr(parts[1]) & 0xFFFF;
+          const val  = parseAddr(parts[2]) & 0xFF;
+          spec.cpu.portOutHandler!(port, val);
+          console.log(`OUT ${h16(port)}, ${h8(val)}`);
+          if (is128kClass(spec.model)) {
+            const mem = spec.memory;
+            console.log(`  Bank: ${mem.currentBank}  ROM: ${mem.currentROM}  7FFD: ${h8(mem.port7FFD)}  Locked: ${mem.pagingLocked ? 'Y' : 'N'}`);
+          }
+          break;
+        }
+
+        case 'in': {
+          if (!parts[1]) { console.log('Usage: in <port>'); break; }
+          const port = parseAddr(parts[1]) & 0xFFFF;
+          const val  = spec.cpu.portInHandler!(port);
+          console.log(`IN ${h16(port)} = ${h8(val)} (${val})`);
+          break;
+        }
+
+        case 'pc': {
+          if (!parts[1]) { console.log(`PC = ${h16(spec.cpu.pc)}`); break; }
+          spec.cpu.pc = parseAddr(parts[1]) & 0xFFFF;
+          console.log(`PC = ${h16(spec.cpu.pc)}`);
+          printStep(spec);
+          break;
+        }
+
+        case 'poke': {
+          if (parts.length < 3) { console.log('Usage: poke <addr> <val>'); break; }
+          const addr = parseAddr(parts[1]) & 0xFFFF;
+          const val  = parseAddr(parts[2]) & 0xFF;
+          spec.cpu.memory[addr] = val;
+          console.log(`[${h16(addr)}] = ${h8(val)}`);
+          break;
+        }
+
+        case 'peek': {
+          if (!parts[1]) { console.log('Usage: peek <addr>'); break; }
+          const addr = parseAddr(parts[1]) & 0xFFFF;
+          const val  = spec.cpu.memory[addr];
+          console.log(`[${h16(addr)}] = ${h8(val)} (${val})`);
+          break;
+        }
+
+        case 'set': {
+          if (parts.length < 3) {
+            console.log('Usage: set <reg> <val>   (regs: A F AF BC DE HL SP PC IX IY)');
+            break;
+          }
+          const reg = parts[1].toUpperCase();
+          const val = parseAddr(parts[2]);
+          const cpu = spec.cpu;
+          switch (reg) {
+            case 'A':  cpu.a  = val & 0xFF; break;
+            case 'F':  cpu.f  = val & 0xFF; break;
+            case 'AF': cpu.af = val & 0xFFFF; break;
+            case 'B':  cpu.b  = val & 0xFF; break;
+            case 'C':  cpu.c  = val & 0xFF; break;
+            case 'BC': cpu.bc = val & 0xFFFF; break;
+            case 'D':  cpu.d  = val & 0xFF; break;
+            case 'E':  cpu.e  = val & 0xFF; break;
+            case 'DE': cpu.de = val & 0xFFFF; break;
+            case 'H':  cpu.h  = val & 0xFF; break;
+            case 'L':  cpu.l  = val & 0xFF; break;
+            case 'HL': cpu.hl = val & 0xFFFF; break;
+            case 'SP': cpu.sp = val & 0xFFFF; break;
+            case 'PC': cpu.pc = val & 0xFFFF; break;
+            case 'IX': cpu.ix = val & 0xFFFF; break;
+            case 'IY': cpu.iy = val & 0xFFFF; break;
+            default: console.log(`Unknown register: ${reg}`); break;
+          }
+          console.log(`${reg} = ${val <= 0xFF ? h8(val) : h16(val)}`);
+          break;
+        }
+
         case 'find': {
           if (!parts[1]) { console.log('Usage: find <hex bytes>'); break; }
           const hex = parts.slice(1).join('').replace(/\s/g, '');
@@ -537,6 +614,12 @@ Commands:
   load <file> [unit]   Load TAP/TZX/SNA/Z80/DSK (DSK: optional 0|1|A|B for drive)
   eject disk [0|1|A|B] Eject disk from drive A or B
   eject tape           Unload tape
+  out <port> <val>     Write byte to I/O port (triggers port handler; use to bank-switch)
+  in <port>            Read byte from I/O port
+  pc [addr]            Get/set PC register
+  poke <addr> <val>    Write byte to memory address
+  peek <addr>          Read byte from memory address
+  set <reg> <val>      Set register: A F AF BC DE HL SP PC IX IY (and B C D E H L)
   find <hex>           Search memory for byte sequence
   screen | scr         Show screen text (RST 16 grid)
   ocr                  OCR screen (bitmap matching)
