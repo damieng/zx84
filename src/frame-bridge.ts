@@ -329,10 +329,11 @@ export function onFrame(): void {
     if (spectrum!.tape.loaded) {
       setTapePosition(spectrum!.tape.position);
 
-      // Auto-rewind: if tape just finished and auto-rewind is on, rewind and resume
+      // Auto-rewind: if tape just finished and auto-rewind is on, rewind to
+      // start in play+paused state — ready for the next EAR read to unpause.
       if (!spectrum!.tape.playing && spectrum!.tape.finished && settings.tapeAutoRewind()) {
         spectrum!.tape.position = 0;
-        spectrum!.tape.paused = false;
+        spectrum!.tape.paused = true;
         spectrum!.tape.startPlayback();
         setTapePosition(0);
       }

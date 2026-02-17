@@ -133,17 +133,14 @@ export function wirePortIO(s: Spectrum): void {
       s.advanceTapeTo();
       if (s.ula.tapeActive) s.activity.earReads++;
 
-      // Loader detection: auto-start tape for custom loaders (Speedlock etc.)
+      // Loader detection: auto-start tape when code reads EAR in a tight loop.
+      // Works for both ROM loaders (LD-BYTES reading EAR) and custom loaders
+      // (Speedlock etc.). The LoaderDetector filters out normal keyboard polling
+      // by requiring 10+ rapid consecutive reads with B delta ±1/0.
       if (s.tape.loaded && !s.tape.finished) {
         if (!s.tape.playing || s.tape.paused) {
-          // Tape not playing: detect edge-detection loops to auto-start.
-          // Only when the next blocks are custom-loader blocks (not
-          // ROM-loadable) and code is running from RAM (not ROM routines).
-          if (!s.tape.hasRomBlock() && s.cpu.pc >= 0x4000 &&
-              s.loaderDetector.onPortRead(s.cpu.tStates, s.cpu.b)) {
+          if (s.loaderDetector.onPortRead(s.cpu.tStates, s.cpu.b)) {
             s.tape.paused = false;
-            // Always call startPlayback(): if the tape isn't playing yet,
-            // this starts it; if already playing, it's a no-op.
             s.tape.startPlayback();
             s.loaderDetector.reset();
           }

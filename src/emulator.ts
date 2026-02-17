@@ -8,7 +8,6 @@ import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import { FloppySound } from '@/plus3/floppy-sound.ts';
 import { PALETTES } from '@/cores/ula.ts';
-import { saveSNA } from '@/snapshot/sna.ts';
 import { saveSZX } from '@/snapshot/szx.ts';
 import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
