@@ -176,9 +176,12 @@ export function TapePane() {
             const meta = parseTapeBlockMeta(block, i, tapeBlocks(), tapeCollapseBlocks());
             if (meta.hidden) return null;
             const className = `tape-block${i < tapePosition() ? ' played' : ''}${i === tapePosition() ? ' current' : ''}${meta.control ? ' control' : ''}`;
+            const displayLine = (tapeCollapseBlocks() && meta.line.startsWith(`${i}: `))
+              ? meta.line.slice(`${i}: `.length)
+              : meta.line;
             return (
               <div class={className} onClick={() => tapeSetPosition(i)}>
-                {meta.line}
+                {displayLine}
                 {meta.detail && meta.detail.split('\n').map((line) => (
                   <div class="tb-detail">{line}</div>
                 ))}
