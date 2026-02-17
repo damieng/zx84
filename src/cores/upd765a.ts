@@ -500,7 +500,7 @@ export class UPD765A {
 
     this.log(`  → Unit=${unit} Head=${head} C=${c} H=${h} R=${r} N=${n} (${128 << n} bytes) EOT=${eot}`);
 
-    const track = this.getTrack(unit, h);
+    const track = this.getTrack(unit, head);
 
     if (!track) {
       // No disk or no track — abnormal termination
@@ -578,7 +578,7 @@ export class UPD765A {
 
     this.log(`  → Unit=${unit} Head=${head} C=${c} H=${h} - Reading entire raw track`);
 
-    const track = this.getTrack(unit, h);
+    const track = this.getTrack(unit, head);
 
     if (!track || track.sectors.length === 0) {
       // No disk or empty track

@@ -110,9 +110,13 @@ Result includes location: `"Speedlock +3 1988 (T1/S2 +0x1A0)"`.
 
 #### Characteristics
 
-- **T0**: 9 sectors, N=2 (512 bytes each). R values are non-sequential (e.g. odd numbers, or arbitrary values like 0x10, 0x20…). Sector 0 data contains the signature string.
-- **No intentional CRC errors** — the trick is purely in the R values, not error flags.
-- Track layout is otherwise standard +3DOS geometry.
+Confirmed from California Games (Side A) — 42 tracks, single-sided:
+
+- **T0–T32**: Standard 9-sector +3DOS tracks, R=1–9, no error flags. The Alkatraz signature string is embedded in T0S0 data at offset 0x140 (inside the +3DOS directory).
+- **T33**: The protection track. 18 sectors, N=1 (256 bytes each). Every sector has **C=233 (0xE9)** in its ID — a value impossible on a real 40-track disk (physical cylinder ≤ 41). H values are also arbitrary non-standard values (0x00–0xF8). R values are unique per sector. No error flags.
+- The loader seeks to T33 and issues READ_DATA with C=233, H=h, R=r matching the actual sector IDs. A copier that renormalises CHRN to C=33, H=0, R=1..9 will produce "sector not found" errors.
+- Tracks T34–T41: Further game data (42 tracks total).
+- **No intentional CRC errors** — the trick is the phantom CHRN values, not error flags.
 
 #### Protection Checks Performed by the Loader
 
@@ -133,8 +137,37 @@ Result includes location: `"Speedlock +3 1988 (T1/S2 +0x1A0)"`.
 |---|---|
 | sectorMap lookup by R value (not array index) | ✅ |
 | READ_ID returns actual CHRN from DSK | ✅ |
+| Physical head taken from HU byte, not CHRN H field | ✅ Fixed — Alkatraz T33 uses H=24–240 in sector IDs on a 1-sided disk |
 | Multi-sector transfers with offset R | ⚠️ R increments by 1; loader must read sectors individually |
-| End-to-end tested | 🔲 Not confirmed (structure is correct; untested in practice) |
+| T33 sectors found and read (post head-fix) | ✅ Returns correct data, ST0/1/2=0, C=0xe9, H in result |
+| Protection check passes end-to-end | 🔲 Loader loops 3× then fails — requires disassembly of T0 R=2–4 to understand verification logic |
+
+#### T33 Sector Data Format
+
+Each of the 18 sectors on T33 contains 256 bytes of a uniform single-byte value, different per sector. This is deliberate Alkatraz formatting:
+
+| Sector | R | H | Fill byte |
+|---|---|---|---|
+| 0 | 0xF6 | 24 (0x18) | 0x51 |
+| 1 | 0x3D | 104 (0x68) | 0xFF |
+| 2 | 0x2B | 240 (0xF0) | 0x31 |
+| 3 | 0x65 | 32 (0x20) | 0x0E |
+| 4 | 0x0C | 144 (0x90) | 0xF1 |
+| 5 | 0x64 | 72 (0x48) | 0x2A |
+| 6 | 0x3A | 0 | 0x32 |
+| 7 | 0x46 | 0 | 0x4E |
+| 8 | 0x06 | 32 | 0x16 |
+| 9 | 0x12 | 232 (0xE8) | 0x02 |
+| 10 | 0x56 | 144 | 0xE4 |
+| 11 | 0xC0 | 56 | 0x6D |
+| 12 | 0x30 | 248 | 0x2E |
+| 13 | 0x7A | 152 | 0xCC |
+| 14 | 0xBC | 104 | 0xAF |
+| 15 | 0xFB | 112 | 0x89 |
+| 16 | 0xCD | 200 | 0x7C |
+| 17 | 0x60 | 104 | 0xDB |
+
+The protection loader (T0 R=2–4, encrypted) uses these values in its verification. **Needs disassembly** to determine exactly which sectors are read and what check is applied.
 
 ---
 

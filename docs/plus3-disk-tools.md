@@ -12,7 +12,7 @@ Identifies the copy protection scheme on a disk. Checks T0 sector IDs for non-se
 
 **Usage:**
 ```
-node tools/check-dsk-protection.js <disk.dsk>
+node tools/check-dsk-protection.cjs <disk.dsk>
 ```
 
 **What it reports:**
@@ -49,7 +49,7 @@ Shows the full CHRN table, ST1/ST2 flags, actual data sizes, and gap parameters 
 
 **Usage:**
 ```
-node tools/examine-dsk.js <disk.dsk> [track] [side]
+node tools/examine-dsk.cjs <disk.dsk> [track] [side]
 ```
 
 | Argument | Default | Description |
@@ -60,10 +60,10 @@ node tools/examine-dsk.js <disk.dsk> [track] [side]
 
 **Examples:**
 ```bash
-node tools/examine-dsk.js game.dsk          # Track 0, side 0
-node tools/examine-dsk.js game.dsk 1        # Track 1, side 0
-node tools/examine-dsk.js game.dsk 1 0      # Track 1, side 0 (explicit)
-node tools/examine-dsk.js game.dsk 0 1      # Track 0, side 1
+node tools/examine-dsk.cjs game.dsk          # Track 0, side 0
+node tools/examine-dsk.cjs game.dsk 1        # Track 1, side 0
+node tools/examine-dsk.cjs game.dsk 1 0      # Track 1, side 0 (explicit)
+node tools/examine-dsk.cjs game.dsk 0 1      # Track 0, side 1
 ```
 
 **Output format:**
@@ -101,7 +101,7 @@ Sectors with non-standard R values are flagged with `← OFFSET`.
 ### Identify protection before loading a disk
 
 ```bash
-node tools/check-dsk-protection.js game.dsk
+node tools/check-dsk-protection.cjs game.dsk
 ```
 
 If protection is unknown or surprising, follow up with a track-by-track look.
@@ -110,7 +110,7 @@ If protection is unknown or surprising, follow up with a track-by-track look.
 
 Speedlock +3 puts its protection on track 1:
 ```bash
-node tools/examine-dsk.js game.dsk 1
+node tools/examine-dsk.cjs game.dsk 1
 ```
 Look for: 5 sectors, N=3 (1024 bytes), ST2=0x40 or ST2=0x20 flags.
 
@@ -118,15 +118,15 @@ Look for: 5 sectors, N=3 (1024 bytes), ST2=0x40 or ST2=0x20 flags.
 
 Rainbow Arts and Infogrames use tracks beyond 39:
 ```bash
-node tools/examine-dsk.js game.dsk 39
-node tools/examine-dsk.js game.dsk 40
+node tools/examine-dsk.cjs game.dsk 39
+node tools/examine-dsk.cjs game.dsk 40
 ```
 
 ### Inspect both sides of a double-sided disk
 
 ```bash
-node tools/examine-dsk.js game.dsk 0 0   # T0S0
-node tools/examine-dsk.js game.dsk 0 1   # T0S1
+node tools/examine-dsk.cjs game.dsk 0 0   # T0S0
+node tools/examine-dsk.cjs game.dsk 0 1   # T0S1
 ```
 
 ---

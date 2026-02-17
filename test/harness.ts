@@ -5,16 +5,18 @@
  * Provides an interactive REPL for stepping, breakpoints, tracing, etc.
  *
  * Usage:
- *   npm run harness -- [--model 48k|128k|+2|+2a|+3] [file.tap|file.sna]
+ *   npm run harness -- [--model 48k|128k|+2|+2a|+3] [file.tap|file.sna|file.dsk]
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { Spectrum, type SpectrumModel, is128kClass } from '../src/spectrum.ts';
-import { disasmOne, disassemble, stripMarkers } from '../src/z80-disasm.ts';
-import { loadSNA } from '../src/formats/sna.ts';
-import { loadZ80 } from '../src/formats/z80format.ts';
+import { disasmOne, disassemble, stripMarkers } from '../src/debug/z80-disasm.ts';
+import { loadSNA } from '../src/snapshot/sna.ts';
+import { loadZ80 } from '../src/snapshot/z80format.ts';
+import { parseDSK } from '../src/plus3/dsk.ts';
+import { parseTZX } from '../src/tape/tzx.ts';
 
 // ── ROM URLs (same as src/store/emulator.ts) ─────────────────────────────
 
@@ -308,8 +310,32 @@ async function main(): Promise<void> {
         }
 
         case 'load': {
-          if (!parts[1]) { console.log('Usage: load <file>'); break; }
-          loadFileInto(spec, parts.slice(1).join(' '));
+          if (!parts[1]) { console.log('Usage: load <file> [unit]'); break; }
+          // Optional trailing unit specifier for DSK: 0/1/A/B/A:/B:
+          let fileParts = parts.slice(1);
+          let diskUnit = 0;
+          const last = fileParts[fileParts.length - 1].toLowerCase();
+          if (['0','1','a','b','a:','b:'].includes(last)) {
+            diskUnit = (last === '1' || last === 'b' || last === 'b:') ? 1 : 0;
+            fileParts = fileParts.slice(0, -1);
+          }
+          loadFileInto(spec, fileParts.join(' '), diskUnit);
+          break;
+        }
+
+        case 'eject': {
+          const tgt = parts[1]?.toLowerCase();
+          if (tgt === 'tape') {
+            spec.tape.load(new Uint8Array(0));
+            console.log('Tape ejected');
+          } else if (tgt === 'disk' || tgt === 'a' || tgt === 'a:' || tgt === '0' ||
+                     tgt === 'b' || tgt === 'b:' || tgt === '1') {
+            const unit = (tgt === 'b' || tgt === 'b:' || tgt === '1') ? 1 : 0;
+            spec.fdc.ejectDisk(unit);
+            console.log(`Drive ${unit === 0 ? 'A' : 'B'}: ejected`);
+          } else {
+            console.log('Usage: eject disk [0|1|A|B]  or  eject tape');
+          }
           break;
         }
 
@@ -448,7 +474,7 @@ function findBytes(mem: Uint8Array, needle: Uint8Array): void {
   }
 }
 
-function loadFileInto(spec: Spectrum, filepath: string): void {
+function loadFileInto(spec: Spectrum, filepath: string, diskUnit: number = 0): void {
   if (!fs.existsSync(filepath)) {
     console.log(`File not found: ${filepath}`);
     return;
@@ -464,6 +490,19 @@ function loadFileInto(spec: Spectrum, filepath: string): void {
     spec.reset();
     spec.tape.startPlayback();
     console.log(`TAP loaded: ${filename} (${spec.tape.blocks.length} blocks)`);
+  } else if (ext === '.tzx') {
+    const blocks = parseTZX(data);
+    spec.tape.blocks = blocks;
+    spec.tape.rewind();
+    spec.tape.paused = false;
+    spec.reset();
+    spec.tape.startPlayback();
+    console.log(`TZX loaded: ${filename} (${blocks.length} blocks)`);
+  } else if (ext === '.dsk') {
+    const image = parseDSK(data);
+    spec.loadDisk(image, diskUnit);
+    const driveLetter = diskUnit === 0 ? 'A' : 'B';
+    console.log(`DSK loaded: ${filename} → Drive ${driveLetter}: (${image.numTracks} tracks, ${image.numSides} side${image.numSides > 1 ? 's' : ''})`);
   } else if (ext === '.sna') {
     spec.reset();
     const result = loadSNA(data, spec.cpu, spec.memory);
@@ -495,7 +534,9 @@ Commands:
   key <name> [frames]  Press key for N frames (default 5)
   trace <mode>         Start trace: full, contention, portio
   stop                 Stop trace, print/save result
-  load <file>          Load TAP/SNA/Z80 file
+  load <file> [unit]   Load TAP/TZX/SNA/Z80/DSK (DSK: optional 0|1|A|B for drive)
+  eject disk [0|1|A|B] Eject disk from drive A or B
+  eject tape           Unload tape
   find <hex>           Search memory for byte sequence
   screen | scr         Show screen text (RST 16 grid)
   ocr                  OCR screen (bitmap matching)
