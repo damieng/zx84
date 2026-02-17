@@ -3,6 +3,7 @@
 ## High Priority
 
 ### Core Features
+- [ ] Handling DSK protection
 - [ ] Fullscreen mode
 - [ ] Mobile-responsive layout
 - [ ] Virtual keyboard overlay (mobile/tablet)
