@@ -33,7 +33,10 @@
       "mcp__zx84__peek",
       "mcp__zx84__step",
       "Bash(python3:*)",
-      "Bash(npx madge:*)"
+      "Bash(npx madge:*)",
+      "mcp__zx84__port_out",
+      "mcp__zx84__poke",
+      "mcp__zx84__type"
     ]
   },
   "enabledMcpjsonServers": [

@@ -77,6 +77,13 @@ export class Z80 {
   // MEMPTR (WZ) - internal 16-bit register for undocumented flags
   memptr = 0;
 
+  // Q register — internal latch for SCF/CCF undocumented flag behaviour.
+  // Tracks whether the previous instruction modified F (Patrik Rak, 2012).
+  // _qReg is set to F after every flag-modifying instruction, 0 otherwise.
+  // _prevQ holds the value from the previous instruction for SCF/CCF to read.
+  _qReg = 0;
+  _prevQ = 0;
+
   // Shadow registers
   a_ = 0; f_ = 0;
   b_ = 0; c_ = 0;
@@ -147,6 +154,8 @@ export class Z80 {
     this.halted = false;
 
     this.memptr = 0;
+    this._qReg = 0;
+    this._prevQ = 0;
     this.tStates = 0;
     this._pendingVector = 0xFF;
   }
@@ -292,6 +301,7 @@ export class Z80 {
              (result > 0xFF ? 0x01 : 0) |
              ((a ^ b ^ r8) & 0x10) |
              (((a ^ ~b) & (a ^ r8) & 0x80) ? 0x04 : 0);
+    this._qReg = this.f;
     return r8;
   }
 
@@ -303,6 +313,7 @@ export class Z80 {
              (result > 0xFF ? 0x01 : 0) |
              ((a ^ b ^ r8) & 0x10) |
              (((a ^ ~b) & (a ^ r8) & 0x80) ? 0x04 : 0);
+    this._qReg = this.f;
     return r8;
   }
 
@@ -314,6 +325,7 @@ export class Z80 {
              (result < 0 ? 0x01 : 0) |
              ((a ^ b ^ r8) & 0x10) |
              (((a ^ b) & (a ^ r8) & 0x80) ? 0x04 : 0);
+    this._qReg = this.f;
     return r8;
   }
 
@@ -326,22 +338,26 @@ export class Z80 {
              (result < 0 ? 0x01 : 0) |
              ((a ^ b ^ r8) & 0x10) |
              (((a ^ b) & (a ^ r8) & 0x80) ? 0x04 : 0);
+    this._qReg = this.f;
     return r8;
   }
 
   and8(val: number): void {
     this.a &= val;
     this.f = SZP[this.a] | 0x10;
+    this._qReg = this.f;
   }
 
   or8(val: number): void {
     this.a |= val;
     this.f = SZP[this.a];
+    this._qReg = this.f;
   }
 
   xor8(val: number): void {
     this.a ^= val;
     this.f = SZP[this.a];
+    this._qReg = this.f;
   }
 
   cp8(val: number): void {
@@ -354,6 +370,7 @@ export class Z80 {
              (result < 0 ? 0x01 : 0) |
              ((this.a ^ val ^ r8) & 0x10) |
              (((this.a ^ val) & (this.a ^ r8) & 0x80) ? 0x04 : 0);
+    this._qReg = this.f;
   }
 
   inc8(val: number): number {
@@ -362,6 +379,7 @@ export class Z80 {
              SZ[r] |
              ((val & 0x0F) === 0x0F ? 0x10 : 0) |
              (val === 0x7F ? 0x04 : 0);
+    this._qReg = this.f;
     return r;
   }
 
@@ -372,6 +390,7 @@ export class Z80 {
              0x02 |
              ((val & 0x0F) === 0x00 ? 0x10 : 0) |
              (val === 0x80 ? 0x04 : 0);
+    this._qReg = this.f;
     return r;
   }
 
@@ -382,6 +401,7 @@ export class Z80 {
              ((result >> 16) & 0x01) |
              (((a ^ b ^ result) >> 8) & 0x10) |
              ((result >> 8) & 0x28);  // Undoc flags from result high byte
+    this._qReg = this.f;
     return result & 0xFFFF;
   }
 
@@ -396,6 +416,7 @@ export class Z80 {
              ((result >> 16) & 0x01) |
              (((a ^ b ^ r16) >> 8) & 0x10) |
              (((a ^ ~b) & (a ^ r16) & 0x8000) ? 0x04 : 0);
+    this._qReg = this.f;
     return r16;
   }
 
@@ -411,6 +432,7 @@ export class Z80 {
              (result < 0 ? 0x01 : 0) |
              (((a ^ b ^ r16) >> 8) & 0x10) |
              (((a ^ b) & (a ^ r16) & 0x8000) ? 0x04 : 0);
+    this._qReg = this.f;
     return r16;
   }
 
@@ -419,6 +441,7 @@ export class Z80 {
     const c = (val >> 7) & 1;
     const r = ((val << 1) | c) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -426,6 +449,7 @@ export class Z80 {
     const c = val & 1;
     const r = ((val >> 1) | (c << 7)) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -434,6 +458,7 @@ export class Z80 {
     const c = (val >> 7) & 1;
     const r = ((val << 1) | oldC) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -442,6 +467,7 @@ export class Z80 {
     const c = val & 1;
     const r = ((val >> 1) | (oldC << 7)) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -449,6 +475,7 @@ export class Z80 {
     const c = (val >> 7) & 1;
     const r = (val << 1) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -456,6 +483,7 @@ export class Z80 {
     const c = val & 1;
     const r = ((val >> 1) | (val & 0x80)) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -463,6 +491,7 @@ export class Z80 {
     const c = val & 1;
     const r = (val >> 1) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -470,6 +499,7 @@ export class Z80 {
     const c = (val >> 7) & 1;
     const r = ((val << 1) | 1) & 0xFF;
     this.f = SZP[r] | c;
+    this._qReg = this.f;
     return r;
   }
 
@@ -481,6 +511,7 @@ export class Z80 {
              (r & 0x80) |               // Set S if testing bit 7 and it's set
              (val & 0x28);              // Copy bits 3,5 from value (undocumented X,Y flags)
     // N flag (bit 1) is implicitly cleared since we don't set it
+    this._qReg = this.f;
   }
 
   // --- Get/set 8-bit register by 3-bit code ---
@@ -579,6 +610,8 @@ export class Z80 {
         this.r = (this.r & 0x80) | ((this.r + nops) & 0x7F);
         return;
       }
+      this._prevQ = this._qReg;
+      this._qReg = 0;
       const opcode = mem[this.pc];
       this.pc = (this.pc + 1) & 0xFFFF;
       this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
@@ -598,6 +631,8 @@ export class Z80 {
     }
 
     const startT = this.tStates;
+    this._prevQ = this._qReg;
+    this._qReg = 0;
     const opcode = this.fetch8();      // +3T (M1 read)
     this.tStates += 1;                 // +1T (M1 refresh cycle)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
@@ -759,12 +794,14 @@ export class Z80 {
                 const c = (this.a >> 7) & 1;
                 this.a = ((this.a << 1) | c) & 0xFF;
                 this.f = (this.f & 0xC4) | c | (this.a & 0x28);
+                this._qReg = this.f;
                 break;
               }
               case 1: {
                 const c = this.a & 1;
                 this.a = ((this.a >> 1) | (c << 7)) & 0xFF;
                 this.f = (this.f & 0xC4) | c | (this.a & 0x28);
+                this._qReg = this.f;
                 break;
               }
               case 2: {
@@ -772,6 +809,7 @@ export class Z80 {
                 const c = (this.a >> 7) & 1;
                 this.a = ((this.a << 1) | oldC) & 0xFF;
                 this.f = (this.f & 0xC4) | c | (this.a & 0x28);
+                this._qReg = this.f;
                 break;
               }
               case 3: {
@@ -779,6 +817,7 @@ export class Z80 {
                 const c = this.a & 1;
                 this.a = ((this.a >> 1) | (oldC << 7)) & 0xFF;
                 this.f = (this.f & 0xC4) | c | (this.a & 0x28);
+                this._qReg = this.f;
                 break;
               }
               case 4: {
@@ -811,20 +850,29 @@ export class Z80 {
                          ((origA ^ val) & 0x10) |            // H flag from bit 4 change
                          SZP[val];                           // S, Z, undoc bits 3,5, P/V
                 this.a = val;
+                this._qReg = this.f;
                 break;
               }
               case 5:
+                // CPL
                 this.a ^= 0xFF;
                 this.f = (this.f & 0xC5) | 0x12 | (this.a & 0x28);
+                this._qReg = this.f;
                 break;
-              case 6:
-                // SCF - Set Carry Flag
-                this.f = (this.f & 0xC4) | 0x01 | (this.a & 0x28);
+              case 6: {
+                // SCF - Set Carry Flag (Q register: bits 3,5 from ((prevQ^F)|A))
+                const bits35 = ((this._prevQ ^ this.f) | this.a) & 0x28;
+                this.f = (this.f & 0xC4) | 0x01 | bits35;
+                this._qReg = this.f;
                 break;
-              case 7:
-                // CCF - Complement Carry Flag
-                this.f = ((this.f & 0xED) | ((this.f & 0x01) << 4) | (this.a & 0x28)) ^ 0x01;
+              }
+              case 7: {
+                // CCF - Complement Carry Flag (Q register: bits 3,5 from ((prevQ^F)|A))
+                const bits35 = ((this._prevQ ^ this.f) | this.a) & 0x28;
+                this.f = (this.f & 0xC4) | ((this.f & 0x01) << 4) | bits35 | ((this.f & 0x01) ^ 0x01);
+                this._qReg = this.f;
                 break;
+              }
             }
             // 4T instructions (M1 auto-counted)
             break;
@@ -1110,6 +1158,7 @@ export class Z80 {
                    (r ? 0 : 0x44) |           // Set Z and P/V if bit is 0
                    (r & 0x80) |               // Set S if testing bit 7 and it's set
                    (memptrH & 0x28);          // Copy bits 3,5 from MEMPTR high byte
+          this._qReg = this.f;
           this.tStates += 4;
         } else {
           // BIT n,r: 8T (auto-counted)
@@ -1166,6 +1215,7 @@ export class Z80 {
             this.setReg8(y, val);
           }
           this.f = (this.f & 0x01) | SZP[val];
+          this._qReg = this.f;
           this.tStates += 4;
           break;
         }
@@ -1243,12 +1293,14 @@ export class Z80 {
               // LD A,I: 9T. Auto: 8T
               this.a = this.i;
               this.f = (this.f & 0x01) | SZ[this.a] | (this.iff2 ? 0x04 : 0);
+              this._qReg = this.f;
               this.tStates += 1;
               break;
             case 3:
               // LD A,R: 9T. Auto: 8T
               this.a = this.r;
               this.f = (this.f & 0x01) | SZ[this.a] | (this.iff2 ? 0x04 : 0);
+              this._qReg = this.f;
               this.tStates += 1;
               break;
             case 4: {
@@ -1257,6 +1309,7 @@ export class Z80 {
               const newHL = ((this.a & 0x0F) << 4) | (hlVal >> 4);
               this.a = (this.a & 0xF0) | (hlVal & 0x0F);
               this.f = (this.f & 0x01) | SZP[this.a];
+              this._qReg = this.f;
               this.memptr = (this.hl + 1) & 0xFFFF;  // RRD: MEMPTR = HL + 1
               this.tStates += 7;
               this.write8(this.hl, newHL);
@@ -1269,6 +1322,7 @@ export class Z80 {
               const newHL = ((hlVal << 4) | (this.a & 0x0F)) & 0xFF;
               this.a = (this.a & 0xF0) | (hlVal >> 4);
               this.f = (this.f & 0x01) | SZP[this.a];
+              this._qReg = this.f;
               this.memptr = (this.hl + 1) & 0xFFFF;  // RLD: MEMPTR = HL + 1
               this.tStates += 7;
               this.write8(this.hl, newHL);
@@ -1307,6 +1361,7 @@ export class Z80 {
 
           this.bc = (this.bc - 1) & 0xFFFF;
           if (this.bc !== 0) this.f |= 0x04;
+          this._qReg = this.f;
 
           if ((y === 6 || y === 7) && this.bc !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
@@ -1342,6 +1397,7 @@ export class Z80 {
                    0x02 |
                    (this.bc !== 0 ? 0x04 : 0) |
                    (n & 0x08) | ((n << 4) & 0x20);
+          this._qReg = this.f;
 
           if ((y === 6 || y === 7) && this.bc !== 0 && result !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
@@ -1387,6 +1443,7 @@ export class Z80 {
                    pv |                            // P/V
                    ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
                    c;                              // C
+          this._qReg = this.f;
 
           if (y === 4 || y === 6) {
             this.hl = (this.hl + 1) & 0xFFFF;
@@ -1443,6 +1500,7 @@ export class Z80 {
                    pv |                            // P/V
                    ((val >> 6) & 0x02) |          // N = bit 7 of I/O value
                    c;                              // C
+          this._qReg = this.f;
 
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
@@ -1743,6 +1801,7 @@ export class Z80 {
         this.bit(y, val);
         // BIT n,(IX+d) / BIT n,(IY+d): undocumented flags from MEMPTR high byte
         this.f = (this.f & ~0x28) | ((this.memptr >> 8) & 0x28);
+        this._qReg = this.f;
         this.tStates += 4;
         break;
 
