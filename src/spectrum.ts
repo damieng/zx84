@@ -21,7 +21,6 @@ import type { IScreenRenderer } from '@/display/display.ts';
 import { Audio } from '@/audio.ts';
 import { TapeDeck } from '@/tape/tap.ts';
 import { UPD765A } from '@/cores/upd765a.ts';
-import { Plus3DosTrap } from '@/plus3/plus3dos-trap.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 import { Contention } from '@/contention.ts';
 import { ScreenText } from '@/debug/screen-text.ts';
@@ -98,9 +97,7 @@ export class Spectrum {
   contention: Contention;
   screenText: ScreenText;
 
-  /** Disk access mode: 'fdc' = full FDC emulation, 'bios' = +3DOS BIOS traps */
-  diskMode: 'fdc' | 'bios' = 'fdc';
-  biosTrap: Plus3DosTrap | null = null;
+
 
   /** Per-frame I/O activity counters */
   activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, rst16Calls: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
@@ -115,7 +112,7 @@ export class Spectrum {
   amxMouse = new AmxMouse();
 
   /** Audio mixer peripheral (beeper + AY mixing, DC filter) */
-  mixer = new AudioMixer();
+  mixer!: AudioMixer;
 
   /** 32x24 character grid mirroring what RST 16 prints to the display */
   get screenGrid(): string[] { return this.screenText.screenGrid; }
@@ -212,15 +209,13 @@ export class Spectrum {
         : new WebGLRenderer(canvas, SCREEN_WIDTH, SCREEN_HEIGHT))
       : null;
     this.audio = new Audio();
+    this.contention = new Contention(model, this.memory);
+    this.mixer = new AudioMixer(this.contention.timing.cpuClock);
     this.tape = new TapeDeck();
     this.tape.is48K = model === '48k';
+    this.tape.cpuClock = this.contention.timing.cpuClock;
     this.fdc = new UPD765A();
-    this.contention = new Contention(model, this.memory);
     this.screenText = new ScreenText();
-
-    if (isPlus3(model)) {
-      this.biosTrap = new Plus3DosTrap(this.cpu, this.memory, this.fdc);
-    }
 
     installMemoryHooks(this);
     wirePortIO(this);
@@ -317,7 +312,6 @@ export class Spectrum {
     this.keyboard.reset();
     this.audio.reset();
     this.fdc.reset();
-    this.biosTrap?.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
     this.screenText.clear();
@@ -504,11 +498,6 @@ export class Spectrum {
         trapTapeLoad(this.cpu, this.tape);
         this.tape.skipBlock(); // advance player past the consumed block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
-      } else if (this.diskMode === 'bios' && this.biosTrap &&
-                 this.memory.currentROM === 2 && !this.memory.specialPaging &&
-                 this.cpu.pc < 0x4000 &&
-                 this.biosTrap.check(this.cpu.pc)) {
-        this.activity.fdcAccesses++;
       } else if (this.cpu.halted) {
         // HALT repeats NOP-like M1 fetches from PC.  If PC is in contended
         // memory each cycle gets a ULA delay; otherwise we can fast-skip.

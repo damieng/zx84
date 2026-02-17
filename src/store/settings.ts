@@ -144,9 +144,7 @@ export const setFontName = _fontName[1];
 
 // ── Disk mode ───────────────────────────────────────────────────────────
 
-const _diskMode = /*@once*/ createRoot(() => createSignal(getSaved('disk-mode', 'fdc') as 'fdc' | 'bios'));
-export const diskMode = _diskMode[0];
-export const setDiskMode = _diskMode[1];
+
 
 const _dualDrives = /*@once*/ createRoot(() => createSignal(getSaved('dual-drives', 'off') === 'on'));
 export const dualDrives = _dualDrives[0];

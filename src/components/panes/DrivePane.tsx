@@ -6,9 +6,9 @@ import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  setDiskModeAction, ejectDisk, loadFile,
+  ejectDisk, loadFile,
 } from '@/emulator.ts';
-import { diskMode, dualDrives, setDualDrives, diskSoundEnabled, setDiskSoundEnabled, persistSetting } from '@/store/settings.ts';
+import { dualDrives, setDualDrives, diskSoundEnabled, setDiskSoundEnabled, persistSetting } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 
@@ -65,8 +65,7 @@ export function DrivePane() {
           icon={<HiOutlineEllipsisVertical />}
           title="Drive options"
           items={[
-            { value: 'fdc', label: 'Emulate 765 FDC', checked: diskMode() === 'fdc' },
-            { value: 'bios', label: 'Trap +3DOS calls', checked: diskMode() === 'bios' },
+
             { value: 'dual', label: 'Enable B: drive', checked: dualDrives() },
             { value: 'disk-sound', label: 'Drive sounds', checked: diskSoundEnabled() },
           ]}
@@ -78,7 +77,7 @@ export function DrivePane() {
               setDiskSoundEnabled(!diskSoundEnabled());
               persistSetting('disk-sound', diskSoundEnabled() ? 'on' : 'off');
             } else {
-              setDiskModeAction(value as 'fdc' | 'bios');
+
             }
           }}
         />

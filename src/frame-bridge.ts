@@ -126,19 +126,7 @@ function updateHardwareSignals(model: SpectrumModel): void {
     setDriveAStatus(renderDriveStatus(0));
     setDriveBStatus(renderDriveStatus(1));
     setDriveHtml(renderDriveStatus(0)); // legacy
-    if (spectrum!.diskMode === 'bios' && spectrum!.biosTrap) {
-      const entries = spectrum!.biosTrap.trapLog;
-      setTrapLogHtml(entries.length > 0
-        ? entries.map(e =>
-            e.startsWith('UNTRAPPED')
-              ? `<span class="trap-warn">${e}</span>`
-              : e
-          ).join('\n')
-        : '<span style="color:#666">(no traps fired)</span>');
-      setShowTrapLog(true);
-    } else {
-      setShowTrapLog(false);
-    }
+    setShowTrapLog(false);
   }
 }
 

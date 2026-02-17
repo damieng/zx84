@@ -226,7 +226,7 @@ export async function createMachine(): Promise<boolean> {
 
   // Apply saved disk mode for +3
   if (isPlus3(model)) {
-    spectrum.diskMode = settings.diskMode();
+
   }
 
   // Floppy sound
@@ -851,13 +851,7 @@ export function switchRenderer(mode: 'webgl' | 'canvas'): void {
   settings.persistSetting('renderer', mode);
 }
 
-// ── Disk mode change ────────────────────────────────────────────────────
 
-export function setDiskModeAction(mode: 'fdc' | 'bios'): void {
-  settings.setDiskMode(mode);
-  if (spectrum) spectrum.diskMode = mode;
-  settings.persistSetting('disk-mode', mode);
-}
 
 // ── Audio init ──────────────────────────────────────────────────────────
 
