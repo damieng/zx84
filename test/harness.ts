@@ -37,11 +37,7 @@ function parseAddr(s: string): number {
   s = s.trim().toLowerCase();
   if (s.startsWith('0x')) return parseInt(s.slice(2), 16);
   if (s.startsWith('$')) return parseInt(s.slice(1), 16);
-  // If it contains a-f, parse as hex
-  if (/[a-f]/i.test(s)) return parseInt(s, 16);
-  // Otherwise try decimal, fall back to hex
-  const dec = parseInt(s, 10);
-  if (!isNaN(dec) && String(dec) === s) return dec;
+  // Always hex — this is a Z80 debugger
   return parseInt(s, 16);
 }
 
@@ -486,6 +482,28 @@ async function main(): Promise<void> {
           break;
         }
 
+        case 'weak': {
+          // Mark sector(s) as weak (st2 |= 0x20) so FDC randomises data on each read.
+          // Usage: weak <track> [sector]    — if sector omitted, marks ALL sectors on the track
+          const dsk = spec.fdc.getDiskImage(0);
+          if (!dsk) { console.log('No disk in drive A:'); break; }
+          if (parts.length < 2) { console.log('Usage: weak <track> [sector]'); break; }
+          const wTrack = parseAddr(parts[1]);
+          const track = dsk.tracks[wTrack]?.[0];
+          if (!track) { console.log(`Track ${wTrack} not found`); break; }
+          if (parts.length >= 3) {
+            const wR = parseAddr(parts[2]);
+            const idx = track.sectorMap.get(wR);
+            if (idx === undefined) { console.log(`Sector R=${wR} not found on track ${wTrack}`); break; }
+            track.sectors[idx].st2 |= 0x20;
+            console.log(`Marked track ${wTrack} sector R=${wR} as weak (st2=0x${h8(track.sectors[idx].st2)})`);
+          } else {
+            for (const s of track.sectors) s.st2 |= 0x20;
+            console.log(`Marked all ${track.sectors.length} sectors on track ${wTrack} as weak`);
+          }
+          break;
+        }
+
         case 'quit':
         case 'q':
           rl.close();
@@ -657,6 +675,7 @@ Commands:
   screen | scr         Show screen text (RST 16 grid)
   ocr                  OCR screen (bitmap matching)
   model [m]            Show/switch model (48k|128k|+2|+2a|+3)
+  weak <track> [sector] Mark sector(s) as weak (randomised on each read)
   subframe | sf        Toggle sub-frame rendering
   quit | q             Exit
   help | ?             This message

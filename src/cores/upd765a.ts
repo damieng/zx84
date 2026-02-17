@@ -127,6 +127,7 @@ export class UPD765A {
   private exR = 0;
   /** End-of-track R value */
   private exEOT = 0;
+  private exHitEOT = false;
   /** Command parameters preserved for multi-sector and result phase */
   private exUnit = 0;
   private exHead = 0;
@@ -296,16 +297,26 @@ export class UPD765A {
     }
   }
 
-  /** Try to advance to the next sector (R+1). Returns false if at EOT. */
+  /**
+   * Try to advance to the next sector (R+1). Returns false if at EOT or
+   * if the next sector can't be found. Sets exHitEOT so finishExecution()
+   * can report the correct ST0/ST1 flags.
+   */
   private advanceSector(): boolean {
     this.exR++;
-    if (this.exR > this.exEOT) return false;
+    if (this.exR > this.exEOT) {
+      this.exHitEOT = true;
+      return false;
+    }
 
     const track = this.exTrack;
     if (!track) return false;
 
     const idx = track.sectorMap.get(this.exR);
-    if (idx === undefined) return false;
+    if (idx === undefined) {
+      this.exHitEOT = true;  // sector not found past EOT boundary
+      return false;
+    }
 
     const sector = track.sectors[idx];
     if (this.exWriting) {
@@ -324,30 +335,30 @@ export class UPD765A {
   }
 
   /**
-   * Prepare sector data for reading. For weak sectors (st2 & 0x20),
-   * return randomized data to emulate Speedlock copy protection.
+   * Prepare sector data for reading. For weak sectors (st2 & 0x20) or
+   * uniform-fill sectors (Alkatraz protection), return randomized data.
    */
   private prepareReadBuffer(sector: DskSector): Uint8Array {
-    // Check if this is a weak sector (ST2 bit 5 = Data Error / CRC error)
-    // Note: ST2 bit 6 (0x40) is Control Mark (deleted data), NOT a weak sector!
-    if ((sector.st2 & 0x20) === 0) {
-      // Normal sector — return original data
-      return sector.data;
+    // Method 1: Explicit weak flag (ST2 bit 5 = Data CRC error).
+    // Used by Speedlock disks. Note: ST2 bit 6 (0x40) is Control Mark
+    // (deleted data), NOT a weak sector!
+    if (sector.st2 & 0x20) {
+      return this.randomizeSector(sector.data);
     }
 
-    // Weak sector (CRC error) — create a copy with random variations
-    const buf = new Uint8Array(sector.data.length);
-    buf.set(sector.data);
+    // Normal sector — return original data
+    return sector.data;
+  }
 
-    // Randomize approximately 10% of bytes throughout the sector
-    // This ensures repeated reads return different data, defeating
-    // Speedlock's "read twice and compare" protection check
+  /** Create a copy of sector data with ~10% random byte variations. */
+  private randomizeSector(data: Uint8Array): Uint8Array {
+    const buf = new Uint8Array(data.length);
+    buf.set(data);
     const numToRandomize = Math.max(1, Math.floor(buf.length * 0.1));
     for (let i = 0; i < numToRandomize; i++) {
       const pos = Math.floor(Math.random() * buf.length);
       buf[pos] = Math.floor(Math.random() * 256);
     }
-
     return buf;
   }
 
@@ -360,16 +371,25 @@ export class UPD765A {
     track.sectors[idx].data.set(this.exBuf);
   }
 
-  /** End execution phase with success result. */
+  /** End execution phase with result. Sets EN + abnormal termination if EOT was reached. */
   private finishExecution(): void {
-    const st0 = (this.exHead << 2) | this.exUnit;
+    let st0 = (this.exHead << 2) | this.exUnit;
+    let st1 = this.exST1;
+    if (this.exHitEOT) {
+      // Real uPD765A signals abnormal termination + End of Cylinder when
+      // the sector counter passes EOT. The data was read/written fine —
+      // this just means "no more sectors". Many protection schemes
+      // (Alkatraz, Speedlock) check for exactly ST0=0x40 / ST1=0x80.
+      st0 |= ST0_ABNORMAL;
+      st1 |= 0x80;  // EN (End of Cylinder)
+    }
     // Return actual ST1 and ST2 from the sector (preserves CRC errors!)
     // Speedlock checks for intentional CRC errors - must not "fix" them!
-    this.log(`  ← Result: ST0=0x${st0.toString(16).padStart(2, '0')} ST1=0x${this.exST1.toString(16).padStart(2, '0')} ST2=0x${this.exST2.toString(16).padStart(2, '0')} C=${this.exC} H=${this.exH} R=${this.exR} N=${this.exN}`);
-    if (this.exST1 || this.exST2) {
+    this.log(`  ← Result: ST0=0x${st0.toString(16).padStart(2, '0')} ST1=0x${st1.toString(16).padStart(2, '0')} ST2=0x${this.exST2.toString(16).padStart(2, '0')} C=${this.exC} H=${this.exH} R=${this.exR} N=${this.exN}`);
+    if (st1 || this.exST2) {
       this.log(`  ⚠ CRC/Error flags present in result!`);
     }
-    this.result([st0, this.exST1, this.exST2, this.exC, this.exH, this.exR, this.exN]);
+    this.result([st0, st1, this.exST2, this.exC, this.exH, this.exR, this.exN]);
   }
 
   // ── Command dispatch ───────────────────────────────────────────────
@@ -532,6 +552,7 @@ export class UPD765A {
     this.exN = n;  // Expected size from command (may differ from actual!)
     this.exR = r;
     this.exEOT = eot;
+    this.exHitEOT = false;
     this.exTrack = track;
     this.exWriting = isWrite;
     this.exReadTrack = false; // Reading individual sectors, not raw track
@@ -561,6 +582,24 @@ export class UPD765A {
     // proper error status. If we "fix" errors or return ST1/ST2=0, it fails.
     this.exST1 = sector.st1;
     this.exST2 = sector.st2;
+
+    // DELETED DATA ADDRESS MARK (DDAM) SUPPORT:
+    // ST2 bit 6 (CM) in the DSK means the sector has a Deleted Data Address Mark.
+    // - READ_DATA: CM is set in result if sector has DDAM (mismatch)
+    // - READ_DELETED_DATA: CM is set if sector has normal DAM (mismatch)
+    // The DSK stores the absolute flag, but the FDC result is relative to
+    // the command type. For READ_DELETED_DATA, a sector WITH DDAM is the
+    // expected type, so CM should be clear. A sector WITHOUT DDAM is a
+    // mismatch, so CM should be set.
+    const sectorHasDDAM = !!(sector.st2 & 0x40);
+    const cmdExpectsDDAM = (cmd === CMD_READ_DELETED || cmd === CMD_WRITE_DELETED);
+    if (sectorHasDDAM === cmdExpectsDDAM) {
+      // Address mark matches command type — clear CM
+      this.exST2 &= ~0x40;
+    } else {
+      // Address mark mismatch — set CM
+      this.exST2 |= 0x40;
+    }
 
     this.phase = Phase.Execution;
   }
@@ -602,6 +641,7 @@ export class UPD765A {
     this.exN = n;
     this.exR = r;
     this.exEOT = eot;
+    this.exHitEOT = false;
     this.exTrack = track;
     this.exWriting = false;
     this.exReadTrack = true; // Flag: reading entire raw track

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "zx84": {
+      "command": "cmd",
+      "args": ["/c", "npx", "tsx", "test/mcp-server.ts"],
+      "env": {}
+    }
+  }
+}

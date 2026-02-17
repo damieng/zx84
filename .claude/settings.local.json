@@ -12,7 +12,24 @@
       "Bash(git -C /f/src/zx84 log --oneline --all --grep=\"Speedlock\\\\|disk\\\\|protection\\\\|dsk\\\\|+3\" -i)",
       "Bash(npm run:*)",
       "Bash(npx tsx:*)",
-      "Bash(printf:*)"
+      "Bash(printf:*)",
+      "Bash(echo:*)",
+      "mcp__zx84__model",
+      "mcp__zx84__load",
+      "mcp__zx84__disk_boot",
+      "mcp__zx84__continue",
+      "mcp__zx84__delete_breakpoint",
+      "mcp__zx84__breakpoint",
+      "mcp__zx84__disassemble",
+      "mcp__zx84__memory",
+      "mcp__zx84__stop_trace",
+      "mcp__zx84__ocr",
+      "mcp__zx84__registers",
+      "mcp__zx84__run",
+      "mcp__zx84__screen"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "zx84"
+  ]
 }
