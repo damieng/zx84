@@ -242,7 +242,7 @@ export class Z80 {
         // IM 0: RST 38h on Spectrum. 13T: ack(7T), push@T+7/T+10
         this.tStates += 7;
         this.push16(this.pc);
-        this.pc = 0x0038;
+        this.memptr = this.pc = 0x0038;
         this.tStates += 3;
         return 13;
 
@@ -250,7 +250,7 @@ export class Z80 {
         // IM 1: RST 38h. 13T: ack(7T), push@T+7/T+10
         this.tStates += 7;
         this.push16(this.pc);
-        this.pc = 0x0038;
+        this.memptr = this.pc = 0x0038;
         this.tStates += 3;
         return 13;
 
@@ -264,7 +264,7 @@ export class Z80 {
         this.tStates += 7;
         this.push16(this.pc);
         this.tStates += 3;
-        this.pc = this.read16(vectorAddr);
+        this.memptr = this.pc = this.read16(vectorAddr);
         this.tStates += 3;
         return 19;
       }
@@ -272,7 +272,7 @@ export class Z80 {
       default:
         this.tStates += 7;
         this.push16(this.pc);
-        this.pc = 0x0038;
+        this.memptr = this.pc = 0x0038;
         this.tStates += 3;
         return 13;
     }
@@ -1037,7 +1037,7 @@ export class Z80 {
             // RST: 11T, writes@T+5,T+8. Auto: 4T M1
             this.tStates += 1;
             this.push16(this.pc);
-            this.pc = y * 8;
+            this.memptr = this.pc = y * 8;
             this.tStates += 3;
             break;
         }
