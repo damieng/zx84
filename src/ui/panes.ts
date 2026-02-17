@@ -61,8 +61,13 @@ function loadCollapsed(): Set<string> {
 
 // ── Signals ─────────────────────────────────────────────────────────────
 
-export const [paneOrder, _setPaneOrder] = createSignal<PanePosition[]>(loadPaneOrder());
-export const [collapsedPanes, _setCollapsedPanes] = createSignal<Set<string>>(loadCollapsed());
+const _paneOrder = createSignal<PanePosition[]>(loadPaneOrder());
+export const paneOrder = _paneOrder[0];
+const _setPaneOrder = _paneOrder[1];
+
+const _collapsedPanes = createSignal<Set<string>>(loadCollapsed());
+export const collapsedPanes = _collapsedPanes[0];
+const _setCollapsedPanes = _collapsedPanes[1];
 
 // ── Actions ─────────────────────────────────────────────────────────────
 

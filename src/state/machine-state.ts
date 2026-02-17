@@ -28,15 +28,29 @@ export function saveModel(model: SpectrumModel): void {
 }
 
 // Status messages
-export const [statusText, setStatusText] = createSignal('Load a ROM to start');
-export const [romStatusText, setRomStatusText] = createSignal('');
+const _statusText = createSignal('Load a ROM to start');
+export const statusText = _statusText[0];
+export const setStatusText = _statusText[1];
+
+const _romStatusText = createSignal('');
+export const romStatusText = _romStatusText[0];
+export const setRomStatusText = _romStatusText[1];
 
 // Model selection
-export const [currentModel, setCurrentModel] = createSignal<SpectrumModel>(loadSavedModel() ?? '128k');
+const _currentModel = createSignal<SpectrumModel>(loadSavedModel() ?? '128k');
+export const currentModel = _currentModel[0];
+export const setCurrentModel = _currentModel[1];
 
 // Execution control
-export const [emulationPaused, setEmulationPaused] = createSignal(false);
-export const [turboMode, setTurboMode] = createSignal(false);
+const _emulationPaused = createSignal(false);
+export const emulationPaused = _emulationPaused[0];
+export const setEmulationPaused = _emulationPaused[1];
+
+const _turboMode = createSignal(false);
+export const turboMode = _turboMode[0];
+export const setTurboMode = _turboMode[1];
 
 // Speed display
-export const [clockSpeedText, setClockSpeedText] = createSignal('MHz');
+const _clockSpeedText = createSignal('MHz');
+export const clockSpeedText = _clockSpeedText[0];
+export const setClockSpeedText = _clockSpeedText[1];

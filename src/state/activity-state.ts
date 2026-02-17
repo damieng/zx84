@@ -12,25 +12,62 @@
 import { createSignal } from 'solid-js';
 
 // Input devices
-export const [ledKbd, setLedKbd] = createSignal(false);
-export const [ledKemp, setLedKemp] = createSignal(false);
-export const [ledMouse, setLedMouse] = createSignal(false);
+const _ledKbd = createSignal(false);
+export const ledKbd = _ledKbd[0];
+export const setLedKbd = _ledKbd[1];
+
+const _ledKemp = createSignal(false);
+export const ledKemp = _ledKemp[0];
+export const setLedKemp = _ledKemp[1];
+
+const _ledMouse = createSignal(false);
+export const ledMouse = _ledMouse[0];
+export const setLedMouse = _ledMouse[1];
 
 // Tape/disk
-export const [ledEar, setLedEar] = createSignal(false);
-export const [ledLoad, setLedLoad] = createSignal(false);
-export const [ledTapeTurbo, setLedTapeTurbo] = createSignal(false);
-export const [ledDsk, setLedDsk] = createSignal(false);
+const _ledEar = createSignal(false);
+export const ledEar = _ledEar[0];
+export const setLedEar = _ledEar[1];
+
+const _ledLoad = createSignal(false);
+export const ledLoad = _ledLoad[0];
+export const setLedLoad = _ledLoad[1];
+
+const _ledTapeTurbo = createSignal(false);
+export const ledTapeTurbo = _ledTapeTurbo[0];
+export const setLedTapeTurbo = _ledTapeTurbo[1];
+
+const _ledDsk = createSignal(false);
+export const ledDsk = _ledDsk[0];
+export const setLedDsk = _ledDsk[1];
 
 // Audio
-export const [ledBeep, setLedBeep] = createSignal(false);
-export const [ledAy, setLedAy] = createSignal(false);
+const _ledBeep = createSignal(false);
+export const ledBeep = _ledBeep[0];
+export const setLedBeep = _ledBeep[1];
+
+const _ledAy = createSignal(false);
+export const ledAy = _ledAy[0];
+export const setLedAy = _ledAy[1];
 
 // Screen effects
-export const [ledRainbow, setLedRainbow] = createSignal(false);
+const _ledRainbow = createSignal(false);
+export const ledRainbow = _ledRainbow[0];
+export const setLedRainbow = _ledRainbow[1];
 
 // Transcription
-export const [ledRst16, setLedRst16] = createSignal(false);
-export const [ledText, setLedText] = createSignal(false);
-export const [transcribeMode, setTranscribeMode] = createSignal<'off' | 'rst16' | 'text'>('off');
-export const [transcribeText, setTranscribeText] = createSignal('');
+const _ledRst16 = createSignal(false);
+export const ledRst16 = _ledRst16[0];
+export const setLedRst16 = _ledRst16[1];
+
+const _ledText = createSignal(false);
+export const ledText = _ledText[0];
+export const setLedText = _ledText[1];
+
+const _transcribeMode = createSignal<'off' | 'rst16' | 'text'>('off');
+export const transcribeMode = _transcribeMode[0];
+export const setTranscribeMode = _transcribeMode[1];
+
+const _transcribeText = createSignal('');
+export const transcribeText = _transcribeText[0];
+export const setTranscribeText = _transcribeText[1];

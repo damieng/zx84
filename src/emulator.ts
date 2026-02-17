@@ -34,8 +34,8 @@ export type { TraceMode };
 
 // ── State (re-exported from feature modules) ───────────────────────────
 
-// Machine state
-export {
+// Machine state — import everything, then re-export below
+import {
   statusText,
   romStatusText,
   currentModel,
@@ -43,139 +43,73 @@ export {
   turboMode,
   clockSpeedText,
   saveModel,
-} from '@/state/machine-state.ts';
-
-// Import signals for use in this module
-import {
   setStatusText,
   setRomStatusText,
-  currentModel,
   setCurrentModel,
-  emulationPaused,
   setEmulationPaused,
   setTurboMode,
-  saveModel,
+  setClockSpeedText,
 } from '@/state/machine-state.ts';
 
 import {
+  tapeLoaded,
+  tapeBlocks,
+  tapePosition,
+  tapePaused,
+  tapePlaying,
+  tapeName,
   setTapeLoaded,
   setTapeName,
   setTapeBlocks,
   setTapePosition,
   setTapePaused,
   setTapePlaying,
-  tapeName,
 } from '@/state/tape-state.ts';
 
 import {
-  setCurrentDiskInfo,
-  setCurrentDiskName,
-  setCurrentDiskInfoB,
-  setCurrentDiskNameB,
-  setDiskInfoHtml,
-} from '@/state/disk-state.ts';
-
-import {
-  setDisasmText,
-  setSysvarHtml,
-  setBasicHtml,
-  setBasicVarsHtml,
-  setTracing,
-} from '@/state/debug-state.ts';
-
-import {
-  transcribeMode,
-  setTranscribeMode,
-} from '@/state/activity-state.ts';
-
-// Tape state
-export {
-  tapeLoaded,
-  tapeBlocks,
-  tapePosition,
-  tapePaused,
-  tapePlaying,
-} from '@/state/tape-state.ts';
-
-// Re-export setters
-export { setStatusText, setRomStatusText, setCurrentModel, setEmulationPaused, setTurboMode, setClockSpeedText } from '@/state/machine-state.ts';
-export { setTapeLoaded, setTapeName, setTapeBlocks, setTapePosition, setTapePaused, setTapePlaying, tapeName };
-
-// Disk state
-export {
-  currentDiskInfo,
-  currentDiskName,
-  currentDiskInfoB,
-  currentDiskNameB,
-  driveAStatus,
-  driveBStatus,
-  diskInfoHtml,
-  driveHtml,
-} from '@/state/disk-state.ts';
-
-// Re-export disk setters
-export {
+  currentDiskInfo, currentDiskName, currentDiskInfoB, currentDiskNameB,
+  driveAStatus, driveBStatus, diskInfoHtml, driveHtml,
   setCurrentDiskInfo, setCurrentDiskName, setCurrentDiskInfoB, setCurrentDiskNameB,
   setDriveAStatus, setDriveBStatus, setDiskInfoHtml, setDriveHtml,
 } from '@/state/disk-state.ts';
 
-// Debug state
-export {
-  regsHtml,
-  regsRev,
-  sysvarHtml,
-  sysvarRev,
-  basicHtml,
-  basicVarsHtml,
-  banksHtml,
-  disasmText,
-  tracing,
-  trapLogHtml,
-  showTrapLog,
-  setRegsHtml,
-  setRegsRev,
-  setSysvarHtml,
-  setSysvarRev,
-  setBasicHtml,
-  setBasicVarsHtml,
-  setBanksHtml,
-  setDisasmText,
-  setTracing,
-  setTrapLogHtml,
-  setShowTrapLog,
+import {
+  regsHtml, regsRev, sysvarHtml, sysvarRev,
+  basicHtml, basicVarsHtml, banksHtml, disasmText, tracing,
+  trapLogHtml, showTrapLog,
+  setRegsHtml, setRegsRev, setSysvarHtml, setSysvarRev,
+  setBasicHtml, setBasicVarsHtml, setBanksHtml, setDisasmText, setTracing,
+  setTrapLogHtml, setShowTrapLog,
 } from '@/state/debug-state.ts';
 
-// Activity state (LEDs + transcription)
-export {
-  ledKbd,
-  ledKemp,
-  ledMouse,
-  ledEar,
-  ledLoad,
-  ledTapeTurbo,
-  ledDsk,
-  ledBeep,
-  ledAy,
-  ledRainbow,
-  ledRst16,
-  ledText,
-  transcribeMode,
-  transcribeText,
-  setLedKbd,
-  setLedKemp,
-  setLedMouse,
-  setLedEar,
-  setLedLoad,
-  setLedTapeTurbo,
-  setLedDsk,
-  setLedBeep,
-  setLedAy,
-  setLedRainbow,
-  setLedRst16,
-  setLedText,
-  setTranscribeMode,
-  setTranscribeText,
+import {
+  ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo,
+  ledDsk, ledBeep, ledAy, ledRainbow, ledRst16, ledText,
+  transcribeMode, transcribeText,
+  setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo,
+  setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedRst16, setLedText,
+  setTranscribeMode, setTranscribeText,
 } from '@/state/activity-state.ts';
+
+// Re-export machine state
+export { statusText, romStatusText, currentModel, emulationPaused, turboMode, clockSpeedText, saveModel };
+export { setStatusText, setRomStatusText, setCurrentModel, setEmulationPaused, setTurboMode, setClockSpeedText };
+
+// Re-export tape state
+export { tapeLoaded, tapeBlocks, tapePosition, tapePaused, tapePlaying, tapeName };
+export { setTapeLoaded, setTapeName, setTapeBlocks, setTapePosition, setTapePaused, setTapePlaying };
+
+// Re-export disk state
+export { currentDiskInfo, currentDiskName, currentDiskInfoB, currentDiskNameB, driveAStatus, driveBStatus, diskInfoHtml, driveHtml };
+export { setCurrentDiskInfo, setCurrentDiskName, setCurrentDiskInfoB, setCurrentDiskNameB, setDriveAStatus, setDriveBStatus, setDiskInfoHtml, setDriveHtml };
+
+// Re-export debug state
+export { regsHtml, regsRev, sysvarHtml, sysvarRev, basicHtml, basicVarsHtml, banksHtml, disasmText, tracing, trapLogHtml, showTrapLog };
+export { setRegsHtml, setRegsRev, setSysvarHtml, setSysvarRev, setBasicHtml, setBasicVarsHtml, setBanksHtml, setDisasmText, setTracing, setTrapLogHtml, setShowTrapLog };
+
+// Re-export activity state
+export { ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo, ledDsk, ledBeep, ledAy, ledRainbow, ledRst16, ledText, transcribeMode, transcribeText };
+export { setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo, setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedRst16, setLedText, setTranscribeMode, setTranscribeText };
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
 
@@ -251,6 +185,7 @@ export function applyDisplaySettings(): void {
   spectrum.subFrameRendering = settings.subFrameRendering();
   spectrum.tapeInstantLoad = settings.tapeInstantLoad();
   spectrum.tapeTurbo = settings.tapeTurbo();
+  spectrum.tapeSoundEnabled = settings.tapeSoundEnabled();
 }
 
 export async function createMachine(): Promise<boolean> {

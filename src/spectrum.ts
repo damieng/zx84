@@ -28,7 +28,6 @@ import { ScreenText } from '@/debug/screen-text.ts';
 import { trapTapeLoad } from '@/tape/tape-loader.ts';
 import { LoaderDetector } from '@/tape/loader-detect.ts';
 import { installMemoryHooks, wirePortIO } from '@/io-ports.ts';
-import { tapeSoundEnabled } from '@/store/settings.ts';
 import { KempstonJoystick } from '@/peripherals/joysticks.ts';
 import { KempstonMouse } from '@/peripherals/kempston-mouse.ts';
 import { AmxMouse } from '@/peripherals/amx-mouse.ts';
@@ -179,6 +178,9 @@ export class Spectrum {
    *  loader is actively reading the EAR port.  Disengages after a cooldown
    *  when EAR reads stop (loading finished). */
   tapeTurbo = true;
+
+  /** Whether tape loading sounds are mixed into audio output */
+  tapeSoundEnabled = true;
 
   /** Internal: whether tape turbo is currently engaged */
   private _tapeTurboActive = false;
@@ -557,7 +559,7 @@ export class Spectrum {
       // Accumulate beeper duty and generate audio samples.
       // During tape turbo, skip audio generation entirely — the loading
       // noise is unwanted and audio pacing would throttle our speed.
-      this.mixer.accumulate(this.ula.getAudioEarBit(tapeSoundEnabled()), elapsed);
+      this.mixer.accumulate(this.ula.getAudioEarBit(this.tapeSoundEnabled), elapsed);
       if (!this._tapeTurboActive) {
         this.mixer.generateSamples(this.audio, this.ay, is128kClass(this.model));
       } else {
