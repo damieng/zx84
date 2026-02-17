@@ -653,6 +653,7 @@ export class Z80 {
                 // JR: 12T. Auto: 7T
                 const offset = this.fetch8();
                 this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
+                this.memptr = this.pc;  // JR: MEMPTR = jump target
                 this.tStates += 5;
                 break;
               }
@@ -661,7 +662,10 @@ export class Z80 {
                 const offset = this.fetch8();
                 if (this.checkCondition(y - 4)) {
                   this.pc = (this.pc + (offset < 128 ? offset : offset - 256)) & 0xFFFF;
+                  this.memptr = this.pc;  // JR cc (taken): MEMPTR = jump target
                   this.tStates += 5;
+                } else {
+                  this.tStates += 1;
                 }
                 break;
               }
@@ -863,7 +867,7 @@ export class Z80 {
             if (this.checkCondition(y)) {
               // RET cc (true): 11T, reads@T+5,T+8. Auto: 4T M1
               this.tStates += 1;
-              this.pc = this.pop16();
+              this.memptr = this.pc = this.pop16();  // RET: MEMPTR = PC = target
               this.tStates += 3;
             } else {
               // RET cc (false): 5T. Auto: 4T M1
@@ -880,7 +884,7 @@ export class Z80 {
               switch (p) {
                 case 0:
                   // RET: 10T, reads@T+4,T+7. Auto: 4T M1
-                  this.pc = this.pop16();
+                  this.memptr = this.pc = this.pop16();  // RET: MEMPTR = PC = target
                   this.tStates += 3;
                   break;
                 case 1: {
@@ -910,6 +914,7 @@ export class Z80 {
           case 2: {
             // JP cc,nn: 10T. Auto: 4T M1 + 6T fetch16 = 10T
             const addr = this.fetch16();
+            this.memptr = addr;  // Always set MEMPTR, even if jump not taken
             if (this.checkCondition(y)) {
               this.pc = addr;
             }
@@ -920,7 +925,7 @@ export class Z80 {
             switch (y) {
               case 0:
                 // JP nn: 10T. Auto: 4T M1 + 6T fetch16 = 10T
-                this.pc = this.fetch16();
+                this.memptr = this.pc = this.fetch16();
                 break;
               case 1:
                 this.executeCB();
@@ -980,6 +985,7 @@ export class Z80 {
           case 4: {
             // CALL cc,nn: 17T/10T. Auto: 4T M1 + 6T fetch16 = 10T
             const addr = this.fetch16();
+            this.memptr = addr;  // Always set MEMPTR, even if call not made
             if (this.checkCondition(y)) {
               // CALL cc,nn (true): 17T, writes@T+11,T+14
               this.tStates += 1;
@@ -1003,7 +1009,7 @@ export class Z80 {
                   const addr = this.fetch16();
                   this.tStates += 1;
                   this.push16(this.pc);
-                  this.pc = addr;
+                  this.memptr = this.pc = addr;  // CALL: MEMPTR = PC = target
                   this.tStates += 3;
                   break;
                 }
@@ -1206,7 +1212,7 @@ export class Z80 {
 
         case 5:
           // RETI/RETN: 14T, reads@T+8,T+11. Auto: 8T
-          this.pc = this.pop16();
+          this.memptr = this.pc = this.pop16();  // RETI/RETN: MEMPTR = PC = target
           this.iff1 = this.iff2;  // Restore interrupt state
           this.tStates += 3;
           break;
@@ -1390,7 +1396,7 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            // Don't update MEMPTR here - it was already set above and repeats with same formula
+            this.memptr = this.pc + 1;  // During repeat: MEMPTR = PC + 1
             this.tStates += 8;   // INIR/INDR: 21T total (13+8)
           } else {
             this.tStates += 3;   // INI/IND: 16T total (13+3)
@@ -1440,7 +1446,7 @@ export class Z80 {
 
           if ((y === 6 || y === 7) && this.b !== 0) {
             this.pc = (this.pc - 2) & 0xFFFF;
-            // Don't update MEMPTR here - it was already set above and repeats with same formula
+            this.memptr = this.pc + 1;  // During repeat: MEMPTR = PC + 1
             this.tStates += 12;  // OTIR/OTDR: 21T total (9+12)
           } else {
             this.tStates += 7;   // OUTI/OUTD: 16T total (9+7)
