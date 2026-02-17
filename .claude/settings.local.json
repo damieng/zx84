@@ -26,7 +26,12 @@
       "mcp__zx84__ocr",
       "mcp__zx84__registers",
       "mcp__zx84__run",
-      "mcp__zx84__screen"
+      "mcp__zx84__screen",
+      "mcp__zx84__trace",
+      "mcp__zx84__find",
+      "mcp__zx84__key",
+      "mcp__zx84__peek",
+      "mcp__zx84__step"
     ]
   },
   "enabledMcpjsonServers": [

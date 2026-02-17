@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "harness": "tsx test/harness.ts",
     "mcp": "tsx test/mcp-server.ts",
     "hmr-freeze": "echo freeze > .hmr-freeze",
     "hmr-unfreeze": "rm .hmr-freeze"
