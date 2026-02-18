@@ -1,5 +1,6 @@
 import type { Accessor, Setter } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
+import '@/fonts/monospace-fonts.css';
 import {
   ocrFont, setOcrFont, ocrFontSize, setOcrFontSize,
   ocrLineHeight, setOcrLineHeight, ocrTracking, setOcrTracking,
@@ -9,16 +10,21 @@ import {
 } from '@/store/settings.ts';
 
 const MONO_FONTS = [
-  { label: 'Consolas', value: "'Consolas', monospace" },
-  { label: 'Courier New', value: "'Courier New', monospace" },
-  { label: 'JetBrains Mono', value: "'JetBrains Mono', monospace" },
-  { label: 'Fira Code', value: "'Fira Code', monospace" },
-  { label: 'SF Mono', value: "'SF Mono', monospace" },
-  { label: 'Cascadia Code', value: "'Cascadia Code', monospace" },
-  { label: 'Source Code Pro', value: "'Source Code Pro', monospace" },
-  { label: 'IBM Plex Mono', value: "'IBM Plex Mono', monospace" },
-  { label: 'Ubuntu Mono', value: "'Ubuntu Mono', monospace" },
-  { label: 'monospace', value: 'monospace' },
+  'JetBrains Mono',
+  'Fira Code',
+  'Source Code Pro',
+  'IBM Plex Mono',
+  'Roboto Mono',
+  'Ubuntu Mono',
+  'Inconsolata',
+  'Space Mono',
+  'Courier Prime',
+  'Overpass Mono',
+  'Anonymous Pro',
+  'DM Mono',
+  'Noto Sans Mono',
+  'Cascadia Code',
+  'Victor Mono',
 ];
 
 function SliderRow(props: {
@@ -56,7 +62,7 @@ export function TextPane() {
             persistSetting('ocr-font', e.currentTarget.value);
           }}
         >
-          {MONO_FONTS.map(f => <option value={f.value}>{f.label}</option>)}
+          {MONO_FONTS.map(f => <option value={f}>{f}</option>)}
         </select>
       </div>
 

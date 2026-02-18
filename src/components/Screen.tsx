@@ -23,15 +23,19 @@ export function Screen() {
     setCanvas(fresh);
   });
 
-  // When font settings change, force re-measure
+  // When font settings change, force re-measure (after fonts load)
   createEffect(() => {
     ocrFont(); ocrFontSize(); ocrLineHeight(); ocrTracking(); ocrScaleX(); ocrScaleY();
-    natSize = { w: 0, h: 0 };
+    // Wait for fonts to be ready before clearing cache
+    document.fonts.ready.then(() => {
+      natSize = { w: 0, h: 0 };
+    });
   });
 
   // Position the overlay and scale it to cover the 256×192 display area
   createEffect(() => {
     const mode = transcribeMode();
+    ocrFont(); // Track font changes to trigger re-measure
     if (mode === 'off') {
       natSize = { w: 0, h: 0 };
       return;
@@ -56,16 +60,23 @@ export function Screen() {
     ov.style.top = (borderPx * scl + ocrOffsetY()) + 'px';
     ov.innerHTML = html;
 
-    // Measure natural size then scale to fit
-    if (!natSize.w) {
-      if (!html || html.length < 32) return;
-      ov.style.transform = 'none';
-      natSize.w = ov.scrollWidth || 1;
-      natSize.h = ov.scrollHeight || 1;
+    // When font changes, force re-measure
+    if (mode !== 'off' && !natSize.w) {
+      // Wait a tick to ensure font is rendered before measuring
+      requestAnimationFrame(() => {
+        if (!html || html.length < 32) return;
+        ov.style.transform = 'none';
+        natSize.w = ov.scrollWidth || 1;
+        natSize.h = ov.scrollHeight || 1;
+        const sx = (targetW / natSize.w) * (ocrScaleX() / 100);
+        const sy = (targetH / natSize.h) * (ocrScaleY() / 100);
+        ov.style.transform = `scale(${sx},${sy})`;
+      });
+    } else if (natSize.w) {
+      const sx = (targetW / natSize.w) * (ocrScaleX() / 100);
+      const sy = (targetH / natSize.h) * (ocrScaleY() / 100);
+      ov.style.transform = `scale(${sx},${sy})`;
     }
-    const sx = (targetW / natSize.w) * (ocrScaleX() / 100);
-    const sy = (targetH / natSize.h) * (ocrScaleY() / 100);
-    ov.style.transform = `scale(${sx},${sy})`;
   });
 
   return (
