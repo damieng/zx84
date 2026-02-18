@@ -295,7 +295,7 @@ canvas#screen {
   transition: opacity 0.15s;
 }
 
-canvas#screen.dimmed { opacity: 0.25; }
+canvas#screen.dimmed { /* canvas stays visible; overlay covers only recognised text cells */ }
 
 canvas {
   image-rendering: pixelated;
@@ -309,11 +309,9 @@ canvas {
   margin: 0;
   overflow: hidden;
   pointer-events: none;
-  color: #fff;
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 16px;
-  line-height: 1;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.22;
   white-space: pre;
   border: none;
   padding: 0;
@@ -326,6 +324,7 @@ canvas {
   cursor: text;
   user-select: text;
 }
+
 
 #status-bar {
   margin-top: 6px;
@@ -452,7 +451,7 @@ canvas {
 }
 
 .slider-row .slider-value {
-  width: 24px;
+  min-width: 38px;
   text-align: right;
   font-size: 0.75rem;
   color: #888;

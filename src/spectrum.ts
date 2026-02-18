@@ -24,6 +24,7 @@ import { UPD765A } from '@/cores/upd765a.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 import { Contention } from '@/contention.ts';
 import { ScreenText } from '@/debug/screen-text.ts';
+import type { FontSource, OcrResult } from '@/debug/screen-text.ts';
 import { trapTapeLoad } from '@/tape/tape-loader.ts';
 import { LoaderDetector } from '@/tape/loader-detect.ts';
 import { installMemoryHooks, wirePortIO } from '@/io-ports.ts';
@@ -684,8 +685,23 @@ export class Spectrum {
     this.fdc.insertDisk(image, unit);
   }
 
-  ocrScreen(): string {
-    return this.screenText.ocr(this.cpu.memory);
+  /** Get the 48K ROM font (768 bytes) regardless of current paging. */
+  private get romFont(): Uint8Array {
+    const pages = this.memory.romPages;
+    const basicRom = pages.length === 4 ? pages[3] : pages[1];
+    return basicRom.subarray(0x3D00, 0x3D00 + 768);
+  }
+
+  ocrScreen(extraFonts?: FontSource[]): string {
+    return this.screenText.ocr(this.cpu.memory, this.romFont, extraFonts);
+  }
+
+  ocrScreenStyled(extraFonts?: FontSource[]): OcrResult {
+    return this.screenText.ocrStyled(
+      this.cpu.memory, this.romFont,
+      this.ula.palette, this.ula.flashState,
+      extraFonts,
+    );
   }
 
   startTrace(mode: 'full' | 'contention' | 'portio' = 'full'): void {

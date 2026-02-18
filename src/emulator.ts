@@ -85,10 +85,10 @@ import {
 import {
   ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo,
   ledDsk, ledBeep, ledAy, ledRainbow, ledText,
-  transcribeMode, transcribeText,
+  transcribeMode, transcribeText, transcribeHtml,
   setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo,
   setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedText,
-  setTranscribeMode, setTranscribeText,
+  setTranscribeMode, setTranscribeText, setTranscribeHtml,
 } from '@/state/activity-state.ts';
 
 // Re-export machine state
@@ -108,8 +108,8 @@ export { regsHtml, regsRev, sysvarHtml, sysvarRev, basicHtml, basicVarsHtml, ban
 export { setRegsHtml, setRegsRev, setSysvarHtml, setSysvarRev, setBasicHtml, setBasicVarsHtml, setBanksHtml, setDisasmText, setTracing, setTrapLogHtml, setShowTrapLog };
 
 // Re-export activity state
-export { ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo, ledDsk, ledBeep, ledAy, ledRainbow, ledText, transcribeMode, transcribeText };
-export { setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo, setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedText, setTranscribeMode, setTranscribeText };
+export { ledKbd, ledKemp, ledMouse, ledEar, ledLoad, ledTapeTurbo, ledDsk, ledBeep, ledAy, ledRainbow, ledText, transcribeMode, transcribeText, transcribeHtml };
+export { setLedKbd, setLedKemp, setLedMouse, setLedEar, setLedLoad, setLedTapeTurbo, setLedDsk, setLedBeep, setLedAy, setLedRainbow, setLedText, setTranscribeMode, setTranscribeText, setTranscribeHtml };
 
 // ── Non-signal state (plain variables) ──────────────────────────────────
 

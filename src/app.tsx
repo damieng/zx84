@@ -24,6 +24,7 @@ import { DrivePane } from '@/components/panes/DrivePane.tsx';
 import { TapePane } from '@/components/panes/TapePane.tsx';
 import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
 import { DevPane } from '@/components/panes/DevPane.tsx';
+import { TextPane } from '@/components/panes/TextPane.tsx';
 
 import { paneOrder } from '@/ui/panes.ts';
 import { needsGamepadPolling } from '@/store/settings.ts';
@@ -48,6 +49,7 @@ const PANE_COMPONENTS: Record<string, () => JSX.Element> = {
   'disk-info-panel': DiskInfoPane,
   'drive-panel': DrivePane,
   'tape-panel': TapePane,
+  'text-panel': TextPane,
   'disasm-panel': DisassemblyPane,
   'dev-panel': DevPane,
 };

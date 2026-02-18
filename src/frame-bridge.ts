@@ -8,6 +8,7 @@
 import { batch } from 'solid-js';
 import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
+import type { FontSource } from '@/debug/screen-text.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
 import { isCollapsed } from '@/ui/panes.ts';
 import * as settings from '@/store/settings.ts';
@@ -17,7 +18,7 @@ import {
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
   setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
   setClockSpeedText,
-  setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText,
+  setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText, setTranscribeHtml,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedText,
   setLedBeep, setLedAy, setLedDsk, setLedRainbow, setLedMouse, setLedTapeTurbo,
   setStatus, setEmulationPaused, setTracing,
@@ -191,6 +192,7 @@ export function forceSpeedUpdate(): void {
 
 // ── Font preview ────────────────────────────────────────────────────────
 
+let cachedExtraFonts: FontSource[] | undefined;
 let romFontCacheAddr = -1;
 let romFontCacheHash = -1;
 export let capturedFontData: Uint8Array | null = null;
@@ -364,7 +366,24 @@ export function onFrame(): void {
 
     // Transcribe overlay
     if (transcribeMode() !== 'off') {
-      setTranscribeText(spectrum!.ocrScreen());
+      if (!spectrum!.screenText.active) {
+        // Just toggled on — activate and snapshot the font store
+        spectrum!.screenText.activate();
+        cachedExtraFonts = loadFontStore().map(e => {
+          const binary = atob(e.data);
+          const data = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+          return { label: e.label, data };
+        });
+      }
+      const result = spectrum!.ocrScreenStyled(cachedExtraFonts);
+      setTranscribeText(result.text);
+      setTranscribeHtml(result.html);
+    } else {
+      if (spectrum!.screenText.active) {
+        spectrum!.screenText.deactivate();
+        cachedExtraFonts = undefined;
+      }
     }
   });
 

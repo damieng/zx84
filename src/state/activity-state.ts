@@ -67,3 +67,7 @@ export const setTranscribeMode = _transcribeMode[1];
 const _transcribeText = createSignal('');
 export const transcribeText = _transcribeText[0];
 export const setTranscribeText = _transcribeText[1];
+
+const _transcribeHtml = createSignal('');
+export const transcribeHtml = _transcribeHtml[0];
+export const setTranscribeHtml = _transcribeHtml[1];

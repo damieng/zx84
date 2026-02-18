@@ -142,6 +142,40 @@ const _fontName = /*@once*/ createRoot(() => createSignal(getSaved('font', '')))
 export const fontName = _fontName[0];
 export const setFontName = _fontName[1];
 
+// ── Text/OCR overlay settings ──────────────────────────────────────────
+
+const _ocrFont = /*@once*/ createRoot(() => createSignal(getSaved('ocr-font', "'JetBrains Mono', monospace")));
+export const ocrFont = _ocrFont[0];
+export const setOcrFont = _ocrFont[1];
+
+const _ocrFontSize = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-font-size', '4')));
+export const ocrFontSize = _ocrFontSize[0];
+export const setOcrFontSize = _ocrFontSize[1];
+
+const _ocrLineHeight = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-line-height', '122')));
+export const ocrLineHeight = _ocrLineHeight[0];
+export const setOcrLineHeight = _ocrLineHeight[1];
+
+const _ocrTracking = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-tracking', '4')));
+export const ocrTracking = _ocrTracking[0];
+export const setOcrTracking = _ocrTracking[1];
+
+const _ocrOffsetX = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-offset-x', '-2')));
+export const ocrOffsetX = _ocrOffsetX[0];
+export const setOcrOffsetX = _ocrOffsetX[1];
+
+const _ocrOffsetY = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-offset-y', '8')));
+export const ocrOffsetY = _ocrOffsetY[0];
+export const setOcrOffsetY = _ocrOffsetY[1];
+
+const _ocrScaleX = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-scale-x', '101.9')));
+export const ocrScaleX = _ocrScaleX[0];
+export const setOcrScaleX = _ocrScaleX[1];
+
+const _ocrScaleY = /*@once*/ createRoot(() => createSignal(getSavedNumber('ocr-scale-y', '100.9')));
+export const ocrScaleY = _ocrScaleY[0];
+export const setOcrScaleY = _ocrScaleY[1];
+
 // ── Disk mode ───────────────────────────────────────────────────────────
 
 

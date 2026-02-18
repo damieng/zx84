@@ -3,8 +3,8 @@
  */
 
 import { createEffect } from 'solid-js';
-import { setCanvas, spectrum, transcribeMode, transcribeText } from '@/emulator.ts';
-import { renderer } from '@/store/settings.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeHtml } from '@/emulator.ts';
+import { renderer, scale, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
 
 export function Screen() {
   let canvasRef!: HTMLCanvasElement;
@@ -12,8 +12,6 @@ export function Screen() {
   let natSize = { w: 0, h: 0 };
 
   // When renderer changes, create a fresh canvas element.
-  // Browsers only allow one context type per canvas — once getContext('2d')
-  // has been called, getContext('webgl') returns null on the same element.
   createEffect(() => {
     renderer(); // track
     if (!canvasRef) return;
@@ -25,7 +23,13 @@ export function Screen() {
     setCanvas(fresh);
   });
 
-  // Position the transcribe overlay
+  // When font settings change, force re-measure
+  createEffect(() => {
+    ocrFont(); ocrFontSize(); ocrLineHeight(); ocrTracking(); ocrScaleX(); ocrScaleY();
+    natSize = { w: 0, h: 0 };
+  });
+
+  // Position the overlay and scale it to cover the 256×192 display area
   createEffect(() => {
     const mode = transcribeMode();
     if (mode === 'off') {
@@ -34,27 +38,34 @@ export function Screen() {
     }
     if (!spectrum || !overlayRef || !canvasRef) return;
 
+    const html = transcribeHtml();
+    const scl = scale();
     const ov = overlayRef;
-    const scl = spectrum.display!.scale;
     const borderPx = (spectrum.ula.screenWidth - 256) / 2;
-    const offsetLeft = borderPx * scl + 2;
-    const offsetTop = borderPx * scl + 2;
     const targetW = 256 * scl;
     const targetH = 192 * scl;
 
-    ov.style.left = offsetLeft + 'px';
-    ov.style.top = offsetTop + 'px';
+    // Apply font settings
+    ov.style.fontFamily = ocrFont();
+    ov.style.fontSize = ocrFontSize() + 'px';
+    ov.style.lineHeight = (ocrLineHeight() / 100).toFixed(2);
+    ov.style.letterSpacing = (ocrTracking() / 10).toFixed(1) + 'px';
 
-    // Also track text to re-measure
-    void transcribeText();
+    // Position with user-adjustable offset
+    ov.style.left = (borderPx * scl + ocrOffsetX()) + 'px';
+    ov.style.top = (borderPx * scl + ocrOffsetY()) + 'px';
+    ov.innerHTML = html;
 
+    // Measure natural size then scale to fit
     if (!natSize.w) {
-      if (!ov.textContent || ov.textContent.length < 32) return;
+      if (!html || html.length < 32) return;
       ov.style.transform = 'none';
       natSize.w = ov.scrollWidth || 1;
       natSize.h = ov.scrollHeight || 1;
     }
-    ov.style.transform = `scale(${targetW / natSize.w},${targetH / natSize.h})`;
+    const sx = (targetW / natSize.w) * (ocrScaleX() / 100);
+    const sy = (targetH / natSize.h) * (ocrScaleY() / 100);
+    ov.style.transform = `scale(${sx},${sy})`;
   });
 
   return (
@@ -64,7 +75,7 @@ export function Screen() {
         id="transcribe-overlay"
         ref={overlayRef}
         class={transcribeMode() !== 'off' ? 'active' : ''}
-      >{transcribeText()}</pre>
+      />
     </div>
   );
 }
