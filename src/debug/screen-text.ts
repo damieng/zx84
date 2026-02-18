@@ -68,8 +68,10 @@ function escapeHtml(ch: string): string {
 export interface OcrResult {
   /** Plain text: 32×24 with newlines. */
   text: string;
-  /** HTML with per-cell colored spans. */
+  /** HTML with per-cell colored spans (ink only, transparent background). */
   html: string;
+  /** 32×24 bitmask: true = cell was matched (should be blanked in framebuffer). */
+  mask: boolean[];
 }
 
 export class ScreenText {
@@ -237,7 +239,7 @@ export class ScreenText {
     palette: Uint32Array, flash: boolean,
     extraFonts?: FontSource[],
   ): OcrResult {
-    if (!this.active) return { text: '', html: '' };
+    if (!this.active) return { text: '', html: '', mask: [] };
 
     const fonts = this.buildFonts(mem, romFont, extraFonts);
     const hits = new Uint32Array(fonts.length);
@@ -248,8 +250,9 @@ export class ScreenText {
 
     let text = '';
     let html = '';
+    const mask: boolean[] = new Array(768);
     let spanOpen = false;
-    let curInk = -1, curPaper = -1;
+    let curInk = -1;
 
     for (let charRow = 0; charRow < 24; charRow++) {
       const third = charRow >> 3;
@@ -257,27 +260,28 @@ export class ScreenText {
       const attrBase = 0x5800 + charRow * 32;
 
       for (let charCol = 0; charCol < 32; charCol++) {
+        const idx = charRow * 32 + charCol;
         const base = 0x4000 + (third << 11) + (rowInThird << 5) + charCol;
         const ch = this.matchCellFromFonts(mem, base, fonts, hits);
         text += ch ?? ' ';
+        mask[idx] = ch !== null;
 
         if (ch === null) {
-          // Blank / unrecognised — close any open span, emit transparent space
-          if (spanOpen) { html += '</span>'; spanOpen = false; curInk = curPaper = -1; }
+          // Unrecognised — close any open span, emit transparent space
+          if (spanOpen) { html += '</span>'; spanOpen = false; curInk = -1; }
           html += ' ';
         } else {
-          // Recognised text — opaque span with attribute colors
+          // Recognised text — ink-colored span, no background
           const attr = mem[attrBase + charCol];
           const bright = (attr & 0x40) ? 8 : 0;
           let ink = (attr & 0x07) + bright;
           let paper = ((attr >> 3) & 0x07) + bright;
           if ((attr & 0x80) && flash) { const t = ink; ink = paper; paper = t; }
 
-          if (ink !== curInk || paper !== curPaper) {
+          if (ink !== curInk) {
             if (spanOpen) html += '</span>';
-            html += `<span style="color:${css[ink]};background:${css[paper]}">`;
+            html += `<span style="color:${css[ink]}">`;
             curInk = ink;
-            curPaper = paper;
             spanOpen = true;
           }
           html += escapeHtml(ch);
@@ -285,12 +289,12 @@ export class ScreenText {
       }
 
       // End of row — close span, reset
-      if (spanOpen) { html += '</span>'; spanOpen = false; curInk = curPaper = -1; }
+      if (spanOpen) { html += '</span>'; spanOpen = false; curInk = -1; }
       text += charRow < 23 ? '\n' : '';
       html += charRow < 23 ? '\n' : '';
     }
 
     this.logHits(fonts, hits);
-    return { text, html };
+    return { text, html, mask };
   }
 }

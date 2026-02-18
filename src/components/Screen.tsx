@@ -70,7 +70,7 @@ export function Screen() {
 
   return (
     <div id="screen-wrap">
-      <canvas id="screen" ref={canvasRef} class={transcribeMode() !== 'off' ? 'dimmed' : ''} />
+      <canvas id="screen" ref={canvasRef} />
       <pre
         id="transcribe-overlay"
         ref={overlayRef}

@@ -295,8 +295,6 @@ canvas#screen {
   transition: opacity 0.15s;
 }
 
-canvas#screen.dimmed { /* canvas stays visible; overlay covers only recognised text cells */ }
-
 canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;

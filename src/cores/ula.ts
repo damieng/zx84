@@ -206,6 +206,35 @@ export class ULA {
     }
   }
 
+  /**
+   * Blank matched character cells to paper color in the rendered framebuffer.
+   * Called after renderFrame when TEXT mode is active.
+   */
+  blankCells(memory: Uint8Array, mask: boolean[]): void {
+    for (let charRow = 0; charRow < 24; charRow++) {
+      for (let col = 0; col < 32; col++) {
+        if (!mask[charRow * 32 + col]) continue;
+
+        const attr = memory[0x5800 + charRow * 32 + col];
+        const bright = (attr & 0x40) ? 8 : 0;
+        let paper = ((attr >> 3) & 0x07) + bright;
+        let ink = (attr & 0x07) + bright;
+        if ((attr & 0x80) && this.flashState) { const t = ink; ink = paper; paper = t; }
+        const paperRGBA = this.palette[paper];
+
+        for (let py = 0; py < 8; py++) {
+          const y = charRow * 8 + py;
+          const screenY = y + this.borderTop;
+          const px = this.borderLeft + (col << 3);
+          const baseIdx = screenY * this.screenWidth + px;
+          for (let x = 0; x < 8; x++) {
+            this.pixels32[baseIdx + x] = paperRGBA;
+          }
+        }
+      }
+    }
+  }
+
   /** Advance flash counter (called once per frame in sub-frame mode). */
   advanceFlash(): void {
     this.flashCounter++;

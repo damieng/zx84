@@ -379,6 +379,11 @@ export function onFrame(): void {
       const result = spectrum!.ocrScreenStyled(cachedExtraFonts);
       setTranscribeText(result.text);
       setTranscribeHtml(result.html);
+      // Blank matched character cells in the framebuffer and re-upload
+      if (result.mask.length > 0) {
+        spectrum!.ula.blankCells(spectrum!.memory.flat, result.mask);
+        if (spectrum!.display) spectrum!.display.updateTexture(spectrum!.ula.pixels);
+      }
     } else {
       if (spectrum!.screenText.active) {
         spectrum!.screenText.deactivate();
