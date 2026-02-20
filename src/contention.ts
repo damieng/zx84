@@ -8,7 +8,7 @@
  * falls on.
  */
 
-import { type SpectrumModel, is128kClass } from '@/spectrum.ts';
+import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/spectrum.ts';
 import type { SpectrumMemory } from '@/memory.ts';
 
 /** Model-dependent ULA timing parameters. */
@@ -18,6 +18,10 @@ export interface MachineTiming {
   tStatesPerLine: number;
   /** Frame-relative T-state at which contention begins (first pixel line). */
   contentionStart: number;
+  /** How many T-states INT is held LOW at frame start. */
+  intLength: number;
+  /** Floating bus read offset: −1 for 48K, +1 for 128K+. */
+  floatingBusAdjust: number;
 }
 
 export const TIMING_48K: MachineTiming = {
@@ -25,6 +29,8 @@ export const TIMING_48K: MachineTiming = {
   tStatesPerFrame: 69888,   // 224 × 312
   tStatesPerLine: 224,
   contentionStart: 14335,
+  intLength: 32,
+  floatingBusAdjust: -1,
 };
 
 export const TIMING_128K: MachineTiming = {
@@ -32,6 +38,17 @@ export const TIMING_128K: MachineTiming = {
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
   contentionStart: 14361,
+  intLength: 36,
+  floatingBusAdjust: 1,
+};
+
+export const TIMING_PLUS2A: MachineTiming = {
+  cpuClock: 3546900,
+  tStatesPerFrame: 70908,   // 228 × 311
+  tStatesPerLine: 228,
+  contentionStart: 14364,
+  intLength: 32,
+  floatingBusAdjust: 1,
 };
 
 /** ULA contention delay pattern — indexed by (T-state mod 8). */
@@ -48,7 +65,9 @@ export class Contention {
   constructor(model: SpectrumModel, memory: SpectrumMemory) {
     this.model = model;
     this.memory = memory;
-    this.timing = is128kClass(model) ? TIMING_128K : TIMING_48K;
+    this.timing = isPlus2AClass(model) ? TIMING_PLUS2A
+               : is128kClass(model)  ? TIMING_128K
+               :                       TIMING_48K;
   }
 
   /** True if the given address is in ULA-contended memory. */
