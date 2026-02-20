@@ -416,14 +416,22 @@ export class Spectrum {
     this.activity.earReads = 0;
     this.activity.attrWrites = 0;
     this.activity.mouseReads = 0;
-    // Frame starts when INT fires — mark the reference point BEFORE the CPU
-    // responds, so interrupt-response T-states count as part of the frame.
-    // This keeps contention phase, sub-frame scanline boundaries, and floating
-    // bus reads aligned with real ULA timing.
-    this.contention.frameStartTStates = this.cpu.tStates;
+    // The ULA's frame boundary occurs at exact tStatesPerFrame intervals,
+    // regardless of CPU instruction overshoot from the previous frame.
+    // On real hardware the beam resets at fixed intervals; the CPU may still
+    // be finishing an instruction from the previous frame, but the ULA doesn't
+    // wait.  Using the ideal boundary (not cpu.tStates) keeps scanline timing
+    // stable and prevents the overshoot from shifting border effects.
+    const tpf = this.contention.timing.tStatesPerFrame;
+    if (this.contention.frameStartTStates === 0 && this.cpu.tStates === 0) {
+      this.contention.frameStartTStates = 0;
+    } else {
+      this.contention.frameStartTStates += tpf;
+    }
+    const frameStart = this.contention.frameStartTStates;
     this.tapeLastAdvanceT = this.cpu.tStates;
-    const frameEnd = this.cpu.tStates + this.contention.timing.tStatesPerFrame;
-    const intWindowEnd = this.cpu.tStates + this.contention.timing.intLength;
+    const frameEnd = frameStart + tpf;
+    const intWindowEnd = frameStart + this.contention.timing.intLength;
 
     // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget)
     // On real hardware, INT is held low for a model-dependent window:
