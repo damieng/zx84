@@ -59,6 +59,7 @@ export function wirePortIO(s: Spectrum): void {
         s.activity.beeperToggled = true;
         s.mixer.prevBeeperBit = newBeeperBit;
       }
+      s.flushBeam();
       s.ula.writePort(val);
     }
 

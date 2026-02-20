@@ -207,6 +207,13 @@ export class Spectrum {
   get tracing(): boolean { return this._tracing; }
   get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
 
+  /** Flush pending border pixels up to the current beam position.
+   *  Called from the port handler BEFORE updating borderColor so that
+   *  pixels between the last render and the port write keep the old color. */
+  flushBeam(): void {
+    if (this.subFrameRendering) this.renderPendingScanlines();
+  }
+
   /**
    * Advance the tape to the current cpu.tStates and update the ULA EAR bit.
    * Called from the port-in handler (for sub-instruction accuracy) and from
