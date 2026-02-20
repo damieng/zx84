@@ -408,7 +408,7 @@ export class Spectrum {
     // Always render display (even if we skipped emulation) so the screen stays up to date
     if (this.needsDisplay) {
       if (!this.subFrameRendering) {
-        this.ula.renderFrame(this.memory.flat);
+        this.ula.renderFrame(this.memory.screenBank, 0x4000);
       }
       if (this.display) this.display.updateTexture(this.ula.pixels);
       this.needsDisplay = false;
@@ -452,7 +452,7 @@ export class Spectrum {
     // Sub-frame rendering: snapshot VRAM and prepare write log
     const subFrame = this.subFrameRendering;
     if (subFrame) {
-      this.vramShadow.set(this.memory.flat.subarray(0x4000, 0x5B00));
+      this.vramShadow.set(this.memory.screenBank.subarray(0, 0x1B00));
       this.vramWriteCount = 0;
       this.borderChanges.length = 0;
       this.frameStartBorderColor = this.ula.borderColor;

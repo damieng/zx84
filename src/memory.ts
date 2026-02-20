@@ -1,10 +1,10 @@
 /**
  * ZX Spectrum memory subsystem with 128K bank switching.
  *
- * Flat 64KB array is shared with the Z80 core.
- * 128K model: 8x16KB RAM banks + 2x16KB ROM pages.
- * +2A model: 8x16KB RAM banks + 4x16KB ROM pages + port 0x1FFD special paging.
- * Bank switching via port 0x7FFD swaps data in/out of the flat array.
+ * Flat 64KB array is shared with the Z80 core — all CPU reads/writes
+ * go directly through it.  RAM banks are separate 16KB buffers that
+ * hold data for banks not currently mapped into the flat array.
+ * On a bank switch only the affected slot(s) are copied in/out.
  */
 
 import type { SpectrumModel } from '@/spectrum.ts';
@@ -67,6 +67,38 @@ export class SpectrumMemory {
     }
   }
 
+  /**
+   * Return a 16KB view of the physical RAM bank used for the current display.
+   * The ULA always reads from bank 5 (or bank 7 when bit 3 of 0x7FFD is set),
+   * regardless of special paging mode.  Returns a live view into flat[] when
+   * the bank is currently mapped, or the ramBanks[] copy when it isn't.
+   */
+  get screenBank(): Uint8Array {
+    const bank = (this.port7FFD & 0x08) ? 7 : 5;
+
+    if (!this.specialPaging) {
+      // Normal paging: bank 5 is always at 0x4000
+      if (bank === 5) return this.flat.subarray(0x4000, 0x8000);
+      // Shadow screen (bank 7): at 0xC000 only if it's the switched bank
+      if (this.currentBank === bank) return this.flat.subarray(0xC000, 0x10000);
+      // Bank 7 not mapped — ramBanks[7] was saved when it was last switched out
+      return this.ramBanks[bank];
+    }
+
+    // Special paging: find which slot (if any) holds the screen bank
+    const mode = (this.port1FFD >> 1) & 3;
+    const banks = SPECIAL_MODES[mode];
+    for (let slot = 0; slot < 4; slot++) {
+      if (banks[slot] === bank) {
+        const base = slot * 0x4000;
+        return this.flat.subarray(base, base + 0x4000);
+      }
+    }
+
+    // Screen bank not currently mapped — ramBanks has the last-saved copy
+    return this.ramBanks[bank];
+  }
+
   reset(): void {
     this.flat.fill(0);
     for (const bank of this.ramBanks) bank.fill(0);
@@ -102,60 +134,125 @@ export class SpectrumMemory {
     this.applyBanking();
   }
 
+  // ── Slot helpers ─────────────────────────────────────────────────────
+
+  /** Copy flat[base..base+16K] → ramBanks[bank]. */
+  private saveSlot(base: number, bank: number): void {
+    this.ramBanks[bank].set(this.flat.subarray(base, base + 0x4000));
+  }
+
+  /** Copy ramBanks[bank] → flat[base..base+16K]. */
+  private loadSlot(base: number, bank: number): void {
+    this.flat.set(this.ramBanks[bank], base);
+  }
+
+  /** Return the 4 RAM bank numbers currently mapped into flat[]. */
+  private currentSlots(): readonly [number, number, number, number] {
+    if (this.specialPaging) {
+      return SPECIAL_MODES[(this.port1FFD >> 1) & 3];
+    }
+    // Normal paging: slot 0 = ROM (use -1), slots 1-2 fixed, slot 3 variable
+    return [-1, 5, 2, this.currentBank];
+  }
+
+  // ── Port writes (minimal-copy bank switching) ────────────────────────
+
   /**
-   * Write to port 0x7FFD (128K bank switching).
-   * Bits 0-2: RAM bank at 0xC000
-   * Bit 3: screen select (0=bank5, 1=bank7) — display only
-   * Bit 4: ROM select (0=128K editor, 1=48K BASIC)
-   * Bit 5: lock paging
+   * Handle port 0x7FFD write.  In normal paging only slot 3 (0xC000)
+   * and possibly the ROM at slot 0 change.
    */
-  writePort7FFD(val: number): void {
+  bankSwitch(val: number): void {
     if (!this.is128K || this.pagingLocked) return;
 
-    this.port7FFD = val;
-    this.currentBank = val & 0x07;
+    const oldBank = this.currentBank;
+    const newBank = val & 0x07;
 
-    // +2A with 4 ROM pages: combine bits from 0x7FFD and 0x1FFD
+    // Compute new ROM page
+    let newROM: number;
     if (this.romPages.length === 4) {
-      this.currentROM = (((this.port1FFD >> 2) & 1) << 1) | ((val >> 4) & 1);
+      newROM = (((this.port1FFD >> 2) & 1) << 1) | ((val >> 4) & 1);
     } else {
-      this.currentROM = (val >> 4) & 1;
+      newROM = (val >> 4) & 1;
     }
 
-    if (val & 0x20) {
-      this.pagingLocked = true;
+    if (this.specialPaging) {
+      // In special paging mode, 0x7FFD doesn't change what's mapped —
+      // it just latches the values for when normal paging resumes.
+      this.port7FFD = val;
+      this.currentBank = newBank;
+      this.currentROM = newROM;
+      if (val & 0x20) this.pagingLocked = true;
+      return;
     }
 
-    this.applyBanking();
+    // Normal paging: only slot 3 bank and ROM can change
+    if (oldBank !== newBank) {
+      this.saveSlot(0xC000, oldBank);
+      this.loadSlot(0xC000, newBank);
+    }
+    if (newROM !== this.currentROM) {
+      this.flat.set(this.romPages[newROM], 0);
+    }
+
+    this.port7FFD = val;
+    this.currentBank = newBank;
+    this.currentROM = newROM;
+    if (val & 0x20) this.pagingLocked = true;
   }
 
   /**
-   * Write to port 0x1FFD (+2A special paging port).
-   * Bit 0: special paging enable (1 = all-RAM mode)
-   * Bits 1-2: special paging mode (0-3)
-   * Bit 2: also contributes to ROM page select (high bit)
+   * Handle port 0x1FFD write.  Diffs old vs new slot assignments and
+   * only copies the slots that actually change.
    */
-  writePort1FFD(val: number): void {
+  bankSwitch1FFD(val: number): void {
     if (!this.is128K || this.pagingLocked) return;
 
+    const oldSlots = this.currentSlots();
+    const wasSpecial = this.specialPaging;
+
+    // Apply new state
     this.port1FFD = val;
     this.specialPaging = (val & 1) !== 0;
-
-    // Recompute ROM page from combined ports
     if (this.romPages.length === 4) {
       this.currentROM = (((val >> 2) & 1) << 1) | ((this.port7FFD >> 4) & 1);
     }
 
-    this.applyBanking();
+    const newSlots = this.currentSlots();
+
+    // Diff each of the 4 slots; save old, load new where they differ
+    const bases = [0x0000, 0x4000, 0x8000, 0xC000];
+    for (let i = 0; i < 4; i++) {
+      if (oldSlots[i] === newSlots[i]) continue;
+      // Save outgoing RAM bank (skip ROM sentinel -1)
+      if (oldSlots[i] >= 0) this.saveSlot(bases[i], oldSlots[i]);
+      // Load incoming content
+      if (newSlots[i] < 0) {
+        // ROM slot
+        this.flat.set(this.romPages[this.currentROM], bases[i]);
+      } else {
+        this.loadSlot(bases[i], newSlots[i]);
+      }
+    }
+
+    // Edge case: switching normal→normal with ROM change but same slot banks
+    if (!wasSpecial && !this.specialPaging) {
+      // ROM might have changed via bit 2 affecting currentROM
+      const romPage = this.romPages[this.currentROM];
+      if (oldSlots[0] < 0 && newSlots[0] < 0) {
+        // Both ROM — check if ROM page actually changed
+        this.flat.set(romPage, 0);
+      }
+    }
   }
 
+  // ── Bulk operations (snapshots, reset, ROM load) ─────────────────────
+
   /**
-   * Sync the flat array from/to the backing bank stores.
-   * Called after any bank switch.
+   * Load all 4 slots from ramBanks/ROM into flat[].
+   * Used after directly populating ramBanks (snapshots, reset, ROM load).
    */
   applyBanking(): void {
     if (this.specialPaging) {
-      // +2A special all-RAM modes — no ROM mapped
       const mode = (this.port1FFD >> 1) & 3;
       const banks = SPECIAL_MODES[mode];
       this.flat.set(this.ramBanks[banks[0]], 0x0000);
@@ -165,65 +262,28 @@ export class SpectrumMemory {
       return;
     }
 
-    // Overlay ROM at 0x0000-0x3FFF
     const romPage = this.is128K ? this.romPages[this.currentROM] : this.romPages[1];
     this.flat.set(romPage, 0);
-
-    // Bank 5 at 0x4000-0x7FFF (always)
     this.flat.set(this.ramBanks[5], 0x4000);
-
-    // Bank 2 at 0x8000-0xBFFF (always)
     this.flat.set(this.ramBanks[2], 0x8000);
-
-    // Switchable bank at 0xC000-0xFFFF
     this.flat.set(this.ramBanks[this.currentBank], 0xC000);
   }
 
   /**
-   * Save RAM regions back to their bank stores before a bank switch.
+   * Flush all mapped RAM slots from flat[] back to ramBanks[].
+   * Used before serialising state (e.g. SNA save).
    */
   saveToRAMBanks(): void {
     if (this.specialPaging) {
-      // In special mode, all 4 slots map to RAM banks
       const mode = (this.port1FFD >> 1) & 3;
       const banks = SPECIAL_MODES[mode];
-      this.ramBanks[banks[0]].set(this.flat.subarray(0x0000, 0x4000));
-      this.ramBanks[banks[1]].set(this.flat.subarray(0x4000, 0x8000));
-      this.ramBanks[banks[2]].set(this.flat.subarray(0x8000, 0xC000));
-      this.ramBanks[banks[3]].set(this.flat.subarray(0xC000, 0x10000));
+      for (let i = 0; i < 4; i++) this.saveSlot(i * 0x4000, banks[i]);
       return;
     }
 
-    // Bank 5 is always at 0x4000
-    this.ramBanks[5].set(this.flat.subarray(0x4000, 0x8000));
-    // Bank 2 is always at 0x8000
-    this.ramBanks[2].set(this.flat.subarray(0x8000, 0xC000));
-    // Current switchable bank at 0xC000
-    this.ramBanks[this.currentBank].set(this.flat.subarray(0xC000, 0x10000));
-  }
-
-  /**
-   * Perform a guarded bank switch: save current bank contents,
-   * update port value, load new bank contents.
-   */
-  bankSwitch(val: number): void {
-    if (!this.is128K || this.pagingLocked) return;
-
-    // Save current banked RAM back to stores
-    this.saveToRAMBanks();
-
-    // Apply new paging
-    this.writePort7FFD(val);
-  }
-
-  /**
-   * Perform a guarded 0x1FFD bank switch (+2A special paging port).
-   */
-  bankSwitch1FFD(val: number): void {
-    if (!this.is128K || this.pagingLocked) return;
-
-    this.saveToRAMBanks();
-    this.writePort1FFD(val);
+    this.saveSlot(0x4000, 5);
+    this.saveSlot(0x8000, 2);
+    this.saveSlot(0xC000, this.currentBank);
   }
 
   /**

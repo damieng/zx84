@@ -381,7 +381,7 @@ export function onFrame(): void {
       setTranscribeHtml(result.html);
       // Blank matched character cells in the framebuffer and re-upload
       if (result.mask.length > 0) {
-        spectrum!.ula.blankCells(spectrum!.memory.flat, result.mask);
+        spectrum!.ula.blankCells(spectrum!.memory.screenBank, result.mask, 0x4000);
         if (spectrum!.display) spectrum!.display.updateTexture(spectrum!.ula.pixels);
       }
     } else {

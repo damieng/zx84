@@ -61,7 +61,7 @@ export function Screen() {
     ov.innerHTML = html;
 
     // When font changes, force re-measure
-    if (mode !== 'off' && !natSize.w) {
+    if (!natSize.w) {
       // Wait a tick to ensure font is rendered before measuring
       requestAnimationFrame(() => {
         if (!html || html.length < 32) return;

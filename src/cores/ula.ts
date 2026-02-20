@@ -150,7 +150,7 @@ export class ULA {
    * Render the full screen (border + display area) from memory.
    * Called once per frame (non-sub-frame path).
    */
-  renderFrame(memory: Uint8Array): void {
+  renderFrame(memory: Uint8Array, vramOffset = 0): void {
     // Increment flash
     this.flashCounter++;
     if (this.flashCounter >= 16) {
@@ -167,15 +167,15 @@ export class ULA {
     for (let y = 0; y < 192; y++) {
       const screenY = y + this.borderTop;
 
-      // ZX Spectrum peculiar bitmap address decoding
-      const bitmapAddr = 0x4000 |
+      // ZX Spectrum peculiar bitmap address decoding (adjusted for vramOffset)
+      const bitmapAddr = (0x4000 |
         ((y & 0xC0) << 5) |
         ((y & 0x07) << 8) |
-        ((y & 0x38) << 2);
+        ((y & 0x38) << 2)) - vramOffset;
 
       // Attribute address for this character row
       const attrRow = y >> 3;
-      const attrBase = 0x5800 + (attrRow << 5);
+      const attrBase = 0x5800 + (attrRow << 5) - vramOffset;
 
       for (let col = 0; col < 32; col++) {
         const byteVal = memory[bitmapAddr + col];
@@ -210,12 +210,12 @@ export class ULA {
    * Blank matched character cells to paper color in the rendered framebuffer.
    * Called after renderFrame when TEXT mode is active.
    */
-  blankCells(memory: Uint8Array, mask: boolean[]): void {
+  blankCells(memory: Uint8Array, mask: boolean[], vramOffset = 0): void {
     for (let charRow = 0; charRow < 24; charRow++) {
       for (let col = 0; col < 32; col++) {
         if (!mask[charRow * 32 + col]) continue;
 
-        const attr = memory[0x5800 + charRow * 32 + col];
+        const attr = memory[0x5800 + charRow * 32 + col - vramOffset];
         const bright = (attr & 0x40) ? 8 : 0;
         let paper = ((attr >> 3) & 0x07) + bright;
         let ink = (attr & 0x07) + bright;
