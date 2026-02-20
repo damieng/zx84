@@ -49,11 +49,14 @@ export const PALETTES: Record<ColorMap, Uint32Array> = {
 export type BorderMode = 0 | 1 | 2; // 0=none, 1=small, 2=normal
 
 /** Default screen dimensions including border */
-export const SCREEN_WIDTH = 320;
-export const SCREEN_HEIGHT = 256;
+export const SCREEN_WIDTH = 352;   // 256 + 48*2
+export const SCREEN_HEIGHT = 288;  // 192 + 48*2
 
-/** Border pixel sizes for each mode */
-const BORDER_PIXELS: Record<BorderMode, number> = { 0: 0, 1: 16, 2: 32 };
+/** Border pixel sizes for each mode.
+ *  The real Spectrum has ~48px visible border on all sides (24T horizontal,
+ *  48 scanlines vertical).  Mode 2 ("normal") uses 48px to show the full
+ *  visible border area including border effects. */
+const BORDER_PIXELS: Record<BorderMode, number> = { 0: 0, 1: 24, 2: 48 };
 
 export class ULA {
   /** RGBA pixel buffer */

@@ -423,11 +423,11 @@ export class Spectrum {
     // wait.  Using the ideal boundary (not cpu.tStates) keeps scanline timing
     // stable and prevents the overshoot from shifting border effects.
     const tpf = this.contention.timing.tStatesPerFrame;
-    if (this.contention.frameStartTStates === 0 && this.cpu.tStates === 0) {
-      this.contention.frameStartTStates = 0;
-    } else {
-      this.contention.frameStartTStates += tpf;
-    }
+    const idealStart = this.contention.frameStartTStates + tpf;
+    // Use ideal boundary if the CPU has reached it (normal case).
+    // Otherwise re-sync to current tStates (first frame, snapshot load, reset).
+    this.contention.frameStartTStates =
+      idealStart <= this.cpu.tStates ? idealStart : this.cpu.tStates;
     const frameStart = this.contention.frameStartTStates;
     this.tapeLastAdvanceT = this.cpu.tStates;
     const frameEnd = frameStart + tpf;
