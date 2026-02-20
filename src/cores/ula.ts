@@ -308,4 +308,13 @@ export class ULA {
       this.pixels32[rowStart + x] = borderRGBA;
     }
   }
+
+  /** Fill a horizontal segment of a border row with the given color. */
+  fillBorder(screenY: number, x1: number, x2: number, borderColor: number): void {
+    const rgba = this.palette[borderColor];
+    const rowStart = screenY * this.screenWidth;
+    for (let x = x1; x < x2; x++) {
+      this.pixels32[rowStart + x] = rgba;
+    }
+  }
 }

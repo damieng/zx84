@@ -74,10 +74,6 @@ export interface IOActivity {
   earReads: number;
   /** Number of attribute-area (5800-5AFF) writes this frame */
   attrWrites: number;
-  /** Number of VRAM writes logged for sub-frame rendering this frame */
-  subFrameVramWrites: number;
-  /** Number of border color changes logged for sub-frame rendering this frame */
-  subFrameBorderChanges: number;
   /** Number of Kempston mouse port reads this frame */
   mouseReads: number;
 }
@@ -97,7 +93,7 @@ export class Spectrum {
   screenText = new ScreenText();
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, subFrameVramWrites: 0, subFrameBorderChanges: 0, mouseReads: 0 };
+  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, mouseReads: 0 };
 
   /** Kempston joystick peripheral */
   joystick = new KempstonJoystick();
@@ -131,17 +127,11 @@ export class Spectrum {
   /** Sub-frame precision rendering: per-scanline rendering for rainbow effects */
   subFrameRendering = false;
 
-  /** Sub-frame state: border color changes logged this frame as [frameTState, color] */
-  borderChanges: [number, number][] = [];
-  /** Sub-frame state: border color at frame start */
-  private frameStartBorderColor = 0;
-  /** Sub-frame state: VRAM snapshot taken at frame start (6912 bytes: 0x4000-0x5AFF) */
-  private vramShadow = new Uint8Array(6912);
-  /** Sub-frame state: logged VRAM writes — T-states, offsets within shadow, values */
-  private vramWriteTs = new Int32Array(8192);
-  private vramWriteOff = new Uint16Array(8192);
-  private vramWriteVal = new Uint8Array(8192);
-  private vramWriteCount = 0;
+  /** Scanline rendering state */
+  private nextRenderLine = 0;
+  private nextRenderT = 0;
+  private nextPixelX = 0;
+  private totalRenderLines = 0;
   /** Execution trace */
   private _tracing = false;
   private _traceMode: 'full' | 'contention' | 'portio' = 'full';
@@ -216,18 +206,6 @@ export class Spectrum {
   /** Trace state accessors for io-ports.ts */
   get tracing(): boolean { return this._tracing; }
   get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
-
-  /** Log a VRAM write for sub-frame rendering replay (called from io-ports.ts write8 hook). */
-  logVRAMWrite(addr: number, val: number): void {
-    const i = this.vramWriteCount;
-    if (i < 8192) {
-      const ft = this.cpu.tStates - this.contention.frameStartTStates;
-      this.vramWriteTs[i] = ft;
-      this.vramWriteOff[i] = addr - 0x4000;
-      this.vramWriteVal[i] = val & 0xFF;
-      this.vramWriteCount++;
-    }
-  }
 
   /**
    * Advance the tape to the current cpu.tStates and update the ULA EAR bit.
@@ -437,10 +415,13 @@ export class Spectrum {
     this.contention.frameStartTStates = this.cpu.tStates;
     this.tapeLastAdvanceT = this.cpu.tStates;
     const frameEnd = this.cpu.tStates + this.contention.timing.tStatesPerFrame;
+    const intWindowEnd = this.cpu.tStates + this.contention.timing.intLength;
 
     // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget)
-    // On real hardware, INT is held low for ~32T. If iff1 is false, the interrupt
-    // stays pending and fires as soon as EI re-enables interrupts.
+    // On real hardware, INT is held low for a model-dependent window:
+    //   48K: 32T, 128K/+2: 36T, +2A/+3: 32T
+    // If iff1 is false, the interrupt stays pending until EI re-enables it,
+    // but only within the INT window — after that, it waits for the next frame.
     let intT = this.cpu.interrupt();
     let intPending = intT === 0;  // interrupt didn't fire — keep it pending
 
@@ -449,14 +430,21 @@ export class Spectrum {
       this.amxMouse.drainMovement(this.cpu, frameEnd, this.activity);
     }
 
-    // Sub-frame rendering: snapshot VRAM and prepare write log
+    // Sub-frame rendering: init scanline state
     const subFrame = this.subFrameRendering;
     if (subFrame) {
-      this.vramShadow.set(this.memory.screenBank.subarray(0, 0x1B00));
-      this.vramWriteCount = 0;
-      this.borderChanges.length = 0;
-      this.frameStartBorderColor = this.ula.borderColor;
       this.ula.advanceFlash();
+      const borderTop = this.ula['borderTop'] as number;
+      const borderLeft = this.ula['borderLeft'] as number;
+      this.totalRenderLines = borderTop * 2 + 192;
+      this.nextRenderLine = 0;
+      this.nextPixelX = 0;
+      // First visible pixel of line 0 = contentionStart - borderTop*tpl - borderLeft/2
+      // (left border starts borderLeft/2 T-states before display data fetch)
+      this.nextRenderT = this.contention.frameStartTStates
+                        + this.contention.timing.contentionStart
+                        - borderTop * this.contention.timing.tStatesPerLine
+                        - (borderLeft >> 1);
     }
 
     while (this.cpu.tStates < frameEnd) {
@@ -510,13 +498,17 @@ export class Spectrum {
         this.cpu.step();
       }
 
-      // Pending interrupt: on real hardware INT stays LOW for ~32T.
-      // If iff1 was false at frame start (DI in progress), the interrupt
-      // fires as soon as EI re-enables interrupts.
-      if (intPending && this.cpu.iff1) {
-        intT = this.cpu.interrupt();
-        if (intT > 0) {
+      // Pending interrupt: INT is only held LOW for a limited window.
+      // If EI re-enables interrupts within the window, fire the interrupt.
+      // After the window closes, the interrupt is lost until the next frame.
+      if (intPending) {
+        if (this.cpu.tStates >= intWindowEnd) {
           intPending = false;
+        } else if (this.cpu.iff1) {
+          intT = this.cpu.interrupt();
+          if (intT > 0) {
+            intPending = false;
+          }
         }
       }
 
@@ -525,6 +517,9 @@ export class Spectrum {
       // Advance tape playback and update ULA EAR bit (catches up any
       // T-states not already advanced by the port-in handler mid-instruction)
       this.advanceTapeTo();
+
+      // Render any scanlines the beam has passed
+      if (subFrame) this.renderPendingScanlines();
 
       // Accumulate beeper duty and generate audio samples.
       // During tape turbo, skip audio generation entirely — the loading
@@ -563,117 +558,67 @@ export class Spectrum {
     // Adjust loader detector T-state tracking across frame boundary
     this.loaderDetector.onFrameEnd(this.tStatesPerFrame);
 
-    // Sub-frame rendering: replay VRAM writes per-scanline and render full frame
-    if (subFrame) this.renderSubFrame();
+    // Sub-frame rendering: flush any remaining scanlines
+    if (subFrame) {
+      const borderTop = this.ula['borderTop'] as number;
+      const w = this.ula.screenWidth;
+      while (this.nextRenderLine < this.totalRenderLines) {
+        const i = this.nextRenderLine;
+        if (i < borderTop || i >= borderTop + 192) {
+          this.ula.fillBorder(i, this.nextPixelX, w, this.ula.borderColor);
+        } else {
+          this.ula.renderScanline(i - borderTop, this.memory.screenBank, this.ula.borderColor, 0x4000);
+        }
+        this.nextRenderLine++;
+        this.nextPixelX = 0;
+      }
+    }
 
     // Mark that we have a new frame to display
     this.needsDisplay = true;
   }
 
   /**
-   * Sub-frame: render the full frame at frame end by replaying logged VRAM
-   * writes in T-state order.  Each display scanline sees the VRAM state that
-   * the real ULA would have read when the beam reached that line.
+   * Render pixels up to the current beam position.
+   * Border-only lines (top/bottom border) are rendered at sub-scanline
+   * granularity — each call fills pixels from the last rendered X to the
+   * current beam X, so mid-scanline border color changes produce visible
+   * horizontal color segments.  Display lines are rendered whole when the
+   * beam reaches them.
    */
-  private renderSubFrame(): void {
-    const shadow = this.vramShadow;
-    const borderTop = this.ula['borderTop'] as number;
+  private renderPendingScanlines(): void {
+    const ula = this.ula;
+    const borderTop = ula['borderTop'] as number;
+    const w = ula.screenWidth;
     const tpl = this.contention.timing.tStatesPerLine;
-    const cStart = this.contention.timing.contentionStart;
-    const screenHeight = this.ula.screenHeight;
+    const t = this.cpu.tStates;
 
-    let writeIdx = 0;
-    const writeCount = this.vramWriteCount;
-    let borderIdx = 0;
-    let currentBorder = this.frameStartBorderColor;
+    while (this.nextRenderLine < this.totalRenderLines) {
+      const lineRelT = t - this.nextRenderT;
+      if (lineRelT < 0) break;
 
-    // Expose stats in activity counters
-    this.activity.subFrameVramWrites = writeCount;
-    this.activity.subFrameBorderChanges = this.borderChanges.length;
+      const i = this.nextRenderLine;
+      const isBorder = i < borderTop || i >= borderTop + 192;
 
-    // Top border — each row gets its own border color
-    for (let r = 0; r < borderTop; r++) {
-      const rowTState = Math.max(0, cStart - (borderTop - r) * tpl);
-      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= rowTState) {
-        currentBorder = this.borderChanges[borderIdx][1];
-        borderIdx++;
-      }
-      this.ula.renderBorderLine(r, currentBorder);
-    }
-
-    // Display lines 0..191 — replay VRAM writes with per-column accuracy.
-    // The ULA fetches column C's attribute at lineTState + C*4 + 2, so writes
-    // arriving mid-scanline are visible only for columns the beam hasn't reached.
-    const colAttrs = new Uint8Array(32);  // per-column attribute snapshots
-    const saved = new Uint8Array(32);     // pre-allocated save buffer
-    const writeTs = this.vramWriteTs;
-    const writeOff = this.vramWriteOff;
-    const writeVal = this.vramWriteVal;
-
-    for (let y = 0; y < 192; y++) {
-      const lineTState = cStart + y * tpl;
-      const lineEnd = lineTState + 128;
-
-      // Phase 1: apply all writes that happened before this line started
-      while (writeIdx < writeCount && writeTs[writeIdx] < lineTState) {
-        shadow[writeOff[writeIdx]] = writeVal[writeIdx];
-        writeIdx++;
-      }
-
-      // Advance border color
-      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= lineTState) {
-        currentBorder = this.borderChanges[borderIdx][1];
-        borderIdx++;
-      }
-
-      // Phase 2: check for mid-line writes (during active display)
-      if (writeIdx < writeCount && writeTs[writeIdx] < lineEnd) {
-        // There are writes during this scanline — use per-column rendering.
-        const attrBase = 0x1800 + ((y >> 3) << 5);  // shadow offset for attrs
-
-        // Process mid-line writes column by column.  For each column C,
-        // apply all writes with ts < lineTState + C*4 + 2 (the ULA fetch time
-        // for column C's attribute), then snapshot the attribute value.
-        let midIdx = writeIdx;
-        for (let c = 0; c < 32; c++) {
-          const fetchTime = lineTState + c * 4 + 2;
-          while (midIdx < writeCount && writeTs[midIdx] < fetchTime) {
-            shadow[writeOff[midIdx]] = writeVal[midIdx];
-            midIdx++;
-          }
-          // Capture what the ULA sees for this column at its fetch time
-          colAttrs[c] = shadow[attrBase + c];
-        }
-
-        // Apply remaining mid-line writes (after last column fetch) to shadow
-        while (writeIdx < writeCount && writeTs[writeIdx] < lineEnd) {
-          shadow[writeOff[writeIdx]] = writeVal[writeIdx];
-          writeIdx++;
-        }
-
-        // Temporarily set per-column attributes and render
-        for (let c = 0; c < 32; c++) {
-          saved[c] = shadow[attrBase + c];
-          shadow[attrBase + c] = colAttrs[c];
-        }
-        this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
-        // Restore shadow attributes to final state for subsequent scanlines
-        for (let c = 0; c < 32; c++) shadow[attrBase + c] = saved[c];
+      if (isBorder) {
+        // Border line: render pixels up to current beam position
+        const beamX = Math.min(w, lineRelT << 1); // 2 pixels per T-state
+        if (beamX <= this.nextPixelX) break;
+        ula.fillBorder(i, this.nextPixelX, beamX, ula.borderColor);
+        this.nextPixelX = beamX;
       } else {
-        // No mid-line writes — render directly
-        this.ula.renderScanline(y, shadow, currentBorder, 0x4000);
+        // Display line: render entire line when beam reaches it
+        ula.renderScanline(i - borderTop, this.memory.screenBank, ula.borderColor, 0x4000);
+        this.nextPixelX = w;
       }
-    }
 
-    // Bottom border
-    const bottomStart = borderTop + 192;
-    for (let r = bottomStart; r < screenHeight; r++) {
-      const rowTState = cStart + (192 + r - bottomStart) * tpl;
-      while (borderIdx < this.borderChanges.length && this.borderChanges[borderIdx][0] <= rowTState) {
-        currentBorder = this.borderChanges[borderIdx][1];
-        borderIdx++;
+      if (this.nextPixelX >= w) {
+        this.nextRenderLine++;
+        this.nextPixelX = 0;
+        this.nextRenderT += tpl;
+      } else {
+        break; // beam is mid-line, wait for more T-states
       }
-      this.ula.renderBorderLine(r, currentBorder);
     }
   }
 

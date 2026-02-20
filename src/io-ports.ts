@@ -31,10 +31,6 @@ export function installMemoryHooks(s: Spectrum): void {
       s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
     }
     if (addr < 0x4000 && !memory.specialPaging) return; // ROM — silently discard
-    // Log VRAM writes for sub-frame rendering replay
-    if (s.subFrameRendering && addr >= 0x4000 && addr < 0x5B00) {
-      s.logVRAMWrite(addr, val);
-    }
     // Count attribute writes for rainbow detection
     if (addr >= 0x5800 && addr < 0x5B00) s.activity.attrWrites++;
     s.cpu.memory[addr] = val & 0xFF;
@@ -62,14 +58,6 @@ export function wirePortIO(s: Spectrum): void {
       if (newBeeperBit !== s.mixer.prevBeeperBit) {
         s.activity.beeperToggled = true;
         s.mixer.prevBeeperBit = newBeeperBit;
-      }
-      // Log border color changes for sub-frame rendering
-      if (s.subFrameRendering) {
-        const newBorder = val & 0x07;
-        if (newBorder !== s.ula.borderColor) {
-          const frameTStates = s.cpu.tStates - s.contention.frameStartTStates;
-          s.borderChanges.push([frameTStates, newBorder]);
-        }
       }
       s.ula.writePort(val);
     }

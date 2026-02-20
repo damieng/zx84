@@ -74,9 +74,13 @@ export class Contention {
   isContended(addr: number): boolean {
     // 0x4000-0x7FFF is always contended (bank 5, the screen RAM)
     if (addr >= 0x4000 && addr < 0x8000) return true;
-    // 128K: odd-numbered banks (1,3,5,7) paged at 0xC000 are contended
+    // 128K-class: check paged bank at 0xC000
     if (is128kClass(this.model) && addr >= 0xC000) {
-      return (this.memory.currentBank & 1) === 1;
+      // +2A/+3 (Amstrad gate array): banks 4,5,6,7 are contended
+      // 128K/+2 (Ferranti ULA): odd banks 1,3,5,7 are contended
+      return isPlus2AClass(this.model)
+        ? this.memory.currentBank >= 4
+        : (this.memory.currentBank & 1) === 1;
     }
     return false;
   }
@@ -109,8 +113,19 @@ export class Contention {
    * without adding extra time (sub-cycle T-states are in the base instruction timing).
    */
   applyIOContention(port: number, cpu: { tStates: number }): void {
-    const highContended = this.isContended(port);
     const isULA = (port & 1) === 0;
+
+    if (isPlus2AClass(this.model)) {
+      // +2A/+3 (Amstrad gate array): simplified I/O contention.
+      // ULA ports get a single contention check; non-ULA ports get none.
+      if (isULA) {
+        cpu.tStates += this.contentionDelay(cpu.tStates);
+      }
+      return;
+    }
+
+    // 48K / 128K / +2 (Ferranti ULA): four-case I/O contention
+    const highContended = this.isContended(port);
 
     if (highContended && isULA) {
       // C:1, C:3
@@ -144,7 +159,7 @@ export class Contention {
   floatingBusRead(cpuTStates: number, mem: Uint8Array): number {
     const t = this.timing;
     const frameTStates = cpuTStates - this.frameStartTStates;
-    const offset = frameTStates - t.contentionStart;
+    const offset = frameTStates - t.contentionStart + t.floatingBusAdjust;
     if (offset < 0) return 0xFF;
     const line = (offset / t.tStatesPerLine) | 0;
     if (line >= 192) return 0xFF;
