@@ -299,6 +299,49 @@ export class ULA {
     }
   }
 
+  /**
+   * Render only the 256-pixel display data for one scanline (no borders).
+   * Used by the inline scanline renderer which handles borders separately
+   * with sub-scanline precision.
+   */
+  renderDisplayData(y: number, memory: Uint8Array, vramOffset = 0): void {
+    const screenY = y + this.borderTop;
+    const rowStart = screenY * this.screenWidth;
+
+    const bitmapAddr = (0x4000 |
+      ((y & 0xC0) << 5) |
+      ((y & 0x07) << 8) |
+      ((y & 0x38) << 2)) - vramOffset;
+
+    const attrBase = 0x5800 + ((y >> 3) << 5) - vramOffset;
+
+    for (let col = 0; col < 32; col++) {
+      const byteVal = memory[bitmapAddr + col];
+      const attr = memory[attrBase + col];
+
+      const bright = (attr & 0x40) ? 8 : 0;
+      let ink = (attr & 0x07) + bright;
+      let paper = ((attr >> 3) & 0x07) + bright;
+
+      if ((attr & 0x80) && this.flashState) {
+        const tmp = ink;
+        ink = paper;
+        paper = tmp;
+      }
+
+      const inkRGBA = this.palette[ink];
+      const paperRGBA = this.palette[paper];
+
+      const px = this.borderLeft + (col << 3);
+      const baseIdx = rowStart + px;
+
+      for (let bit = 7; bit >= 0; bit--) {
+        this.pixels32[baseIdx + (7 - bit)] =
+          (byteVal & (1 << bit)) ? inkRGBA : paperRGBA;
+      }
+    }
+  }
+
   /** Render a full-width border-only row (top/bottom border). */
   renderBorderLine(screenY: number, borderColor: number): void {
     if (screenY < 0 || screenY >= this.screenHeight) return;

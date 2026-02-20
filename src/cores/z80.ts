@@ -287,6 +287,18 @@ export class Z80 {
     }
   }
 
+  /** Non-maskable interrupt: pushes PC, jumps to 0x0066.
+   *  IFF1 is cleared (disabling maskable interrupts); IFF2 is preserved
+   *  so RETN can restore IFF1 from IFF2. Takes 11 T-states. */
+  nmi(): void {
+    this.halted = false;
+    this.iff1 = false;
+    this.tStates += 5;       // NMI acknowledge: 5T
+    this.push16(this.pc);    // push PC: 2×3T (inside push16's write16)
+    this.memptr = this.pc = 0x0066;
+    this.tStates += 3;       // total = 5 + 3 + 3 = 11T
+  }
+
   /** Fire an IM 2 interrupt with a specific vector byte (for peripheral devices like Z80 PIO). */
   interruptWithVector(vector: number): number {
     this._pendingVector = vector & 0xFE; // PIO vectors are always even

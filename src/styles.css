@@ -716,6 +716,50 @@ input[type="range"]::-moz-range-thumb {
   color: #00c;
 }
 
+/* Multiface row */
+.multiface-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mf-check {
+  flex: 1;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #333;
+  cursor: pointer;
+}
+
+.mf-check input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+}
+
+.mf-nmi-btn {
+  flex: 0 0 auto;
+  width: auto !important;
+  padding: 4px 10px !important;
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  background: #fee !important;
+  border-color: #c99 !important;
+  color: #a22 !important;
+}
+
+.mf-nmi-btn:hover:not(:disabled) {
+  background: #fdd !important;
+  border-color: #a66 !important;
+}
+
+.mf-nmi-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 #cpu-mhz {
   flex: 2;
   font-size: 0.7rem !important;

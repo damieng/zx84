@@ -3,9 +3,12 @@ import { HiOutlineCpuChip, HiOutlinePower } from 'solid-icons/hi';
 import {
   currentModel, romStatusText, switchModel, loadRomFiles,
   turboMode, clockSpeedText, resetMachine, toggleTurbo,
+  spectrum, triggerNMI, loadMultifaceROM,
 } from '@/emulator.ts';
 import type { SpectrumModel } from '@/spectrum.ts';
 import { Show } from 'solid-js';
+import { variantForModel, variantLabel } from '@/peripherals/multiface.ts';
+import * as settings from '@/store/settings.ts';
 
 export function HardwarePane() {
   let romInputRef!: HTMLInputElement;
@@ -51,6 +54,32 @@ export function HardwarePane() {
           class={turboMode() ? 'active' : ''}
           onClick={toggleTurbo}
         >{clockSpeedText()}</button>
+      </div>
+      <div class="multiface-row">
+        <label class="mf-check">
+          <input
+            type="checkbox"
+            checked={settings.multifaceEnabled()}
+            onChange={(e) => {
+              const on = (e.target as HTMLInputElement).checked;
+              settings.setMultifaceEnabled(on);
+              settings.persistSetting('multiface', on ? 'on' : 'off');
+              if (spectrum) {
+                spectrum.multiface.enabled = on;
+                if (on && !spectrum.multiface.romLoaded) {
+                  loadMultifaceROM(spectrum);
+                }
+              }
+            }}
+          />
+          {variantLabel(variantForModel(currentModel()))}
+        </label>
+        <button
+          class="mf-nmi-btn"
+          title="Trigger NMI (Multiface button)"
+          disabled={!settings.multifaceEnabled()}
+          onClick={triggerNMI}
+        >NMI</button>
       </div>
       <Show when={romStatusText()}>
         <span class="rom-status" id="rom-status">{romStatusText()}</span>

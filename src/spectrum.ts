@@ -32,6 +32,7 @@ import { KempstonJoystick } from '@/peripherals/joysticks.ts';
 import { KempstonMouse } from '@/peripherals/kempston-mouse.ts';
 import { AmxMouse } from '@/peripherals/amx-mouse.ts';
 import { AudioMixer } from '@/peripherals/audio-mixer.ts';
+import { Multiface } from '@/peripherals/multiface.ts';
 
 const AY_CLOCK = 1773400;        // ~1.77 MHz
 
@@ -107,6 +108,9 @@ export class Spectrum {
   /** Audio mixer peripheral (beeper + AY mixing, DC filter) */
   mixer!: AudioMixer;
 
+  /** Multiface peripheral (MF1/MF128/MF3) */
+  multiface = new Multiface();
+
   private running = false;
   private starting = false;
   private startGen = 0;
@@ -123,9 +127,6 @@ export class Spectrum {
 
   /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
   turbo = false;
-
-  /** Sub-frame precision rendering: per-scanline rendering for rainbow effects */
-  subFrameRendering = false;
 
   /** Scanline rendering state */
   private nextRenderLine = 0;
@@ -207,11 +208,13 @@ export class Spectrum {
   get tracing(): boolean { return this._tracing; }
   get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
 
-  /** Flush pending border pixels up to the current beam position.
+  /** Flush pending pixels up to the current beam position.
    *  Called from the port handler BEFORE updating borderColor so that
-   *  pixels between the last render and the port write keep the old color. */
+   *  pixels between the last render and the port write keep the old color,
+   *  and from the write8 hook before VRAM writes so completed scanlines
+   *  see the old data. */
   flushBeam(): void {
-    if (this.subFrameRendering) this.renderPendingScanlines();
+    this.renderPendingScanlines();
   }
 
   /**
@@ -295,6 +298,7 @@ export class Spectrum {
     this.kempstonMouse.reset();
     this.amxMouse.reset();
     this.mixer.reset();
+    this.multiface.reset();
     this.loaderDetector.reset();
     this.contention.frameStartTStates = 0;
     this.needsDisplay = true;
@@ -390,11 +394,8 @@ export class Spectrum {
       }
     }
 
-    // Always render display (even if we skipped emulation) so the screen stays up to date
+    // Push rendered pixels to the display
     if (this.needsDisplay) {
-      if (!this.subFrameRendering) {
-        this.ula.renderFrame(this.memory.screenBank, 0x4000);
-      }
       if (this.display) this.display.updateTexture(this.ula.pixels);
       this.needsDisplay = false;
     }
@@ -437,22 +438,19 @@ export class Spectrum {
       this.amxMouse.drainMovement(this.cpu, frameEnd, this.activity);
     }
 
-    // Sub-frame rendering: init scanline state
-    const subFrame = this.subFrameRendering;
-    if (subFrame) {
-      this.ula.advanceFlash();
-      const borderTop = this.ula['borderTop'] as number;
-      const borderLeft = this.ula['borderLeft'] as number;
-      this.totalRenderLines = borderTop * 2 + 192;
-      this.nextRenderLine = 0;
-      this.nextPixelX = 0;
-      // First visible pixel of line 0 = contentionStart - borderTop*tpl - borderLeft/2
-      // (left border starts borderLeft/2 T-states before display data fetch)
-      this.nextRenderT = this.contention.frameStartTStates
-                        + this.contention.timing.contentionStart
-                        - borderTop * this.contention.timing.tStatesPerLine
-                        - (borderLeft >> 1);
-    }
+    // Init scanline rendering state for this frame
+    this.ula.advanceFlash();
+    const borderTop = this.ula['borderTop'] as number;
+    const borderLeft = this.ula['borderLeft'] as number;
+    this.totalRenderLines = borderTop * 2 + 192;
+    this.nextRenderLine = 0;
+    this.nextPixelX = 0;
+    // First visible pixel of line 0 = contentionStart - borderTop*tpl - borderLeft/2
+    // (left border starts borderLeft/2 T-states before display data fetch)
+    this.nextRenderT = this.contention.frameStartTStates
+                      + this.contention.timing.contentionStart
+                      - borderTop * this.contention.timing.tStatesPerLine
+                      - (borderLeft >> 1);
 
     while (this.cpu.tStates < frameEnd) {
       const tBefore = this.cpu.tStates;
@@ -525,9 +523,6 @@ export class Spectrum {
       // T-states not already advanced by the port-in handler mid-instruction)
       this.advanceTapeTo();
 
-      // Render any scanlines the beam has passed
-      if (subFrame) this.renderPendingScanlines();
-
       // Accumulate beeper duty and generate audio samples.
       // During tape turbo, skip audio generation entirely — the loading
       // noise is unwanted and audio pacing would throttle our speed.
@@ -565,16 +560,26 @@ export class Spectrum {
     // Adjust loader detector T-state tracking across frame boundary
     this.loaderDetector.onFrameEnd(this.tStatesPerFrame);
 
-    // Sub-frame rendering: flush any remaining scanlines
-    if (subFrame) {
-      const borderTop = this.ula['borderTop'] as number;
+    // Flush any remaining scanlines (bottom border / frame-end edge)
+    {
+      const borderLeft2 = this.ula['borderLeft'] as number;
+      const dispEnd = borderLeft2 + 256;
       const w = this.ula.screenWidth;
       while (this.nextRenderLine < this.totalRenderLines) {
         const i = this.nextRenderLine;
-        if (i < borderTop || i >= borderTop + 192) {
-          this.ula.fillBorder(i, this.nextPixelX, w, this.ula.borderColor);
+        const isDisplay = i >= borderTop && i < borderTop + 192;
+        if (isDisplay) {
+          if (this.nextPixelX < borderLeft2) {
+            this.ula.fillBorder(i, this.nextPixelX, borderLeft2, this.ula.borderColor);
+          }
+          if (this.nextPixelX <= borderLeft2) {
+            this.ula.renderDisplayData(i - borderTop, this.memory.screenBank, 0x4000);
+          }
+          if (this.nextPixelX < w) {
+            this.ula.fillBorder(i, Math.max(this.nextPixelX, dispEnd), w, this.ula.borderColor);
+          }
         } else {
-          this.ula.renderScanline(i - borderTop, this.memory.screenBank, this.ula.borderColor, 0x4000);
+          this.ula.fillBorder(i, this.nextPixelX, w, this.ula.borderColor);
         }
         this.nextRenderLine++;
         this.nextPixelX = 0;
@@ -587,15 +592,15 @@ export class Spectrum {
 
   /**
    * Render pixels up to the current beam position.
-   * Border-only lines (top/bottom border) are rendered at sub-scanline
-   * granularity — each call fills pixels from the last rendered X to the
-   * current beam X, so mid-scanline border color changes produce visible
-   * horizontal color segments.  Display lines are rendered whole when the
-   * beam reaches them.
+   * All lines (border and display) are rendered at sub-scanline granularity
+   * for border regions.  Display data (256 pixels) is rendered once when the
+   * beam first enters the display area on each line.
    */
   private renderPendingScanlines(): void {
     const ula = this.ula;
     const borderTop = ula['borderTop'] as number;
+    const borderLeft = ula['borderLeft'] as number;
+    const dispEnd = borderLeft + 256;
     const w = ula.screenWidth;
     const tpl = this.contention.timing.tStatesPerLine;
     const t = this.cpu.tStates;
@@ -605,20 +610,30 @@ export class Spectrum {
       if (lineRelT < 0) break;
 
       const i = this.nextRenderLine;
-      const isBorder = i < borderTop || i >= borderTop + 192;
+      const beamX = Math.min(w, lineRelT << 1); // 2 pixels per T-state
+      if (beamX <= this.nextPixelX) break;
 
-      if (isBorder) {
-        // Border line: render pixels up to current beam position
-        const beamX = Math.min(w, lineRelT << 1); // 2 pixels per T-state
-        if (beamX <= this.nextPixelX) break;
-        ula.fillBorder(i, this.nextPixelX, beamX, ula.borderColor);
-        this.nextPixelX = beamX;
+      const isDisplay = i >= borderTop && i < borderTop + 192;
+
+      if (isDisplay) {
+        // Left border portion
+        if (this.nextPixelX < borderLeft) {
+          ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
+        }
+        // Display data — render once when beam first enters display area
+        if (this.nextPixelX <= borderLeft && beamX > borderLeft) {
+          ula.renderDisplayData(i - borderTop, this.memory.screenBank, 0x4000);
+        }
+        // Right border portion
+        if (beamX > dispEnd && this.nextPixelX < w) {
+          ula.fillBorder(i, Math.max(this.nextPixelX, dispEnd), beamX, ula.borderColor);
+        }
       } else {
-        // Display line: render entire line when beam reaches it
-        ula.renderScanline(i - borderTop, this.memory.screenBank, ula.borderColor, 0x4000);
-        this.nextPixelX = w;
+        // Pure border line
+        ula.fillBorder(i, this.nextPixelX, beamX, ula.borderColor);
       }
 
+      this.nextPixelX = beamX;
       if (this.nextPixelX >= w) {
         this.nextRenderLine++;
         this.nextPixelX = 0;

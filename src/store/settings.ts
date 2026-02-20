@@ -210,11 +210,11 @@ const _tapeSoundEnabled = /*@once*/ createRoot(() => createSignal(getSaved('tape
 export const tapeSoundEnabled = _tapeSoundEnabled[0];
 export const setTapeSoundEnabled = _tapeSoundEnabled[1];
 
-// ── Sub-frame rendering ────────────────────────────────────────────────
+// ── Multiface ────────────────────────────────────────────────────────
 
-const _subFrameRendering = /*@once*/ createRoot(() => createSignal(getSaved('sub-frame-rendering', 'off') === 'on'));
-export const subFrameRendering = _subFrameRendering[0];
-export const setSubFrameRendering = _subFrameRendering[1];
+const _multifaceEnabled = /*@once*/ createRoot(() => createSignal(getSaved('multiface', 'off') === 'on'));
+export const multifaceEnabled = _multifaceEnabled[0];
+export const setMultifaceEnabled = _multifaceEnabled[1];
 
 // ── Derived ─────────────────────────────────────────────────────────────
 

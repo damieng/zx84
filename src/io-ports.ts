@@ -30,7 +30,18 @@ export function installMemoryHooks(s: Spectrum): void {
     if (contention.isContended(addr)) {
       s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
     }
-    if (addr < 0x4000 && !memory.specialPaging) return; // ROM — silently discard
+    if (addr < 0x4000) {
+      if (s.multiface.pagedIn) {
+        if (addr < 0x2000) return; // MF ROM — discard
+        // 0x2000-0x3FFF: MF RAM — allow through
+      } else if (!memory.specialPaging) {
+        return; // Normal ROM — discard
+      }
+    }
+    // Flush beam before VRAM writes so completed scanlines see old data
+    if (addr >= 0x4000 && addr < 0x5B00) {
+      s.flushBeam();
+    }
     // Count attribute writes for rainbow detection
     if (addr >= 0x5800 && addr < 0x5B00) s.activity.attrWrites++;
     s.cpu.memory[addr] = val & 0xFF;
@@ -73,6 +84,10 @@ export function wirePortIO(s: Spectrum): void {
       if (match7FFD) {
         s.memory.bankSwitch(val);
         s.cpu.memory = s.memory.flat;
+        if (s.multiface.pagedIn) {
+          s.cpu.memory.set(s.multiface.mfRom, 0);
+          s.cpu.memory.set(s.multiface.mfRam, 0x2000);
+        }
       }
 
       // +2A: port 0x1FFD (port & 0xF002) === 0x1000
@@ -80,6 +95,10 @@ export function wirePortIO(s: Spectrum): void {
         s.memory.bankSwitch1FFD(val);
         if (isPlus3(s.model)) s.fdc.motorOn = (val & 0x08) !== 0;
         s.cpu.memory = s.memory.flat;
+        if (s.multiface.pagedIn) {
+          s.cpu.memory.set(s.multiface.mfRom, 0);
+          s.cpu.memory.set(s.multiface.mfRam, 0x2000);
+        }
       }
 
       // +3 FDC data write: port 0x3FFD (A13=1, A12=1, A1=0)
@@ -109,6 +128,7 @@ export function wirePortIO(s: Spectrum): void {
         s.activity.ayWrites++;
       }
     }
+
   };
 
   s.cpu.portInHandler = (port: number): number => {
@@ -180,6 +200,24 @@ export function wirePortIO(s: Spectrum): void {
       if (hi === 0xFB) { s.activity.mouseReads++; return s.kempstonMouse.x & 0xFF; }
       if (hi === 0xFF) { s.activity.mouseReads++; return s.kempstonMouse.y & 0xFF; }
       if (hi === 0xFA) { s.activity.mouseReads++; return s.kempstonMouse.buttons; }
+    }
+
+    // Multiface port handling (IN-triggered paging)
+    // Must come before Kempston since MF1's page-out port (0x1F) overlaps
+    if (s.multiface.enabled && s.multiface.romLoaded) {
+      const mfPort = s.multiface.matchPort(port);
+      if (mfPort === 'in') {
+        s.multiface.pageIn(s.cpu.memory);
+        return 0xFF;
+      }
+      if (mfPort === 'out') {
+        s.multiface.pageOut(s.cpu.memory);
+        s.memory.applyBanking();
+        s.cpu.memory = s.memory.flat;
+        // MF1 shares 0x1F with Kempston — return joystick state
+        if (s.multiface.variant === 'MF1') return s.joystick.state;
+        return 0xFF;
+      }
     }
 
     // Kempston joystick: bits 5-7 of low byte all zero

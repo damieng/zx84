@@ -13,8 +13,9 @@ import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
 import { parseDSK } from '@/plus3/dsk.ts';
 import { loadSZX } from '@/snapshot/szx.ts';
-import { clearLastFile, restoreTape, restoreDisk } from '@/store/persistence.ts';
+import { clearLastFile, restoreTape, restoreDisk, dbSave, dbLoad } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
+import { variantForModel, variantLabel, romFilename } from '@/peripherals/multiface.ts';
 import { onFrame, updateRegsOnce, resetSpeedTracking, forceSpeedUpdate } from '@/frame-bridge.ts';
 export { fontDataHash, updateFontPreview, loadFontStore, saveFontStore, capturedFontData } from '@/frame-bridge.ts';
 export type { FontEntry } from '@/frame-bridge.ts';
@@ -182,7 +183,6 @@ export function applyDisplaySettings(): void {
   const mix = settings.ayMix() / 100;
   spectrum.mixer.beeperGain = Math.min(1, 2 * (1 - mix));
   spectrum.mixer.ayGain = Math.min(1, 2 * mix);
-  spectrum.subFrameRendering = settings.subFrameRendering();
   spectrum.tapeInstantLoad = settings.tapeInstantLoad();
   spectrum.tapeTurbo = settings.tapeTurbo();
   spectrum.tapeSoundEnabled = settings.tapeSoundEnabled();
@@ -218,6 +218,13 @@ export async function createMachine(): Promise<boolean> {
     if (!hmrRestored) {
       spectrum.start();
     }
+  }
+
+  // Apply Multiface settings
+  spectrum.multiface.variant = variantForModel(model);
+  spectrum.multiface.enabled = settings.multifaceEnabled();
+  if (spectrum.multiface.enabled) {
+    loadMultifaceROM(spectrum).catch(err => console.warn('MF ROM load failed:', err));
   }
 
   // Apply saved AY stereo mode
@@ -763,6 +770,59 @@ export function setMouseButton(button: number, pressed: boolean, mode: MouseMode
   } else if (mode === 'amx') {
     spectrum.amxMouse.setButton(button, pressed);
   }
+}
+
+// ── Multiface ────────────────────────────────────────────────────────
+
+const MF_ROM_CDN = 'https://zx84files.bitsparse.com/roms/';
+
+export async function loadMultifaceROM(s: Spectrum): Promise<boolean> {
+  const variant = variantForModel(s.model);
+  s.multiface.variant = variant;
+  const cacheKey = `mf-rom-${variant}`;
+
+  // Try IndexedDB cache first
+  let data = await dbLoad(cacheKey);
+  if (!data) {
+    try {
+      setStatus(`Fetching ${variantLabel(variant)} ROM...`);
+      const url = MF_ROM_CDN + romFilename(variant);
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      data = new Uint8Array(await resp.arrayBuffer());
+      await dbSave(cacheKey, data);
+    } catch (err) {
+      console.warn('Failed to fetch Multiface ROM:', err);
+      setStatus(`Failed to load ${variantLabel(variant)} ROM`);
+      return false;
+    }
+  }
+  s.multiface.loadROM(data);
+  console.log('[MF] ROM loaded: variant=%s size=%d byte66=%s',
+    variant, data.length, data[0x66]?.toString(16) ?? 'undef');
+  setStatus(`${variantLabel(variant)} ROM loaded (${data.length} bytes)`);
+  return true;
+}
+
+export function triggerNMI(): void {
+  if (!spectrum) return;
+  const mf = spectrum.multiface;
+  console.log('[MF] triggerNMI: enabled=%s romLoaded=%s variant=%s romByte66=%s',
+    mf.enabled, mf.romLoaded, mf.variant,
+    mf.romLoaded ? mf.mfRom[0x66].toString(16) : 'N/A');
+  if (!mf.enabled) { setStatus('Multiface not enabled'); return; }
+  if (!mf.romLoaded) { setStatus('Multiface ROM not loaded'); return; }
+
+  const flat = spectrum.cpu.memory;
+  console.log('[MF] Before pageIn: flat[0x66]=%s pagedIn=%s',
+    flat[0x66].toString(16), mf.pagedIn);
+  mf.pressButton(flat, spectrum.cpu);
+  console.log('[MF] After pressButton: flat[0x66]=%s PC=%s pagedIn=%s',
+    flat[0x66].toString(16), spectrum.cpu.pc.toString(16), mf.pagedIn);
+  // Verify flat is still the live CPU memory
+  console.log('[MF] flat === cpu.memory: %s, flat === memory.flat: %s',
+    flat === spectrum.cpu.memory, flat === spectrum.memory.flat);
+  setStatus('Multiface NMI triggered');
 }
 
 // ── Restore persisted media (tape + disks) without resetting ─────────

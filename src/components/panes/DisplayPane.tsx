@@ -5,7 +5,7 @@ import {
   scale, setScale, brightness, setBrightness, contrast, setContrast,
   smoothing, setSmoothing, curvature, setCurvature, scanlines, setScanlines,
   maskType, setMaskType, dotPitch, setDotPitch, curvatureMode, setCurvatureMode,
-  monitor, setMonitor, borderSize, setBorderSize, subFrameRendering, setSubFrameRendering,
+  monitor, setMonitor, borderSize, setBorderSize,
   renderer, colorMap, setColorMap, persistSetting,
 } from '@/store/settings.ts';
 import { spectrum, switchRenderer, applyDisplaySettings } from '@/emulator.ts';
@@ -110,18 +110,6 @@ export function DisplayPane() {
           <option value="basic">Basic</option>
           <option value="measured">Measured</option>
           <option value="vivid">Vivid</option>
-        </select>
-      </div>
-      <div class="slider-row">
-        <span class="slider-label">Precision</span>
-        <select value={subFrameRendering() ? 'scanline' : 'frame'} onChange={(e) => {
-          const v = (e.target as HTMLSelectElement).value === 'scanline';
-          setSubFrameRendering(v);
-          persistSetting('sub-frame-rendering', v ? 'on' : 'off');
-          if (spectrum) spectrum.subFrameRendering = v;
-        }}>
-          <option value="frame">Per frame (50 Hz)</option>
-          <option value="scanline">Per scanline (15.6 kHz)</option>
         </select>
       </div>
       <div class="slider-row">
