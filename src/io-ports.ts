@@ -212,6 +212,9 @@ export function wirePortIO(s: Spectrum): void {
       }
       if (mfPort === 'out') {
         s.multiface.pageOut(s.cpu.memory);
+        // Sync flat[] back to ramBanks before rebuilding — CPU writes
+        // go to flat[] only, so ramBanks may be stale.
+        s.memory.saveToRAMBanks();
         s.memory.applyBanking();
         s.cpu.memory = s.memory.flat;
         // MF1 shares 0x1F with Kempston — return joystick state

@@ -445,10 +445,13 @@ export class Spectrum {
     this.totalRenderLines = borderTop * 2 + 192;
     this.nextRenderLine = 0;
     this.nextPixelX = 0;
-    // First visible pixel of line 0 = contentionStart - borderTop*tpl - borderLeft/2
-    // (left border starts borderLeft/2 T-states before display data fetch)
+    // contentionStart is when the ULA starts its first pixel byte FETCH;
+    // the first pixel is OUTPUT 1T later (contentionStart + 1 = first display pixel).
+    // 48K: 8 VBlank + 56 border = 64 lines × 224 = 14336T to first display pixel.
+    // Left border starts borderLeft/2 T-states before that on each line.
+    const firstDisplayPixelT = this.contention.timing.contentionStart + 1;
     this.nextRenderT = this.contention.frameStartTStates
-                      + this.contention.timing.contentionStart
+                      + firstDisplayPixelT
                       - borderTop * this.contention.timing.tStatesPerLine
                       - (borderLeft >> 1);
 
