@@ -16,8 +16,13 @@ export interface MachineTiming {
   cpuClock: number;
   tStatesPerFrame: number;
   tStatesPerLine: number;
-  /** Frame-relative T-state at which contention begins (first pixel line). */
+  /** Frame-relative T-state at which contention begins (first ULA fetch). */
   contentionStart: number;
+  /** Frame-relative T-state of the first display pixel output.
+   *  = VBlank lines × tStatesPerLine + top border lines × tStatesPerLine.
+   *  May differ from contentionStart because the ULA fetch starts before
+   *  pixel output on some models. */
+  displayOrigin: number;
   /** How many T-states INT is held LOW at frame start. */
   intLength: number;
   /** Floating bus read offset: −1 for 48K, +1 for 128K+. */
@@ -29,6 +34,7 @@ export const TIMING_48K: MachineTiming = {
   tStatesPerFrame: 69888,   // 224 × 312
   tStatesPerLine: 224,
   contentionStart: 14335,
+  displayOrigin: 14336,     // 64 lines × 224 (8 VBlank + 56 border)
   intLength: 32,
   floatingBusAdjust: -1,
 };
@@ -38,6 +44,7 @@ export const TIMING_128K: MachineTiming = {
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
   contentionStart: 14361,
+  displayOrigin: 14364,     // 63 lines × 228 (7 VBlank + 56 border)
   intLength: 36,
   floatingBusAdjust: 1,
 };
@@ -47,6 +54,7 @@ export const TIMING_PLUS2A: MachineTiming = {
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
   contentionStart: 14364,
+  displayOrigin: 14364,     // 63 lines × 228 (7 VBlank + 56 border)
   intLength: 32,
   floatingBusAdjust: 1,
 };

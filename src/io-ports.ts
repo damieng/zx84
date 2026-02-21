@@ -82,6 +82,11 @@ export function wirePortIO(s: Spectrum): void {
         ? (port & 0xC002) === 0x4000
         : (port & 0x8002) === 0;
       if (match7FFD) {
+        if (s.multiface.pagedIn) {
+          // Sync live MF RAM before bank switch — bankSwitch() may
+          // overwrite slot 0 (ROM change), clobbering flat[0x2000-0x3FFF]
+          s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
+        }
         s.memory.bankSwitch(val);
         s.cpu.memory = s.memory.flat;
         if (s.multiface.pagedIn) {
@@ -92,6 +97,9 @@ export function wirePortIO(s: Spectrum): void {
 
       // +2A: port 0x1FFD (port & 0xF002) === 0x1000
       if (isPlus2AClass(s.model) && (port & 0xF002) === 0x1000) {
+        if (s.multiface.pagedIn) {
+          s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
+        }
         s.memory.bankSwitch1FFD(val);
         if (isPlus3(s.model)) s.fdc.motorOn = (val & 0x08) !== 0;
         s.cpu.memory = s.memory.flat;
