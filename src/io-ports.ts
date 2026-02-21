@@ -29,8 +29,17 @@ export function installMemoryHooks(s: Spectrum): void {
   // internal processing cycles get contended when the address is in
   // contended memory. On Amstrad gate array (+2A/+3), MREQ must be
   // asserted for contention, so internal cycles are never contended.
+  //
+  // Only 0x4000-0x7FFF is checked here. The Ferranti ULA directly snoops
+  // A14/A15 to contend that range. On 128K, the 0xC000+ contention is a
+  // side-effect of the banking circuit (odd banks share IC15 with the
+  // screen bank), but that circuit is gated by MREQ without RFSH — so
+  // internal cycles (including M1 refresh putting IR on the bus) don't
+  // trigger it. This matches observed behaviour: programs using I=0xFE
+  // with an odd bank at 0xC000 (very common IM 2 setup) work correctly
+  // without the extra 6T-per-M1 penalty that full isContended() would add.
   s.cpu.contend = isPlus2AClass(s.model) ? () => {} : (addr: number): void => {
-    if (contention.isContended(addr)) {
+    if (addr >= 0x4000 && addr < 0x8000) {
       s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
     }
   };

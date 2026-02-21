@@ -40,7 +40,8 @@
       "Bash(gh api:*)",
       "Bash(node -e:*)",
       "mcp__zx84__multiface",
-      "mcp__zx84__frame_trace"
+      "mcp__zx84__frame_trace",
+      "mcp__zx84__set_register"
     ]
   },
   "enabledMcpjsonServers": [
