@@ -210,15 +210,29 @@ export function wirePortIO(s: Spectrum): void {
       if (hi === 0xFA) { s.activity.mouseReads++; return s.kempstonMouse.buttons; }
     }
 
+    // MF3 port latches: the MF3 hardware snoops writes to 0x7FFD/0x1FFD
+    // and makes the latched values readable at ports 0x7F3F and 0x1F3F.
+    // These are always active when the MF3 is present, regardless of
+    // paging state, and must be checked before paging port decode.
+    if (s.multiface.enabled && s.multiface.variant === 'MF3'
+        && (port & 0xFF) === 0x3F) {
+      const hi = (port >> 8) & 0xFF;
+      if (hi === 0x7F) return s.memory.port7FFD;
+      if (hi === 0x1F) return s.memory.port1FFD;
+    }
+
     // Multiface port handling (IN-triggered paging)
     // Must come before Kempston since MF1's page-out port (0x1F) overlaps
     if (s.multiface.enabled && s.multiface.romLoaded) {
       const mfPort = s.multiface.matchPort(port);
-      if (mfPort === 'in') {
+      // Only intercept page-in when paged out, page-out when paged in.
+      // When paging state already matches, the IN falls through to normal
+      // port handling (the MF hardware is a flip-flop, not edge-triggered).
+      if (mfPort === 'in' && !s.multiface.pagedIn) {
         s.multiface.pageIn(s.cpu.memory, s.memory.slot0Bank);
         return 0xFF;
       }
-      if (mfPort === 'out') {
+      if (mfPort === 'out' && s.multiface.pagedIn) {
         s.multiface.pageOut(s.cpu.memory);
         // After pageOut, flat[0..16383] has savedSlot0 data.
         // Slots 1-3 are already correct — bankSwitch handlers updated
