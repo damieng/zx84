@@ -132,11 +132,9 @@ export class Contention {
     const isULA = (port & 1) === 0;
 
     if (isPlus2AClass(this.model)) {
-      // +2A/+3 (Amstrad gate array): simplified I/O contention.
-      // ULA ports get a single contention check; non-ULA ports get none.
-      if (isULA) {
-        cpu.tStates += this.contentionDelay(cpu.tStates);
-      }
+      // +2A/+3 (Amstrad gate array): no I/O contention.
+      // The gate array only applies contention when MREQ is active,
+      // and MREQ is not asserted during I/O operations (IORQ instead).
       return;
     }
 
