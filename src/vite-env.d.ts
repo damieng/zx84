@@ -1,1 +1,1 @@
-// no virtual modules
+declare const __APP_VERSION__: string;

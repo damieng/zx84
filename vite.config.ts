@@ -1,7 +1,7 @@
 import { defineConfig, Plugin } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
 import { resolve } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import viteCompression from 'vite-plugin-compression';
 
 // ── HMR freeze: shared state between plugins ────────────────────────────
@@ -56,7 +56,12 @@ function hmrFreezePlugin(): Plugin {
 
 // (buildTimePlugin removed — logo is static HTML)
 
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+
 export default defineConfig(({ mode }) => ({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     hmrFreezePlugin(),
     solidPlugin(),

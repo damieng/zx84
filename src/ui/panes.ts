@@ -23,6 +23,7 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'display-pane', sidebar: 'left' },
   { id: 'font-panel', sidebar: 'left' },
   { id: 'text-panel', sidebar: 'left' },
+  { id: 'changelog-panel', sidebar: 'left' },
   { id: 'sysvar-panel', sidebar: 'right' },
   { id: 'basic-panel', sidebar: 'right' },
   { id: 'basic-vars-panel', sidebar: 'right' },
@@ -53,11 +54,14 @@ function loadPaneOrder(): PanePosition[] {
   return [...DEFAULT_ORDER];
 }
 
+const DEFAULT_COLLAPSED = new Set(['changelog-panel']);
+
 function loadCollapsed(): Set<string> {
   try {
     const raw = localStorage.getItem(COLLAPSE_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch { return new Set(); }
+    if (raw) return new Set(JSON.parse(raw));
+  } catch { /* */ }
+  return new Set(DEFAULT_COLLAPSED);
 }
 
 // ── Signals ─────────────────────────────────────────────────────────────

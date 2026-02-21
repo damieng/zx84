@@ -49,6 +49,7 @@ body {
 }
 
 .logo {
+  position: relative;
   font-size: 1.6rem;
   font-family: var(--font-ui);
   font-weight: 800;
@@ -67,6 +68,17 @@ body {
     0 0 4px #f0f, 0 0 8px #f0f,
     0 0 12px #f0f, 0 0 16px #f0f;
   font-weight: 400;
+}
+
+.logo-version {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.45em;
+  font-weight: 400;
+  color: #aaa;
+  letter-spacing: 0;
 }
 
 .logo-stripe {
@@ -1351,4 +1363,17 @@ input[type="range"]::-moz-range-thumb {
 .section-label select {
   position: relative;
   z-index: 1;
+}
+
+/* Changelog */
+.changelog-version {
+  font-weight: 700;
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+.changelog-list {
+  margin: 0 0 8px 16px;
+  padding: 0;
+  font-size: 0.75rem;
+  line-height: 1.6;
 }

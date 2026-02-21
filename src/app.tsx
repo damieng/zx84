@@ -25,6 +25,7 @@ import { TapePane } from '@/components/panes/TapePane.tsx';
 import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
 import { DevPane } from '@/components/panes/DevPane.tsx';
 import { TextPane } from '@/components/panes/TextPane.tsx';
+import { ChangelogPane } from '@/components/panes/ChangelogPane.tsx';
 
 import { paneOrder } from '@/ui/panes.ts';
 import { needsGamepadPolling } from '@/store/settings.ts';
@@ -52,6 +53,7 @@ const PANE_COMPONENTS: Record<string, () => JSX.Element> = {
   'text-panel': TextPane,
   'disasm-panel': DisassemblyPane,
   'dev-panel': DevPane,
+  'changelog-panel': ChangelogPane,
 };
 
 function renderPanes(side: 'left' | 'right') {
@@ -126,7 +128,7 @@ export function App() {
         <div id="toolbar">
           <h1>
             <span class="logo-stripe" />
-            <span class="logo">ZX<span class="logo-num">84</span></span>
+            <span class="logo">ZX<span class="logo-num">84</span><span class="logo-version">v{__APP_VERSION__}</span></span>
             <span class="logo-stripe" />
           </h1>
         </div>
