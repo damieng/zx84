@@ -181,13 +181,18 @@ export function parseDSK(data: Uint8Array): DskImage {
 
 export interface DiskFormat {
   label: string;
-  sides: number;
-  tracks: number;
-  sectors: number;
-  sectorSize: number;
-  gap3: number;
-  filler: number;
-  firstSector: number;
+  sides: number;        // 1 = SS, 2 = DS
+  tracks: number;       // tracks per side
+  sectors: number;      // sectors per track
+  sectorSize: number;   // bytes per sector
+  gap3: number;         // gap length (format)
+  gapRW: number;        // gap length (read/write)
+  filler: number;       // filler byte
+  firstSector: number;  // first sector ID
+  resTracks: number;    // reserved tracks (system/boot)
+  blockShift: number;   // BSH — block size = 128 << BSH
+  dirBlocks: number;    // directory blocks
+  diskType: number;     // +3DOS disk type byte
 }
 
 function formatCapacityKB(fmt: DiskFormat): number {
@@ -197,13 +202,17 @@ function formatCapacityKB(fmt: DiskFormat): number {
 export const DISK_FORMATS: DiskFormat[] = [
   {
     label: '+3DOS / PCW CF2',
+    diskType: 0,
     sides: 1, tracks: 40, sectors: 9, sectorSize: 512,
-    gap3: 82, filler: 0xE5, firstSector: 1,
+    gapRW: 42, gap3: 82, filler: 0xE5, firstSector: 1,
+    resTracks: 1, blockShift: 3, dirBlocks: 2,
   },
   {
     label: 'PCW CF2DD',
+    diskType: 3,
     sides: 2, tracks: 80, sectors: 9, sectorSize: 512,
-    gap3: 82, filler: 0xE5, firstSector: 1,
+    gapRW: 42, gap3: 82, filler: 0xE5, firstSector: 1,
+    resTracks: 1, blockShift: 4, dirBlocks: 4,
   },
 ];
 
@@ -232,6 +241,19 @@ export function createBlankDisk(fmt: DiskFormat): DskImage {
     }
     tracks.push(sides);
   }
+
+  // Write +3DOS disk specification block into first sector of track 0
+  const bootSector = tracks[0][0]!.sectors[0].data;
+  bootSector[0] = fmt.diskType;           // disk type
+  bootSector[1] = fmt.sides === 1 ? 0 : 1; // sidedness: 0=SS, 1=DS alternating
+  bootSector[2] = fmt.tracks;             // tracks per side
+  bootSector[3] = fmt.sectors;            // sectors per track
+  bootSector[4] = sizeCode;              // sector size log (2 = 512)
+  bootSector[5] = fmt.resTracks;          // reserved tracks
+  bootSector[6] = fmt.blockShift;         // BSH
+  bootSector[7] = fmt.dirBlocks;          // directory blocks
+  bootSector[8] = fmt.gapRW;             // gap length (R/W)
+  bootSector[9] = fmt.gap3;              // gap length (format)
 
   const image: DskImage = {
     format: 'standard',
