@@ -8,6 +8,7 @@ const CHANGELOG: { version: string; items: string[] }[] = [
       'Rewritten display engine for border effects',
       'ULA contention accuracy improvements',
       'SZX saving implemented/fixed',
+      'Frame stepping in debugger added',
       'Text overlay with native fonts rewritten',
       'Tape auto-start/pause improvements',
       'Per-drive menus with New disk, save',
