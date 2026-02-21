@@ -655,12 +655,14 @@ export class Spectrum {
         if (this.nextPixelX < borderLeft) {
           ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
         }
-        // Display data — render individual cells as the beam enters each cell.
-        // The ULA reads bitmap+attr at the START of each cell's 4T display period,
-        // so we must render as soon as the beam reaches a cell's first pixel.
-        // Using nextDisplayCol prevents re-rendering (which would pick up later writes).
+        // Display data — render individual cells once the beam has fully passed them.
+        // We render a cell only when the beam has moved PAST all 8 of its pixels,
+        // not as soon as the beam enters it.  This prevents a multi-byte write
+        // (like PUSH writing two adjacent attributes) from triggering premature
+        // rendering of a cell whose data hasn't been fully written yet.
+        // The 4T (8-pixel) buffer matches the ULA's fetch-to-display pipeline.
         if (beamX > borderLeft && this.nextDisplayCol < 32) {
-          const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) >> 3) + 1);
+          const endCol = Math.min(32, (Math.min(beamX, dispEnd) - borderLeft) >> 3);
           const dy = i - borderTop;
           for (let col = this.nextDisplayCol; col < endCol; col++) {
             ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
