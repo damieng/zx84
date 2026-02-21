@@ -11,7 +11,7 @@ import { PALETTES } from '@/cores/ula.ts';
 import { saveSZX } from '@/snapshot/szx.ts';
 import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
-import { parseDSK, type DskImage } from '@/plus3/dsk.ts';
+import { parseDSK, serializeDSK, type DskImage } from '@/plus3/dsk.ts';
 import { loadSZX } from '@/snapshot/szx.ts';
 import { clearLastFile, restoreTape, restoreDisk, dbSave, dbLoad } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
@@ -728,6 +728,15 @@ export function insertBlankDisk(image: DskImage, name: string, unit: number): vo
     setCurrentDiskInfoB(image);
     setCurrentDiskNameB(name);
   }
+}
+
+export function saveDisk(unit: number): void {
+  if (!spectrum) return;
+  const image = spectrum.fdc.getDiskImage(unit);
+  if (!image) { setStatus(`No disk in drive ${unit === 0 ? 'A' : 'B'}:`); return; }
+  const name = unit === 0 ? currentDiskName() : currentDiskNameB();
+  const filename = name.replace(/\.[^.]+$/, '') + '.dsk';
+  downloadFile(serializeDSK(image), filename);
 }
 
 export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number): void {

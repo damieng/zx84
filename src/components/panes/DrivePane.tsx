@@ -6,7 +6,7 @@ import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  ejectDisk, loadFile, insertBlankDisk, spectrum,
+  ejectDisk, loadFile, insertBlankDisk, saveDisk, spectrum,
 } from '@/emulator.ts';
 import {
   diskSoundA, setDiskSoundA, diskSoundB, setDiskSoundB,
@@ -72,11 +72,13 @@ function DiskInfo(props: {
           title={`Drive ${label} options`}
           items={[
             newDiskItem,
+            { value: 'save', label: 'Save as DSK' },
             { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
             { value: 'wp', label: 'Write protect', checked: props.writeProtected },
           ]}
           onSelect={(value) => {
-            if (value === 'sound') props.onToggleSound();
+            if (value === 'save') saveDisk(props.unit);
+            else if (value === 'sound') props.onToggleSound();
             else if (value === 'wp') props.onToggleWriteProtect();
             else if (value.startsWith('new-')) {
               const fmt = DISK_FORMATS[parseInt(value.slice(4))];

@@ -177,6 +177,97 @@ export function parseDSK(data: Uint8Array): DskImage {
   return image;
 }
 
+// ── DSK serializer ──────────────────────────────────────────────────────────
+
+function writeAscii(buf: Uint8Array, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) buf[offset + i] = str.charCodeAt(i);
+}
+
+function writeU16LE(buf: Uint8Array, offset: number, val: number): void {
+  buf[offset] = val & 0xFF;
+  buf[offset + 1] = (val >> 8) & 0xFF;
+}
+
+/** Serialize a DskImage to extended DSK format bytes. */
+export function serializeDSK(image: DskImage): Uint8Array {
+  const { numTracks, numSides, tracks } = image;
+  const totalTracks = numTracks * numSides;
+
+  // First pass: compute per-track sizes (256-byte header + actual sector data)
+  const trackSizes: number[] = [];
+  for (let cyl = 0; cyl < numTracks; cyl++) {
+    for (let side = 0; side < numSides; side++) {
+      const track = tracks[cyl]?.[side];
+      if (!track || track.sectors.length === 0) {
+        trackSizes.push(0);
+      } else {
+        let dataBytes = 0;
+        for (const s of track.sectors) dataBytes += s.data.length;
+        trackSizes.push(256 + dataBytes);
+      }
+    }
+  }
+
+  let fileSize = 256; // disk info block
+  for (const ts of trackSizes) fileSize += ts;
+  const buf = new Uint8Array(fileSize);
+
+  // Disk Information Block (256 bytes)
+  writeAscii(buf, 0, 'EXTENDED CPC DSK File\r\nDisk-Info\r\n');
+  writeAscii(buf, 0x22, 'ZX84\0');
+  buf[0x30] = numTracks;
+  buf[0x31] = numSides;
+  // 0x32-0x33 unused in extended format
+  // Track size table at 0x34: each byte = track size / 256
+  for (let i = 0; i < totalTracks; i++) {
+    buf[0x34 + i] = Math.ceil(trackSizes[i] / 256);
+  }
+
+  // Write each track
+  let offset = 256;
+  let trackIdx = 0;
+  for (let cyl = 0; cyl < numTracks; cyl++) {
+    for (let side = 0; side < numSides; side++) {
+      const track = tracks[cyl]?.[side];
+      if (trackSizes[trackIdx] === 0) { trackIdx++; continue; }
+
+      // Track Information Block header
+      writeAscii(buf, offset, 'Track-Info\r\n');
+      buf[offset + 0x10] = cyl;
+      buf[offset + 0x11] = side;
+      buf[offset + 0x14] = track!.sectors[0]?.n ?? 2;
+      buf[offset + 0x15] = track!.sectors.length;
+      buf[offset + 0x16] = track!.gap3;
+      buf[offset + 0x17] = track!.filler;
+
+      // Sector Information List
+      for (let i = 0; i < track!.sectors.length; i++) {
+        const s = track!.sectors[i];
+        const sib = offset + 0x18 + i * 8;
+        buf[sib + 0] = s.c;
+        buf[sib + 1] = s.h;
+        buf[sib + 2] = s.r;
+        buf[sib + 3] = s.n;
+        buf[sib + 4] = s.st1;
+        buf[sib + 5] = s.st2;
+        writeU16LE(buf, sib + 6, s.data.length);
+      }
+
+      // Sector data
+      let dataOff = offset + 256;
+      for (const s of track!.sectors) {
+        buf.set(s.data, dataOff);
+        dataOff += s.data.length;
+      }
+
+      offset += trackSizes[trackIdx];
+      trackIdx++;
+    }
+  }
+
+  return buf;
+}
+
 // ── Blank disk creation ─────────────────────────────────────────────────────
 
 export interface DiskFormat {
