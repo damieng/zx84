@@ -648,7 +648,9 @@ export class Z80 {
     if (this.halted) {
       // HALT repeats a NOP-like M1 fetch from PC — apply contention
       this.read8(this.pc);
-      this.tStates += 4;
+      this.tStates += 3;              // M1 fetch cycle
+      this.contend(this.ir);          // IR contention during refresh (T3-T4)
+      this.tStates += 1;              // M1 refresh cycle
       this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
       return 4;
     }
@@ -657,6 +659,7 @@ export class Z80 {
     this._prevQ = this._qReg;
     this._qReg = 0;
     const opcode = this.fetch8();      // +3T (M1 read)
+    this.contend(this.ir);             // IR contention during refresh (T3-T4)
     this.tStates += 1;                 // +1T (M1 refresh cycle)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
@@ -1139,6 +1142,7 @@ export class Z80 {
 
   executeCB(): void {
     const op = this.fetch8();      // +3T (M1 read)
+    this.contend(this.ir);         // IR contention during refresh (T3-T4)
     this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
@@ -1231,6 +1235,7 @@ export class Z80 {
 
   executeED(): void {
     const op = this.fetch8();      // +3T (M1 read)
+    this.contend(this.ir);         // IR contention during refresh (T3-T4)
     this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
@@ -1617,6 +1622,7 @@ export class Z80 {
 
   executeDD(): void {
     const op = this.fetch8();      // +3T (M1 read)
+    this.contend(this.ir);         // IR contention during refresh (T3-T4)
     this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 
@@ -1731,6 +1737,7 @@ export class Z80 {
 
   executeFD(): void {
     const op = this.fetch8();      // +3T (M1 read)
+    this.contend(this.ir);         // IR contention during refresh (T3-T4)
     this.tStates += 1;             // +1T (M1 refresh)
     this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
 

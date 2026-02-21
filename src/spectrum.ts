@@ -168,6 +168,8 @@ export class Spectrum {
   private _tapeTurboActive = false;
   /** Frames remaining before tape turbo disengages (cooldown) */
   private _tapeTurboCooldown = 0;
+  /** Frames remaining before tape auto-pauses due to inactivity */
+  private _tapeAutoPauseCooldown = 0;
 
   /** Breakpoints (checked every instruction in runFrame) */
   breakpoints = new Set<number>();
@@ -476,17 +478,23 @@ export class Spectrum {
         if (this.tape.paused) {
           this.tape.paused = false;
           this.tape.startPlayback();
+          this._tapeAutoPauseCooldown = 50;
         }
         trapTapeLoad(this.cpu, this.tape);
         this.tape.skipBlock(); // advance player past the consumed block
         this.cpu.tStates += 2168; // nominal T-states for trapped load
       } else if (this.cpu.halted) {
-        // HALT repeats NOP-like M1 fetches from PC.  If PC is in contended
-        // memory each cycle gets a ULA delay; otherwise we can fast-skip.
-        if (this.contention.isContended(this.cpu.pc)) {
+        // HALT repeats NOP-like M1 fetches from PC.  If PC or IR is in
+        // contended memory each cycle gets a ULA delay; otherwise we can
+        // fast-skip.  IR contention applies during the M1 refresh cycle
+        // (T3-T4 put IR on the address bus).
+        const irContended = this.contention.isContended(this.cpu.ir);
+        if (this.contention.isContended(this.cpu.pc) || irContended) {
           // Step one NOP at a time so contention is applied correctly
           this.cpu.read8(this.cpu.pc);
-          this.cpu.tStates += 4;
+          this.cpu.tStates += 3;  // M1 fetch cycle
+          this.cpu.contend(this.cpu.ir);  // IR contention during refresh
+          this.cpu.tStates += 1;  // M1 refresh cycle
           this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + 1) & 0x7F);
         } else {
           const toFrameEnd = frameEnd - this.cpu.tStates;
@@ -555,6 +563,10 @@ export class Spectrum {
       } else if (this._tapeTurboActive) {
         if (--this._tapeTurboCooldown <= 0) {
           this._tapeTurboActive = false;
+          // Auto-pause tape: loader has stopped reading EAR, so the
+          // program has finished loading.  Pausing prevents the tape
+          // from advancing through remaining blocks uselessly.
+          this.tape.paused = true;
           // Reset audio state so playback resumes cleanly
           this.mixer.reset();
         }
@@ -563,6 +575,22 @@ export class Spectrum {
       // Tape finished or turbo disabled — disengage immediately
       this._tapeTurboActive = false;
       this.mixer.reset();
+    }
+
+    // General tape auto-pause: if the tape is playing and nobody is reading
+    // EAR or triggering ROM tape loads, auto-pause after a cooldown.
+    // This catches cases where instant-load finishes but turbo was never engaged,
+    // or turbo is disabled entirely.
+    if (this.tape.loaded && this.tape.playing && !this.tape.paused && !this.tape.finished) {
+      if (this.activity.earReads > 0 || this.activity.tapeLoads > 0) {
+        this._tapeAutoPauseCooldown = 50; // ~1s at 50Hz
+      } else if (this._tapeAutoPauseCooldown > 0) {
+        if (--this._tapeAutoPauseCooldown <= 0) {
+          this.tape.paused = true;
+        }
+      }
+    } else {
+      this._tapeAutoPauseCooldown = 0;
     }
 
     // Adjust loader detector T-state tracking across frame boundary

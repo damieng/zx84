@@ -572,7 +572,7 @@ function downloadFile(data: Uint8Array, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function saveSnapshot(format: 'z80' | 'szx' = 'szx'): void {
+export async function saveSnapshot(format: 'z80' | 'szx' = 'szx'): Promise<void> {
   if (!spectrum) { setStatus('No machine running'); return; }
 
   const wasPaused = emulationPaused();
@@ -583,7 +583,7 @@ export function saveSnapshot(format: 'z80' | 'szx' = 'szx'): void {
 
   if (format === 'szx') {
     const ayRegs = spectrum.ay.getRegisters();
-    data = saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, ayRegs, spectrum.ay.selectedReg);
+    data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, ayRegs, spectrum.ay.selectedReg);
   } else {
     // .z80 format
     data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, is128kClass(currentModel()));
@@ -938,7 +938,7 @@ export function initAudio(): void {
 
 const HMR_STATE_KEY = 'zx84-hmr-state';
 
-export function saveHMRState(): void {
+export async function saveHMRState(): Promise<void> {
   if (!spectrum || !romData) return;
 
   try {
@@ -948,7 +948,7 @@ export function saveHMRState(): void {
 
     // Save snapshot data as SZX
     const ayRegs = spectrum.ay.getRegisters();
-    const szxData = saveSZX(
+    const szxData = await saveSZX(
       spectrum.cpu,
       spectrum.memory,
       spectrum.ula.borderColor,

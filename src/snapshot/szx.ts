@@ -38,6 +38,35 @@ function blockId(d: Uint8Array, o: number): string {
   return String.fromCharCode(d[o], d[o + 1], d[o + 2], d[o + 3]);
 }
 
+/** Deflate data using browser CompressionStream. */
+async function deflate(raw: Uint8Array): Promise<Uint8Array> {
+  const cs = new CompressionStream('deflate');
+  const writer = cs.writable.getWriter();
+  const reader = cs.readable.getReader();
+
+  writer.write(raw as unknown as BufferSource);
+  writer.close();
+
+  const chunks: Uint8Array[] = [];
+  let totalLen = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    totalLen += value.byteLength;
+  }
+
+  if (chunks.length === 1) return chunks[0];
+
+  const result = new Uint8Array(totalLen);
+  let off = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, off);
+    off += chunk.byteLength;
+  }
+  return result;
+}
+
 /** Inflate zlib (deflate) data using browser DecompressionStream. */
 async function inflate(compressed: Uint8Array): Promise<Uint8Array> {
   const ds = new DecompressionStream('deflate');
@@ -281,14 +310,36 @@ function writeBlockHeader(data: Uint8Array, offset: number, id: string, size: nu
   return offset + 8;
 }
 
-export function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Uint8Array {
-  // Calculate total size:
-  // Header: 8 bytes
-  // Z80R: 8 (block header) + 37 (data) = 45
-  // SPCR: 8 + 4 = 12
-  // RAMP × 8: 8 × (8 + 3 + 16384) = 131144
-  // AY (optional): 8 + 18 = 26
-  const totalSize = 8 + 45 + 12 + (8 * (8 + 3 + 16384)) + (ayRegs ? 26 : 0);
+export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
+  // Flush live flat[] data back to ramBanks[] before serialising
+  memory.saveToRAMBanks();
+
+  // For 48K, only pages 0, 2, 5 are used. For 128K, all 8.
+  const pages = memory.is128K
+    ? [0, 1, 2, 3, 4, 5, 6, 7]
+    : [0, 2, 5];
+
+  // Compress each page
+  const compressedPages: { page: number; data: Uint8Array; compressed: boolean }[] = [];
+  for (const page of pages) {
+    const raw = memory.ramBanks[page];
+    const zipped = await deflate(raw);
+    // Only use compressed version if it's actually smaller
+    if (zipped.length < raw.length) {
+      compressedPages.push({ page, data: zipped, compressed: true });
+    } else {
+      compressedPages.push({ page, data: raw, compressed: false });
+    }
+  }
+
+  // Calculate total size
+  const headerSize = 8;
+  const z80rSize = 8 + 37;
+  const spcrSize = 8 + 4;
+  const rampSize = compressedPages.reduce((sum, p) => sum + 8 + 3 + p.data.length, 0);
+  const aySize = ayRegs ? 8 + 18 : 0;
+  const totalSize = headerSize + z80rSize + spcrSize + rampSize + aySize;
+
   const data = new Uint8Array(totalSize);
   let offset = 0;
 
@@ -336,13 +387,13 @@ export function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, a
   data[offset++] = (borderColor & 0x07) << 1; // portFE
 
   // ── RAMP blocks (RAM pages) ─────────────────────────────────────────
-  for (let page = 0; page < 8; page++) {
-    offset = writeBlockHeader(data, offset, 'RAMP', 3 + 16384);
-    w16(data, offset, 0); // wFlags: 0 = uncompressed
+  for (const { page, data: pageData, compressed } of compressedPages) {
+    offset = writeBlockHeader(data, offset, 'RAMP', 3 + pageData.length);
+    w16(data, offset, compressed ? 1 : 0); // wFlags: bit 0 = zlib compressed
     offset += 2;
     data[offset++] = page; // chPageNo
-    data.set(memory.ramBanks[page], offset);
-    offset += 16384;
+    data.set(pageData, offset);
+    offset += pageData.length;
   }
 
   // ── AY block (AY chip state) ────────────────────────────────────────

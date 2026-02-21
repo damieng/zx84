@@ -39,7 +39,8 @@
       "mcp__zx84__type",
       "Bash(gh api:*)",
       "Bash(node -e:*)",
-      "mcp__zx84__multiface"
+      "mcp__zx84__multiface",
+      "mcp__zx84__frame_trace"
     ]
   },
   "enabledMcpjsonServers": [
