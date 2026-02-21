@@ -132,6 +132,7 @@ export class Spectrum {
   private nextRenderLine = 0;
   private nextRenderT = 0;
   private nextPixelX = 0;
+  private nextDisplayCol = 0;  // next unrendered display cell (0..32) on current line
   private totalRenderLines = 0;
   /** Execution trace */
   private _tracing = false;
@@ -453,6 +454,7 @@ export class Spectrum {
     this.totalRenderLines = borderTop * 2 + 192;
     this.nextRenderLine = 0;
     this.nextPixelX = 0;
+    this.nextDisplayCol = 0;
     // displayOrigin = T-state of the first display pixel (varies by model).
     // Left border starts borderLeft/2 T-states before that on each line.
     this.nextRenderT = this.contention.frameStartTStates
@@ -587,10 +589,9 @@ export class Spectrum {
             this.ula.fillBorder(i, this.nextPixelX, borderLeft2, this.ula.borderColor);
           }
           // Render any remaining display cells not yet drawn
-          if (this.nextPixelX < dispEnd) {
-            const startCol = Math.max(0, (this.nextPixelX - borderLeft2) >> 3);
+          if (this.nextDisplayCol < 32) {
             const dy = i - borderTop;
-            for (let col = startCol; col < 32; col++) {
+            for (let col = this.nextDisplayCol; col < 32; col++) {
               this.ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
             }
           }
@@ -602,6 +603,7 @@ export class Spectrum {
         }
         this.nextRenderLine++;
         this.nextPixelX = 0;
+        this.nextDisplayCol = 0;
       }
     }
 
@@ -639,14 +641,17 @@ export class Spectrum {
         if (this.nextPixelX < borderLeft) {
           ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
         }
-        // Display data — render individual cells as beam crosses each 8px boundary
-        if (beamX > borderLeft && this.nextPixelX < dispEnd) {
-          const startCol = Math.max(0, (this.nextPixelX - borderLeft) >> 3);
-          const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) + 7) >> 3);
+        // Display data — render individual cells as the beam enters each cell.
+        // The ULA reads bitmap+attr at the START of each cell's 4T display period,
+        // so we must render as soon as the beam reaches a cell's first pixel.
+        // Using nextDisplayCol prevents re-rendering (which would pick up later writes).
+        if (beamX > borderLeft && this.nextDisplayCol < 32) {
+          const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) >> 3) + 1);
           const dy = i - borderTop;
-          for (let col = startCol; col < endCol; col++) {
+          for (let col = this.nextDisplayCol; col < endCol; col++) {
             ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
           }
+          this.nextDisplayCol = endCol;
         }
         // Right border portion
         if (beamX > dispEnd && this.nextPixelX < w) {
@@ -661,6 +666,7 @@ export class Spectrum {
       if (this.nextPixelX >= w) {
         this.nextRenderLine++;
         this.nextPixelX = 0;
+        this.nextDisplayCol = 0;
         this.nextRenderT += tpl;
       } else {
         break; // beam is mid-line, wait for more T-states
