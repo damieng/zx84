@@ -64,8 +64,8 @@ export class ULA {
   private pixels32: Uint32Array;
 
   /** Border dimensions */
-  private borderLeft = 32;
-  private borderTop = 32;
+  private borderLeft = 48;
+  private borderTop = 48;
   screenWidth = SCREEN_WIDTH;
   screenHeight = SCREEN_HEIGHT;
 

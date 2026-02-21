@@ -43,11 +43,14 @@ export class Multiface {
 
   /** Saved slot-0 contents so we can restore on page-out */
   private savedSlot0 = new Uint8Array(16384);
+  /** RAM bank that was at slot 0 when savedSlot0 was captured (-1 = ROM) */
+  savedSlot0Bank = -1;
 
   reset(): void {
     this.pagedIn = false;
     this.mfRam.fill(0);
     this.savedSlot0.fill(0);
+    this.savedSlot0Bank = -1;
   }
 
   loadROM(data: Uint8Array): void {
@@ -56,11 +59,13 @@ export class Multiface {
   }
 
   /** Overlay MF ROM+RAM into flat memory slot 0.
-   *  Saves the current slot 0 contents first. */
-  pageIn(flat: Uint8Array): void {
+   *  Saves the current slot 0 contents first.
+   *  @param slot0Bank RAM bank at slot 0 (-1 = ROM) for tracking. */
+  pageIn(flat: Uint8Array, slot0Bank = -1): void {
     if (this.pagedIn) return;
-    // Save current slot 0
+    // Save current slot 0 and what bank it came from
     this.savedSlot0.set(flat.subarray(0, 16384));
+    this.savedSlot0Bank = slot0Bank;
     // Overlay MF ROM at 0x0000-0x1FFF, MF RAM at 0x2000-0x3FFF
     flat.set(this.mfRom, 0);
     flat.set(this.mfRam, 0x2000);
@@ -79,9 +84,9 @@ export class Multiface {
   }
 
   /** Press the red button: page in then trigger NMI. */
-  pressButton(flat: Uint8Array, cpu: Z80): void {
+  pressButton(flat: Uint8Array, cpu: Z80, slot0Bank = -1): void {
     if (!this.enabled || !this.romLoaded) return;
-    this.pageIn(flat);
+    this.pageIn(flat, slot0Bank);
     cpu.nmi();
   }
 

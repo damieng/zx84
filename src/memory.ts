@@ -155,6 +155,14 @@ export class SpectrumMemory {
     return [-1, 5, 2, this.currentBank];
   }
 
+  /** Return the RAM bank at slot 0, or -1 for ROM (normal paging). */
+  get slot0Bank(): number {
+    if (this.specialPaging) {
+      return SPECIAL_MODES[(this.port1FFD >> 1) & 3][0];
+    }
+    return -1;
+  }
+
   // ── Port writes (minimal-copy bank switching) ────────────────────────
 
   /**
@@ -204,11 +212,12 @@ export class SpectrumMemory {
    * Handle port 0x1FFD write.  Diffs old vs new slot assignments and
    * only copies the slots that actually change.
    */
-  bankSwitch1FFD(val: number): void {
+  bankSwitch1FFD(val: number, skipSlot0 = false): void {
     if (!this.is128K || this.pagingLocked) return;
 
     const oldSlots = this.currentSlots();
     const wasSpecial = this.specialPaging;
+    const oldROM = this.currentROM;
 
     // Apply new state
     this.port1FFD = val;
@@ -222,6 +231,9 @@ export class SpectrumMemory {
     // Diff each of the 4 slots; save old, load new where they differ
     const bases = [0x0000, 0x4000, 0x8000, 0xC000];
     for (let i = 0; i < 4; i++) {
+      // skipSlot0: when Multiface overlay occupies flat[0..16383],
+      // saving/loading slot 0 would corrupt ramBanks with MF data.
+      if (i === 0 && skipSlot0) continue;
       if (oldSlots[i] === newSlots[i]) continue;
       // Save outgoing RAM bank (skip ROM sentinel -1)
       if (oldSlots[i] >= 0) this.saveSlot(bases[i], oldSlots[i]);
@@ -235,12 +247,9 @@ export class SpectrumMemory {
     }
 
     // Edge case: switching normal→normal with ROM change but same slot banks
-    if (!wasSpecial && !this.specialPaging) {
-      // ROM might have changed via bit 2 affecting currentROM
-      const romPage = this.romPages[this.currentROM];
-      if (oldSlots[0] < 0 && newSlots[0] < 0) {
-        // Both ROM — check if ROM page actually changed
-        this.flat.set(romPage, 0);
+    if (!wasSpecial && !this.specialPaging && !skipSlot0) {
+      if (oldSlots[0] < 0 && newSlots[0] < 0 && this.currentROM !== oldROM) {
+        this.flat.set(this.romPages[this.currentROM], 0);
       }
     }
   }
@@ -273,11 +282,14 @@ export class SpectrumMemory {
    * Flush all mapped RAM slots from flat[] back to ramBanks[].
    * Used before serialising state (e.g. SNA save).
    */
-  saveToRAMBanks(): void {
+  saveToRAMBanks(skipSlot0 = false): void {
     if (this.specialPaging) {
       const mode = (this.port1FFD >> 1) & 3;
       const banks = SPECIAL_MODES[mode];
-      for (let i = 0; i < 4; i++) this.saveSlot(i * 0x4000, banks[i]);
+      for (let i = 0; i < 4; i++) {
+        if (i === 0 && skipSlot0) continue;
+        this.saveSlot(i * 0x4000, banks[i]);
+      }
       return;
     }
 

@@ -100,7 +100,7 @@ export function wirePortIO(s: Spectrum): void {
         if (s.multiface.pagedIn) {
           s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
         }
-        s.memory.bankSwitch1FFD(val);
+        s.memory.bankSwitch1FFD(val, s.multiface.pagedIn);
         if (isPlus3(s.model)) s.fdc.motorOn = (val & 0x08) !== 0;
         s.cpu.memory = s.memory.flat;
         if (s.multiface.pagedIn) {
@@ -215,15 +215,31 @@ export function wirePortIO(s: Spectrum): void {
     if (s.multiface.enabled && s.multiface.romLoaded) {
       const mfPort = s.multiface.matchPort(port);
       if (mfPort === 'in') {
-        s.multiface.pageIn(s.cpu.memory);
+        s.multiface.pageIn(s.cpu.memory, s.memory.slot0Bank);
         return 0xFF;
       }
       if (mfPort === 'out') {
         s.multiface.pageOut(s.cpu.memory);
-        // Sync flat[] back to ramBanks before rebuilding — CPU writes
-        // go to flat[] only, so ramBanks may be stale.
-        s.memory.saveToRAMBanks();
-        s.memory.applyBanking();
+        // After pageOut, flat[0..16383] has savedSlot0 data.
+        // Slots 1-3 are already correct — bankSwitch handlers updated
+        // them in real-time during MF operation. Only slot 0 needs fixing.
+        const currentSlot0 = s.memory.slot0Bank;
+        const saved0Bank = s.multiface.savedSlot0Bank;
+        if (saved0Bank >= 0 && saved0Bank === currentSlot0) {
+          // savedSlot0 is valid RAM bank data for current banking —
+          // sync it to ramBanks so future bank switches see it.
+          s.memory.ramBanks[saved0Bank].set(
+            s.cpu.memory.subarray(0, 0x4000));
+        }
+        // Fix slot 0 for the current banking state
+        if (currentSlot0 < 0) {
+          // Normal paging: slot 0 should have ROM
+          s.cpu.memory.set(s.memory.romPages[s.memory.currentROM], 0);
+        } else if (saved0Bank !== currentSlot0) {
+          // Special paging with different bank — load correct one
+          s.cpu.memory.set(s.memory.ramBanks[currentSlot0], 0);
+        }
+        // (else: savedSlot0 data is already correct for this bank)
         s.cpu.memory = s.memory.flat;
         // MF1 shares 0x1F with Kempston — return joystick state
         if (s.multiface.variant === 'MF1') return s.joystick.state;

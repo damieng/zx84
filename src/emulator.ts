@@ -816,7 +816,7 @@ export function triggerNMI(): void {
   const flat = spectrum.cpu.memory;
   console.log('[MF] Before pageIn: flat[0x66]=%s pagedIn=%s',
     flat[0x66].toString(16), mf.pagedIn);
-  mf.pressButton(flat, spectrum.cpu);
+  mf.pressButton(flat, spectrum.cpu, spectrum.memory.slot0Bank);
   console.log('[MF] After pressButton: flat[0x66]=%s PC=%s pagedIn=%s',
     flat[0x66].toString(16), spectrum.cpu.pc.toString(16), mf.pagedIn);
   // Verify flat is still the live CPU memory

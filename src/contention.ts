@@ -53,19 +53,26 @@ export const TIMING_PLUS2A: MachineTiming = {
   cpuClock: 3546900,
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
-  contentionStart: 14364,
-  displayOrigin: 14364,     // 63 lines × 228 (7 VBlank + 56 border)
+  contentionStart: 14361,   // same as 128K — ULA fetch starts here
+  displayOrigin: 14365,     // first pixel 4T after contention start (Amstrad ASIC)
   intLength: 32,
   floatingBusAdjust: 1,
 };
 
-/** ULA contention delay pattern — indexed by (T-state mod 8). */
-const CONTENTION_PATTERN = new Uint8Array([6, 5, 4, 3, 2, 1, 0, 0]);
+/** Ferranti ULA contention pattern (48K/128K/+2) — indexed by (T-state mod 8).
+ *  Max delay 6.  Phase: 6,5,4,3,2,1,0,0 aligned to contentionStart. */
+const CONTENTION_FERRANTI = new Uint8Array([6, 5, 4, 3, 2, 1, 0, 0]);
+
+/** Amstrad gate array contention pattern (+2A/+3) — indexed by (T-state mod 8).
+ *  Max delay 7.  The 8-cycle [7,6,5,4,3,2,1,0] starts 2T after contentionStart
+ *  so at contentionStart the phase is already 6 → delays 1,0,7,6,5,4,3,2. */
+const CONTENTION_AMSTRAD = new Uint8Array([1, 0, 7, 6, 5, 4, 3, 2]);
 
 export class Contention {
   readonly timing: MachineTiming;
   private model: SpectrumModel;
   private memory: SpectrumMemory;
+  private contentionPattern: Uint8Array;
 
   /** T-state counter at start of current frame (set by Spectrum each frame). */
   frameStartTStates = 0;
@@ -76,6 +83,7 @@ export class Contention {
     this.timing = isPlus2AClass(model) ? TIMING_PLUS2A
                : is128kClass(model)  ? TIMING_128K
                :                       TIMING_48K;
+    this.contentionPattern = isPlus2AClass(model) ? CONTENTION_AMSTRAD : CONTENTION_FERRANTI;
   }
 
   /** True if the given address is in ULA-contended memory. */
@@ -103,7 +111,7 @@ export class Contention {
     if (line >= 192) return 0;
     const col = offset - line * t.tStatesPerLine;
     if (col >= 128) return 0;
-    return CONTENTION_PATTERN[col & 7];
+    return this.contentionPattern[col & 7];
   }
 
   /**
