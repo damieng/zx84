@@ -2,7 +2,7 @@ import { Pane } from '@/components/Pane.tsx';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
-    version: '0.2.0',
+    version: '0.2.1',
     items: [
       'Noise display pattern for that retro vibe',
     ]

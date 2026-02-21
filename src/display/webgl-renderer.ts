@@ -21,20 +21,40 @@ const VERT_SRC = `
   }
 `;
 
-// ── Pass 1: upscale with optional smoothing ──
-const FRAG_UPSCALE = `
+// ── Pass 1 shaders: pixel upscaling algorithms ──
+//
+// Each shader reads from the emulator source texture (NEAREST filtered)
+// and writes to the FBO at display resolution. All shaders receive:
+//   u_tex      — source texture
+//   u_texSize  — source dimensions (e.g. 352, 288)
+//   u_smoothing — 0..1 blending parameter (used by modes 0 and 1)
+
+// Shared preamble for all upscale shaders
+const UPSCALE_HEAD = `
   precision mediump float;
   varying vec2 v_uv;
   uniform sampler2D u_tex;
   uniform vec2 u_texSize;
-  uniform float u_smoothing;   // 0 = nearest, 1 = full bilinear
+  uniform float u_smoothing;
+`;
 
+// Helper: sample a texel by integer pixel coordinate
+const TEX_FETCH = `
+  vec4 T(vec2 p) { return texture2D(u_tex, (floor(p) + 0.5) / u_texSize); }
+`;
+
+// Helper: luminance for color distance comparisons (xBR, Scale3x)
+const LUMINANCE = `
+  float luma(vec4 c) { return dot(c.rgb, vec3(0.299, 0.587, 0.114)); }
+`;
+
+// 0: Nearest / Bilinear (original shader, controlled by smoothing slider)
+const FRAG_UPSCALE = UPSCALE_HEAD + `
   void main() {
     if (u_smoothing <= 0.0) {
       gl_FragColor = texture2D(u_tex, v_uv);
       return;
     }
-    // Manual 4-tap bilinear (texture stays NEAREST)
     vec2 texel = v_uv * u_texSize - 0.5;
     vec2 f = fract(texel);
     vec2 base = (floor(texel) + 0.5) / u_texSize;
@@ -48,6 +68,748 @@ const FRAG_UPSCALE = `
     gl_FragColor = mix(nearest, bilinear, u_smoothing);
   }
 `;
+
+// ── Shared helpers for HQ / Scale / xBR shaders ──
+
+// YUV-weighted color distance — matches the original HQ2x algorithm's
+// perceptual color comparison.  The weights emphasise luma differences
+// and de-emphasise chroma, so edges are detected on brightness boundaries
+// rather than hue boundaries.
+const HQ_COMMON = TEX_FETCH + `
+  float cdist(vec4 a, vec4 b) {
+    vec3 d = a.rgb - b.rgb;
+    float y = dot(d, vec3( 0.299,  0.587,  0.114));
+    float u = dot(d, vec3(-0.169, -0.331,  0.500));
+    float v = dot(d, vec3( 0.500, -0.419, -0.081));
+    return y*y*48.0 + u*u*7.0 + v*v*6.0;
+  }
+  bool diff(vec4 a, vec4 b) { return cdist(a, b) > 0.6; }
+`;
+
+// 1: HQ2x — high-quality 2x with smooth anti-aliased diagonals.
+// Each source pixel maps to a 2x2 output block.  Edge-directed blending
+// produces the characteristic HQ smooth curves on diagonal edges while
+// keeping horizontal/vertical edges and flat areas perfectly sharp.
+const FRAG_HQ2X = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    // Classify the 8 neighbors: same or different from E?
+    bool eqB = !diff(E,B), eqD = !diff(E,D);
+    bool eqF = !diff(E,F), eqH = !diff(E,H);
+    bool eqA = !diff(E,A), eqC = !diff(E,C);
+    bool eqG = !diff(E,G), eqI = !diff(E,I);
+    // Cross-neighbor similarities (for edge continuity tests)
+    bool dbSim = !diff(D,B), bfSim = !diff(B,F);
+    bool dhSim = !diff(D,H), hfSim = !diff(H,F);
+
+    vec4 result = E;
+
+    if (f.y < 0.5) {
+      if (f.x < 0.5) {
+        // ── E0 (top-left) — influenced by D, B, A ──
+        if (dbSim && !eqD && !eqB) {
+          // Diagonal edge: D and B form edge against E
+          vec4 edge = mix(D, B, 0.5);
+          // If E already matches the diagonal corner, mild blend;
+          // otherwise stronger blend for anti-aliasing
+          result = eqA ? mix(E, edge, 0.25) : mix(E, edge, 0.5);
+        } else if (!eqD && !eqB) {
+          // Both D and B differ from E — possible isolated corner
+          if (dbSim) result = mix(E, mix(D,B,0.5), 0.375);
+          else if (!diff(D,A) && !diff(B,A)) result = mix(E, A, 0.125);
+        } else if (eqD && !eqB && !diff(D,A)) {
+          // Vertical edge, E on D's side — sub-pixel AA
+          result = mix(E, D, 0.0625);
+        } else if (eqB && !eqD && !diff(B,A)) {
+          // Horizontal edge, E on B's side
+          result = mix(E, B, 0.0625);
+        }
+      } else {
+        // ── E1 (top-right) — influenced by B, F, C ──
+        if (bfSim && !eqB && !eqF) {
+          vec4 edge = mix(B, F, 0.5);
+          result = eqC ? mix(E, edge, 0.25) : mix(E, edge, 0.5);
+        } else if (!eqB && !eqF) {
+          if (bfSim) result = mix(E, mix(B,F,0.5), 0.375);
+          else if (!diff(B,C) && !diff(F,C)) result = mix(E, C, 0.125);
+        } else if (eqB && !eqF && !diff(B,C)) {
+          result = mix(E, B, 0.0625);
+        } else if (eqF && !eqB && !diff(F,C)) {
+          result = mix(E, F, 0.0625);
+        }
+      }
+    } else {
+      if (f.x < 0.5) {
+        // ── E2 (bottom-left) — influenced by D, H, G ──
+        if (dhSim && !eqD && !eqH) {
+          vec4 edge = mix(D, H, 0.5);
+          result = eqG ? mix(E, edge, 0.25) : mix(E, edge, 0.5);
+        } else if (!eqD && !eqH) {
+          if (dhSim) result = mix(E, mix(D,H,0.5), 0.375);
+          else if (!diff(D,G) && !diff(H,G)) result = mix(E, G, 0.125);
+        } else if (eqD && !eqH && !diff(D,G)) {
+          result = mix(E, D, 0.0625);
+        } else if (eqH && !eqD && !diff(H,G)) {
+          result = mix(E, H, 0.0625);
+        }
+      } else {
+        // ── E3 (bottom-right) — influenced by F, H, I ──
+        if (hfSim && !eqF && !eqH) {
+          vec4 edge = mix(H, F, 0.5);
+          result = eqI ? mix(E, edge, 0.25) : mix(E, edge, 0.5);
+        } else if (!eqF && !eqH) {
+          if (hfSim) result = mix(E, mix(H,F,0.5), 0.375);
+          else if (!diff(H,I) && !diff(F,I)) result = mix(E, I, 0.125);
+        } else if (eqH && !eqF && !diff(H,I)) {
+          result = mix(E, H, 0.0625);
+        } else if (eqF && !eqH && !diff(F,I)) {
+          result = mix(E, F, 0.0625);
+        }
+      }
+    }
+
+    gl_FragColor = result;
+  }
+`;
+
+// 2: HQ3x — high-quality 3x with smooth blending.
+// Uses the same edge pattern detection as Scale3x (which works well) but
+// applies weighted blending instead of hard color selection, producing
+// the characteristic HQ smooth curves and anti-aliased diagonals.
+const FRAG_HQ3X = UPSCALE_HEAD + HQ_COMMON + LUMINANCE + `
+  bool eq(vec4 a, vec4 b) { return !diff(a, b); }
+  bool ne(vec4 a, vec4 b) { return diff(a, b); }
+
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    // Scale3x-style edge detection with blend weights
+    // Corners get strong blending, cardinals get mild blending,
+    // center always stays E.
+
+    // Blend weights: corner = 0.75, cardinal = 0.5, center = 0
+    // These produce smooth anti-aliased curves characteristic of HQ filters
+
+    vec4 e0 = E, e1 = E, e2 = E;
+    vec4 e3 = E, e4 = E, e5 = E;
+    vec4 e6 = E, e7 = E, e8 = E;
+
+    if (ne(D,F) && ne(B,H)) {
+      // Corner blends (e0, e2, e6, e8) — strongest
+      if (eq(D,B)) e0 = mix(E, D, 0.75);
+      if (eq(B,F)) e2 = mix(E, F, 0.75);
+      if (eq(D,H)) e6 = mix(E, D, 0.75);
+      if (eq(H,F)) e8 = mix(E, F, 0.75);
+
+      // Cardinal blends (e1, e3, e5, e7) — milder
+      if      (eq(D,B) && ne(E,C))  e1 = mix(E, B, 0.5);
+      else if (eq(B,F) && ne(E,A))  e1 = mix(E, B, 0.5);
+      if      (eq(D,B) && ne(E,G))  e3 = mix(E, D, 0.5);
+      else if (eq(D,H) && ne(E,A))  e3 = mix(E, D, 0.5);
+      if      (eq(B,F) && ne(E,I))  e5 = mix(E, F, 0.5);
+      else if (eq(H,F) && ne(E,C))  e5 = mix(E, F, 0.5);
+      if      (eq(D,H) && ne(E,I))  e7 = mix(E, H, 0.5);
+      else if (eq(H,F) && ne(E,G))  e7 = mix(E, H, 0.5);
+    }
+
+    // Map fractional position to one of 9 sub-pixels (3x3 grid)
+    int sx = int(f.x * 3.0);
+    int sy = int(f.y * 3.0);
+    if (sx > 2) sx = 2;
+    if (sy > 2) sy = 2;
+
+    vec4 result = e4;
+    if      (sy == 0 && sx == 0) result = e0;
+    else if (sy == 0 && sx == 1) result = e1;
+    else if (sy == 0 && sx == 2) result = e2;
+    else if (sy == 1 && sx == 0) result = e3;
+    else if (sy == 1 && sx == 1) result = e4;
+    else if (sy == 1 && sx == 2) result = e5;
+    else if (sy == 2 && sx == 0) result = e6;
+    else if (sy == 2 && sx == 1) result = e7;
+    else if (sy == 2 && sx == 2) result = e8;
+
+    gl_FragColor = result;
+  }
+`;
+
+// 3: Scale3x — edge-preserving 3x upscaler (hard selection, no blending).
+// The user's favourite — clean, crisp edges with no anti-aliasing.
+const FRAG_SCALE3X = UPSCALE_HEAD + HQ_COMMON + LUMINANCE + `
+  bool eq(vec4 a, vec4 b) { return !diff(a, b); }
+  bool ne(vec4 a, vec4 b) { return diff(a, b); }
+
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    vec4 e0 = E, e1 = E, e2 = E;
+    vec4 e3 = E, e4 = E, e5 = E;
+    vec4 e6 = E, e7 = E, e8 = E;
+
+    if (ne(D,F) && ne(B,H)) {
+      if (eq(D,B)) e0 = D;
+      if ((eq(D,B) && ne(E,C)) || (eq(B,F) && ne(E,A))) e1 = B;
+      if (eq(B,F)) e2 = F;
+      if ((eq(D,B) && ne(E,G)) || (eq(D,H) && ne(E,A))) e3 = D;
+      if ((eq(B,F) && ne(E,I)) || (eq(H,F) && ne(E,C))) e5 = F;
+      if (eq(D,H)) e6 = D;
+      if ((eq(D,H) && ne(E,I)) || (eq(H,F) && ne(E,G))) e7 = H;
+      if (eq(H,F)) e8 = F;
+    }
+
+    int sx = int(f.x * 3.0);
+    int sy = int(f.y * 3.0);
+    if (sx > 2) sx = 2;
+    if (sy > 2) sy = 2;
+
+    vec4 result = e4;
+    if      (sy == 0 && sx == 0) result = e0;
+    else if (sy == 0 && sx == 1) result = e1;
+    else if (sy == 0 && sx == 2) result = e2;
+    else if (sy == 1 && sx == 0) result = e3;
+    else if (sy == 1 && sx == 1) result = e4;
+    else if (sy == 1 && sx == 2) result = e5;
+    else if (sy == 2 && sx == 0) result = e6;
+    else if (sy == 2 && sx == 1) result = e7;
+    else if (sy == 2 && sx == 2) result = e8;
+
+    gl_FragColor = result;
+  }
+`;
+
+// 4: HQ4x — high-quality 4x with graduated blending.
+// Each source pixel maps to a 4x4 output block.  The inner 2x2 is always
+// the source color.  Edge sub-pixels get mild blending, and corner
+// sub-pixels get the strongest blending — producing smooth curves at 4x.
+const FRAG_HQ4X = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    // Sub-pixel position in 4x4 grid (0..3)
+    int sx = int(f.x * 4.0);
+    int sy = int(f.y * 4.0);
+    if (sx > 3) sx = 3;
+    if (sy > 3) sy = 3;
+
+    // Inner 2x2 (sx 1-2, sy 1-2) = always E
+    vec4 result = E;
+
+    // Edge detection
+    bool eDB = !diff(D,B), eBF = !diff(B,F);
+    bool eDH = !diff(D,H), eHF = !diff(H,F);
+    bool eDF = diff(D,F),  eBH = diff(B,H);
+
+    if (eDF && eBH) {
+      // ── Top edge (sy == 0) ──
+      if (sy == 0) {
+        if (sx == 0) {
+          // Top-left corner: strongest blend
+          if (eDB) result = mix(E, mix(D,B,0.5), 0.75);
+          else if (!diff(E,A)) result = E;
+          else if (!diff(D,A)) result = mix(E, D, 0.375);
+          else if (!diff(B,A)) result = mix(E, B, 0.375);
+        } else if (sx == 1) {
+          // Top-left-center
+          if (eDB && diff(E,C)) result = mix(E, B, 0.375);
+          else if (eBF && diff(E,A)) result = mix(E, B, 0.25);
+        } else if (sx == 2) {
+          // Top-right-center
+          if (eBF && diff(E,A)) result = mix(E, B, 0.375);
+          else if (eDB && diff(E,C)) result = mix(E, B, 0.25);
+        } else {
+          // Top-right corner: strongest blend
+          if (eBF) result = mix(E, mix(B,F,0.5), 0.75);
+          else if (!diff(E,C)) result = E;
+          else if (!diff(B,C)) result = mix(E, B, 0.375);
+          else if (!diff(F,C)) result = mix(E, F, 0.375);
+        }
+      }
+      // ── Bottom edge (sy == 3) ──
+      else if (sy == 3) {
+        if (sx == 0) {
+          if (eDH) result = mix(E, mix(D,H,0.5), 0.75);
+          else if (!diff(E,G)) result = E;
+          else if (!diff(D,G)) result = mix(E, D, 0.375);
+          else if (!diff(H,G)) result = mix(E, H, 0.375);
+        } else if (sx == 1) {
+          if (eDH && diff(E,I)) result = mix(E, H, 0.375);
+          else if (eHF && diff(E,G)) result = mix(E, H, 0.25);
+        } else if (sx == 2) {
+          if (eHF && diff(E,G)) result = mix(E, H, 0.375);
+          else if (eDH && diff(E,I)) result = mix(E, H, 0.25);
+        } else {
+          if (eHF) result = mix(E, mix(H,F,0.5), 0.75);
+          else if (!diff(E,I)) result = E;
+          else if (!diff(H,I)) result = mix(E, H, 0.375);
+          else if (!diff(F,I)) result = mix(E, F, 0.375);
+        }
+      }
+      // ── Left edge (sy 1-2, sx == 0) ──
+      else if (sx == 0) {
+        if (sy == 1) {
+          if (eDB && diff(E,G)) result = mix(E, D, 0.375);
+          else if (eDH && diff(E,A)) result = mix(E, D, 0.25);
+        } else {
+          if (eDH && diff(E,A)) result = mix(E, D, 0.375);
+          else if (eDB && diff(E,G)) result = mix(E, D, 0.25);
+        }
+      }
+      // ── Right edge (sy 1-2, sx == 3) ──
+      else if (sx == 3) {
+        if (sy == 1) {
+          if (eBF && diff(E,I)) result = mix(E, F, 0.375);
+          else if (eHF && diff(E,C)) result = mix(E, F, 0.25);
+        } else {
+          if (eHF && diff(E,C)) result = mix(E, F, 0.375);
+          else if (eBF && diff(E,I)) result = mix(E, F, 0.25);
+        }
+      }
+    }
+
+    gl_FragColor = result;
+  }
+`;
+
+// 5: xBR — edge-directed interpolation with smooth blending.
+// Detects whether a diagonal edge (\  or /) passes through each pixel
+// by comparing the similarity of neighbor pairs along each direction.
+// Sub-pixels on the "other side" of the edge get blended toward the
+// neighbors on that side, producing smooth anti-aliased diagonals.
+const FRAG_XBR = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    // Edge direction detection via neighbor-pair similarity.
+    //
+    //   \  edge (NW-SE): separates {A,D,B} from {F,H,I}
+    //      Evidence: D≈B (same side) and F≈H (same side) → d_bs is LOW
+    //
+    //   /  edge (NE-SW): separates {C,B,F} from {D,G,H}
+    //      Evidence: B≈F (same side) and D≈H (same side) → d_fs is LOW
+    //
+    // Diagonal neighbors reinforce: A near D/B, I near F/H for \, etc.
+
+    float d_bs = cdist(D,B) + cdist(F,H)
+               + 0.5 * (cdist(A,D) + cdist(A,B) + cdist(I,F) + cdist(I,H));
+    float d_fs = cdist(B,F) + cdist(D,H)
+               + 0.5 * (cdist(C,B) + cdist(C,F) + cdist(G,D) + cdist(G,H));
+
+    vec4 result = E;
+    float total = d_bs + d_fs;
+
+    if (total > 0.01) {
+      // Edge strengths: 0 = no edge, approaches 1 = strong edge
+      float bs = max(0.0, (d_fs - d_bs) / total);   // \  edge strength
+      float fs = max(0.0, (d_bs - d_fs) / total);   // /  edge strength
+
+      if (f.y < 0.5) {
+        if (f.x < 0.5) {
+          // TL sub-pixel: on \  edge, blend toward D/B (they're on this side)
+          if (bs > 0.0) result = mix(E, mix(D, B, 0.5), bs * 0.75);
+        } else {
+          // TR sub-pixel: on /  edge, blend toward B/F
+          if (fs > 0.0) result = mix(E, mix(B, F, 0.5), fs * 0.75);
+        }
+      } else {
+        if (f.x < 0.5) {
+          // BL sub-pixel: on /  edge, blend toward D/H
+          if (fs > 0.0) result = mix(E, mix(D, H, 0.5), fs * 0.75);
+        } else {
+          // BR sub-pixel: on \  edge, blend toward F/H
+          if (bs > 0.0) result = mix(E, mix(F, H, 0.5), bs * 0.75);
+        }
+      }
+    }
+
+    gl_FragColor = result;
+  }
+`;
+
+// 6: AdvMAME2x — MAME's variant of Scale2x (EPX) with clean edge
+// preservation.  Each source pixel maps to a 2x2 block.  If two
+// adjacent cardinal neighbors match and the other two differ, the
+// corner between the matching pair takes their color.  Otherwise
+// all four sub-pixels keep the source color.  Clean, no blending.
+const FRAG_ADVMAME2X = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 H = T(i + vec2( 0, 1));
+
+    vec4 p0 = E, p1 = E, p2 = E, p3 = E;
+    if (!diff(D,B) && diff(D,H) && diff(B,F)) p0 = D;
+    if (!diff(B,F) && diff(B,D) && diff(F,H)) p1 = F;
+    if (!diff(D,H) && diff(D,B) && diff(H,F)) p2 = D;
+    if (!diff(H,F) && diff(H,D) && diff(F,B)) p3 = F;
+
+    vec4 top = mix(p0, p1, step(0.5, f.x));
+    vec4 bot = mix(p2, p3, step(0.5, f.x));
+    gl_FragColor = mix(top, bot, step(0.5, f.y));
+  }
+`;
+
+// 7: 2xSaI — Kreed's 2x Scale and Interpolation.
+// Analyses a 4x4 neighborhood to detect edges and applies bilinear-style
+// interpolation along detected edges while keeping flat areas sharp.
+// The key difference from EPX: 2xSaI BLENDS colors rather than hard-selecting,
+// producing characteristically smooth gradients at diagonal edges.
+const FRAG_2XSAI = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //  Extended neighborhood for 2xSaI:
+    //     I  E0  E1
+    //     N   A   B  K
+    //     O   D   C  L
+    //        M   F
+    // We map: A=center, B=right, C=below-right, D=below
+    // Standard naming: I=(-1,-1), E0=(0,-1), E1=(1,-1)
+    //                  N=(-1,0), A=(0,0), B=(1,0), K=(2,0)
+    //                  O=(-1,1), D=(0,1), C=(1,1), L=(2,1)
+    //                  M=(0,2), F=(1,2)
+
+    vec4 II = T(i + vec2(-1,-1));
+    vec4 E0 = T(i + vec2( 0,-1));
+    vec4 E1 = T(i + vec2( 1,-1));
+    vec4 N  = T(i + vec2(-1, 0));
+    vec4 A  = T(i);
+    vec4 B  = T(i + vec2( 1, 0));
+    vec4 K  = T(i + vec2( 2, 0));
+    vec4 O  = T(i + vec2(-1, 1));
+    vec4 D  = T(i + vec2( 0, 1));
+    vec4 C  = T(i + vec2( 1, 1));
+    vec4 L  = T(i + vec2( 2, 1));
+    vec4 M  = T(i + vec2( 0, 2));
+    vec4 F  = T(i + vec2( 1, 2));
+
+    // The 2xSaI algorithm produces 4 output pixels per source pixel.
+    // product2a = top-right, product1a = bottom-left,
+    // product2b = top-left,  product1b = bottom-right
+
+    vec4 p2a, p1a, p2b, p1b;
+
+    // Top-left: always the source pixel
+    p2b = A;
+
+    // Top-right
+    if (!diff(A,B) && diff(A,C)) {
+      p2a = A;
+    } else if (diff(A,B) && !diff(A,D)) {
+      p2a = A;
+    } else if (!diff(A,B) && !diff(A,D)) {
+      p2a = A;
+    } else if (!diff(B,E0) && !diff(D,O)) {
+      p2a = A;
+    } else {
+      p2a = mix(A, B, 0.5);
+    }
+
+    // Bottom-left
+    if (!diff(A,D) && diff(A,B)) {
+      p1a = A;
+    } else if (diff(A,D) && !diff(A,B)) {
+      p1a = A;
+    } else if (!diff(A,D) && !diff(A,B)) {
+      p1a = A;
+    } else if (!diff(D,N) && !diff(B,L)) {
+      p1a = A;
+    } else {
+      p1a = mix(A, D, 0.5);
+    }
+
+    // Bottom-right (the most complex — determines diagonal blend)
+    if (!diff(A,C) && diff(B,C) && diff(D,C)) {
+      // A matches diagonal C but its neighbors don't — extend A into corner
+      p1b = A;
+    } else if (!diff(B,C) && !diff(D,C)) {
+      // Both B and D match C — use diagonal color
+      p1b = C;
+    } else if (!diff(B,C) && diff(D,C)) {
+      // B matches C — blend along horizontal
+      p1b = mix(A, B, 0.5);
+    } else if (diff(B,C) && !diff(D,C)) {
+      // D matches C — blend along vertical
+      p1b = mix(A, D, 0.5);
+    } else {
+      // No clear edge — average all four
+      p1b = mix(mix(A, B, 0.5), mix(D, C, 0.5), 0.5);
+    }
+
+    // Select sub-pixel
+    vec4 top = mix(p2b, p2a, step(0.5, f.x));
+    vec4 bot = mix(p1a, p1b, step(0.5, f.x));
+    gl_FragColor = mix(top, bot, step(0.5, f.y));
+  }
+`;
+
+// 8: SAA5050 Diagonal Smoothing — the teletext character rounding algorithm.
+//
+// The SAA5050 chip doubled each pixel 2x and applied diagonal smoothing using
+// these Boolean rules (from the datasheet):
+//
+//   Input:  A B C     Output:  1 2
+//           D E F              3 4
+//           G H I
+//
+//   1 = E | (A & B & !E & !D)   — fill top-left if A-B diagonal bridges gap
+//   2 = E | (B & C & !E & !F)   — fill top-right if B-C diagonal
+//   3 = E | (D & B & !A & !E)   — wait, original is row-based...
+//
+// The original operates on monochrome scan lines.  For color pixel art we
+// adapt the concept: for each sub-pixel corner of E's 2×2 block, check if
+// the diagonal neighbor matches E while the two bridging cardinal neighbors
+// differ.  If so, E's corner should show a "half dot" blend toward the
+// diagonal — exactly the gap-filling the SAA5050 performed.
+//
+// We also check the reverse: if the two cardinal neighbors match EACH OTHER
+// but differ from E and from the diagonal, they form an anti-diagonal bridge
+// that should be smoothed.
+const FRAG_SAA5050 = UPSCALE_HEAD + HQ_COMMON + `
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    vec4 result = E;
+
+    if (f.y < 0.5) {
+      if (f.x < 0.5) {
+        // TL sub-pixel: diagonal A, bridge pixels B and D
+        // SAA5050 rule: fill if A≈E and the bridge (B,D) differs from both
+        if (!diff(A,E) && diff(B,E) && diff(D,E))
+          result = mix(E, A, 0.5);
+        // Reverse: B≈D form anti-diagonal bridge, E and A both differ
+        else if (!diff(B,D) && diff(B,E) && diff(B,A))
+          result = mix(E, B, 0.5);
+      } else {
+        // TR sub-pixel: diagonal C, bridge pixels B and F
+        if (!diff(C,E) && diff(B,E) && diff(F,E))
+          result = mix(E, C, 0.5);
+        else if (!diff(B,F) && diff(B,E) && diff(B,C))
+          result = mix(E, B, 0.5);
+      }
+    } else {
+      if (f.x < 0.5) {
+        // BL sub-pixel: diagonal G, bridge pixels D and H
+        if (!diff(G,E) && diff(D,E) && diff(H,E))
+          result = mix(E, G, 0.5);
+        else if (!diff(D,H) && diff(D,E) && diff(D,G))
+          result = mix(E, D, 0.5);
+      } else {
+        // BR sub-pixel: diagonal I, bridge pixels F and H
+        if (!diff(I,E) && diff(F,E) && diff(H,E))
+          result = mix(E, I, 0.5);
+        else if (!diff(F,H) && diff(F,E) && diff(F,I))
+          result = mix(E, F, 0.5);
+      }
+    }
+
+    gl_FragColor = result;
+  }
+`;
+
+// 9: ScaleFX — Sp00kyFox's edge-interpolation algorithm.
+// A modern single-pass approximation of the multi-pass ScaleFX shader.
+// Uses a 3x3 neighborhood to detect edge orientation and applies smooth
+// sub-pixel blending with 3x3 output granularity.  Produces very clean
+// results — sharper than HQ but with smoother diagonals than Scale3x.
+const FRAG_SCALEFX = UPSCALE_HEAD + HQ_COMMON + LUMINANCE + `
+  // Weighted color distance using both luma and chroma
+  float wd(vec4 a, vec4 b) {
+    return cdist(a, b);
+  }
+
+  void main() {
+    vec2 pos = v_uv * u_texSize;
+    vec2 i = floor(pos);
+    vec2 f = fract(pos);
+
+    //   A B C
+    //   D E F
+    //   G H I
+    vec4 A = T(i + vec2(-1,-1));
+    vec4 B = T(i + vec2( 0,-1));
+    vec4 C = T(i + vec2( 1,-1));
+    vec4 D = T(i + vec2(-1, 0));
+    vec4 E = T(i);
+    vec4 F = T(i + vec2( 1, 0));
+    vec4 G = T(i + vec2(-1, 1));
+    vec4 H = T(i + vec2( 0, 1));
+    vec4 I = T(i + vec2( 1, 1));
+
+    // 3x3 output grid per source pixel
+    int sx = int(f.x * 3.0);
+    int sy = int(f.y * 3.0);
+    if (sx > 2) sx = 2;
+    if (sy > 2) sy = 2;
+
+    // Center sub-pixel is always E
+    vec4 result = E;
+
+    // Edge detection: compare diagonal metrics
+    float d_bs = wd(D,B) + wd(F,H);   // \  evidence
+    float d_fs = wd(B,F) + wd(D,H);   // /  evidence
+    float total = d_bs + d_fs;
+
+    if (total > 0.01) {
+      float bs = max(0.0, d_fs - d_bs) / total;  // \  strength
+      float fs = max(0.0, d_bs - d_fs) / total;  // /  strength
+
+      // Corner sub-pixels: strong blend
+      if (sy == 0 && sx == 0) {
+        // TL corner
+        float s = max(bs, fs);
+        if (bs > fs && !diff(D,B)) result = mix(E, mix(D,B,0.5), s * 0.8);
+        else if (fs > bs && !diff(B,F) && !diff(D,H))
+          result = mix(E, A, diff(E,A) ? s * 0.4 : 0.0);
+      } else if (sy == 0 && sx == 2) {
+        // TR corner
+        float s = max(bs, fs);
+        if (fs > bs && !diff(B,F)) result = mix(E, mix(B,F,0.5), s * 0.8);
+        else if (bs > fs && !diff(D,B) && !diff(H,F))
+          result = mix(E, C, diff(E,C) ? s * 0.4 : 0.0);
+      } else if (sy == 2 && sx == 0) {
+        // BL corner
+        float s = max(bs, fs);
+        if (fs > bs && !diff(D,H)) result = mix(E, mix(D,H,0.5), s * 0.8);
+        else if (bs > fs && !diff(D,B) && !diff(H,F))
+          result = mix(E, G, diff(E,G) ? s * 0.4 : 0.0);
+      } else if (sy == 2 && sx == 2) {
+        // BR corner
+        float s = max(bs, fs);
+        if (bs > fs && !diff(H,F)) result = mix(E, mix(H,F,0.5), s * 0.8);
+        else if (fs > bs && !diff(D,H) && !diff(B,F))
+          result = mix(E, I, diff(E,I) ? s * 0.4 : 0.0);
+      }
+
+      // Cardinal sub-pixels: mild blend for edge AA
+      else if (sy == 0 && sx == 1) {
+        // Top: blend toward B if there's a horizontal edge
+        if (diff(E,B) && (!diff(D,B) || !diff(B,F)))
+          result = mix(E, B, 0.25 * max(bs, fs));
+      } else if (sy == 2 && sx == 1) {
+        if (diff(E,H) && (!diff(D,H) || !diff(H,F)))
+          result = mix(E, H, 0.25 * max(bs, fs));
+      } else if (sy == 1 && sx == 0) {
+        if (diff(E,D) && (!diff(D,B) || !diff(D,H)))
+          result = mix(E, D, 0.25 * max(bs, fs));
+      } else if (sy == 1 && sx == 2) {
+        if (diff(E,F) && (!diff(B,F) || !diff(H,F)))
+          result = mix(E, F, 0.25 * max(bs, fs));
+      }
+    }
+
+    gl_FragColor = result;
+  }
+`;
+
+// Array of all upscale fragment shaders, indexed by scaling mode
+const UPSCALE_SHADERS = [
+  FRAG_UPSCALE,    // 0: Nearest / Bilinear
+  FRAG_HQ2X,       // 1: HQ2x
+  FRAG_HQ3X,       // 2: HQ3x
+  FRAG_SCALE3X,    // 3: Scale3x
+  FRAG_HQ4X,       // 4: HQ4x
+  FRAG_XBR,        // 5: xBR
+  FRAG_ADVMAME2X,  // 6: AdvMAME2x
+  FRAG_2XSAI,      // 7: 2xSaI
+  FRAG_SAA5050,     // 8: SAA5050
+  FRAG_SCALEFX,     // 9: ScaleFX
+];
 
 // ── Pass 2: CRT effects (curvature, scanlines, dot mask, brightness) ──
 const FRAG_CRT = `
@@ -236,8 +998,10 @@ export class WebGLRenderer implements IScreenRenderer {
   width: number;
   height: number;
 
-  // Pass 1 (upscale)
-  private progUpscale: WebGLProgram;
+  // Pass 1 (upscale) — one program per scaling algorithm
+  private upscalePrograms: WebGLProgram[] = [];
+  private upscaleUniforms: { texSize: WebGLUniformLocation | null; smoothing: WebGLUniformLocation | null }[] = [];
+  private scalingMode = 0;
   private fbo: WebGLFramebuffer;
   private fboTex: WebGLTexture;
 
@@ -260,10 +1024,6 @@ export class WebGLRenderer implements IScreenRenderer {
   private contrast = 1;
   private noise = 0;
   private frameCount = 0;
-
-  // Cached uniform locations — pass 1
-  private u1TexSize: WebGLUniformLocation | null = null;
-  private u1Smoothing: WebGLUniformLocation | null = null;
 
   // Cached uniform locations — pass 2
   private u2Resolution: WebGLUniformLocation | null = null;
@@ -311,10 +1071,15 @@ export class WebGLRenderer implements IScreenRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.bufferFBO);
     gl.bufferData(gl.ARRAY_BUFFER, vertsFBO, gl.STATIC_DRAW);
 
-    // ── Pass 1 program (upscale) ──
-    this.progUpscale = this.buildProgram(VERT_SRC, FRAG_UPSCALE);
-    this.u1TexSize = gl.getUniformLocation(this.progUpscale, 'u_texSize');
-    this.u1Smoothing = gl.getUniformLocation(this.progUpscale, 'u_smoothing');
+    // ── Pass 1 programs (one per scaling algorithm) ──
+    for (const src of UPSCALE_SHADERS) {
+      const prog = this.buildProgram(VERT_SRC, src);
+      this.upscalePrograms.push(prog);
+      this.upscaleUniforms.push({
+        texSize: gl.getUniformLocation(prog, 'u_texSize'),
+        smoothing: gl.getUniformLocation(prog, 'u_smoothing'),
+      });
+    }
 
     // ── Pass 2 program (CRT) ──
     this.progCRT = this.buildProgram(VERT_SRC, FRAG_CRT);
@@ -463,6 +1228,14 @@ export class WebGLRenderer implements IScreenRenderer {
     this.glDirty = true;
   }
 
+  setScalingMode(v: number): void {
+    const mode = Math.max(0, Math.min(UPSCALE_SHADERS.length - 1, v | 0));
+    if (mode !== this.scalingMode) {
+      this.scalingMode = mode;
+      this.glDirty = true;
+    }
+  }
+
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
@@ -490,15 +1263,17 @@ export class WebGLRenderer implements IScreenRenderer {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
     // ── Pass 1: upscale to FBO ──
+    const prog = this.upscalePrograms[this.scalingMode];
+    const unis = this.upscaleUniforms[this.scalingMode];
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.viewport(0, 0, w, h);
-    gl.useProgram(this.progUpscale);
-    this.bindAttributes(this.progUpscale);
+    gl.useProgram(prog);
+    this.bindAttributes(prog);
     // Source texture is already bound
     if (dirty) {
-      gl.uniform2f(this.u1TexSize, this.width, this.height);
+      gl.uniform2f(unis.texSize, this.width, this.height);
     }
-    gl.uniform1f(this.u1Smoothing, this.smoothing);
+    gl.uniform1f(unis.smoothing, this.smoothing);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     // ── Pass 2: CRT effects to screen ──

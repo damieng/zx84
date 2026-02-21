@@ -5,7 +5,7 @@ import {
   scale, setScale, brightness, setBrightness, contrast, setContrast,
   smoothing, setSmoothing, curvature, setCurvature, scanlines, setScanlines,
   maskType, setMaskType, dotPitch, setDotPitch, curvatureMode, setCurvatureMode,
-  noise, setNoise,
+  noise, setNoise, scalingMode, setScalingMode,
   monitor, setMonitor, borderSize, setBorderSize,
   renderer, colorMap, setColorMap, persistSetting,
 } from '@/store/settings.ts';
@@ -144,14 +144,36 @@ export function DisplayPane() {
           <option value="cheap-tv">Cheap TV</option>
         </select>
       </div>
+      <div class="slider-row">
+        <span class="slider-label">Scaling</span>
+        <select id="scaling-mode-select" value={scalingMode()} onChange={(e) => {
+          const v = Number((e.target as HTMLSelectElement).value);
+          setScalingMode(v);
+          if (spectrum) spectrum.display!.setScalingMode(v);
+          persistSetting('scaling-mode', v);
+        }}>
+          <option value="0">None</option>
+          <option value="1">HQ2x</option>
+          <option value="2">HQ3x</option>
+          <option value="3">Scale3x</option>
+          <option value="4">HQ4x</option>
+          <option value="5">xBR</option>
+          <option value="6">AdvMAME2x</option>
+          <option value="7">2xSaI</option>
+          <option value="8">SAA5050</option>
+          <option value="9">ScaleFX</option>
+        </select>
+      </div>
       <SliderRow label="Brightness" id="brightness" min={-50} max={50} sig={brightness} setSig={setBrightness}
         apply={(v) => spectrum?.display?.setBrightness(v / 50)} settingKey="brightness" />
       <SliderRow label="Contrast" id="contrast" min={0} max={100} sig={contrast} setSig={setContrast}
         apply={(v) => spectrum?.display?.setContrast(v / 50)} settingKey="contrast" />
       <SliderRow label="Scanlines" id="scanlines" min={0} max={100} sig={scanlines} setSig={setScanlines}
         apply={(v) => spectrum?.display?.setScanlines(v / 100)} settingKey="scanlines" />
+      <Show when={scalingMode() === 0}>
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing} setSig={setSmoothing}
         apply={(v) => spectrum?.display?.setSmoothing(v / 100)} settingKey="smoothing" />
+      </Show>
       <SliderRow label="Noise" id="noise" min={0} max={100} sig={noise} setSig={setNoise}
         apply={(v) => spectrum?.display?.setNoise(v / 100)} settingKey="noise" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature} setSig={setCurvature}

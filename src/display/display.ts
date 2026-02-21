@@ -17,4 +17,5 @@ export interface IScreenRenderer {
   setBrightness(v: number): void;
   setContrast(v: number): void;
   setNoise(v: number): void;
+  setScalingMode(v: number): void;
 }

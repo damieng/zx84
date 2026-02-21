@@ -84,4 +84,5 @@ export class CanvasRenderer implements IScreenRenderer {
   setBrightness(_v: number): void {}
   setContrast(_v: number): void {}
   setNoise(_v: number): void {}
+  setScalingMode(_v: number): void {}
 }

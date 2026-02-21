@@ -301,6 +301,9 @@ export class Spectrum {
 
   setBorderSize(mode: BorderMode): void {
     this.ula.setBorderMode(mode);
+    // Re-render VRAM into the new pixel buffer so the display stays correct
+    // even when paused (the old buffer was discarded by setBorderMode).
+    this.ula.renderFrame(this.cpu.memory);
     if (this.display) this.display.resize(this.ula.screenWidth, this.ula.screenHeight);
   }
 
@@ -342,21 +345,26 @@ export class Spectrum {
     this.running = true;
     this.lastFrameTime = performance.now();
     this.frameTimeAccum = 0;
-    this.rafId = requestAnimationFrame(this.frameLoop);
+    // Only start rAF if not already looping (it stays alive across pause/resume)
+    if (!this.rafId) {
+      this.rafId = requestAnimationFrame(this.frameLoop);
+    }
     this.setStatus('Running');
   }
 
   stop(): void {
     this.starting = false; // cancel pending async start
     this.running = false;
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = 0;
-    }
+    // rAF loop keeps running so the display stays alive (noise, settings changes).
+    // Only destroy() cancels the rAF loop entirely.
   }
 
   destroy(): void {
     this.stop();
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = 0;
+    }
     this.audio.destroy();
   }
 
@@ -380,48 +388,52 @@ export class Spectrum {
   get tapeTurboActive(): boolean { return this._tapeTurboActive; }
 
   private frameLoop = (): void => {
-    if (!this.running) return;
+    if (this.running) {
+      // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
+      this.breakpointHit = -1;
+      const now = performance.now();
+      if (this.turbo || this._tapeTurboActive) {
+        // Turbo: run as many frames as possible (target ~50MHz ≈ 14x)
+        this.frameTimeAccum = FRAME_PERIOD * 14;
+        let framesRun = 0;
+        while (framesRun < 14) {
+          this.runFrame();
+          framesRun++;
+          if (this.breakpointHit >= 0) break;
+        }
+        this.lastFrameTime = now;
+      } else {
+        this.frameTimeAccum = Math.min(
+          this.frameTimeAccum + (now - this.lastFrameTime),
+          FRAME_PERIOD * 3 // cap catch-up to 3 frames (e.g. after tab hidden)
+        );
+        this.lastFrameTime = now;
 
-    // Wall-clock pacing: accumulate elapsed time, run frames at 50Hz
-    this.breakpointHit = -1;
-    const now = performance.now();
-    if (this.turbo || this._tapeTurboActive) {
-      // Turbo: run as many frames as possible (target ~50MHz ≈ 14x)
-      this.frameTimeAccum = FRAME_PERIOD * 14;
-      let framesRun = 0;
-      while (framesRun < 14) {
-        this.runFrame();
-        framesRun++;
-        if (this.breakpointHit >= 0) break;
+        const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
+        const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
+
+        let framesRun = 0;
+        while (this.frameTimeAccum >= FRAME_PERIOD && framesRun < 2) {
+          if (audioPacing && this.audio.bufferedSamples() >= targetSamples) break;
+          this.runFrame();
+          this.frameTimeAccum -= FRAME_PERIOD;
+          framesRun++;
+          if (this.breakpointHit >= 0) break;
+        }
       }
-      this.lastFrameTime = now;
+
+      // Push rendered pixels to the display
+      if (this.needsDisplay) {
+        if (this.display) this.display.updateTexture(this.ula.pixels);
+        this.needsDisplay = false;
+      }
+
+      if (this.onFrame) this.onFrame();
     } else {
-      this.frameTimeAccum = Math.min(
-        this.frameTimeAccum + (now - this.lastFrameTime),
-        FRAME_PERIOD * 3 // cap catch-up to 3 frames (e.g. after tab hidden)
-      );
-      this.lastFrameTime = now;
-
-      const audioPacing = this.audio.ctx !== null && this.audio.ctx.state === 'running';
-      const targetSamples = samplesPerFrame(this.audio.sampleRate) * TARGET_BUFFER_FRAMES;
-
-      let framesRun = 0;
-      while (this.frameTimeAccum >= FRAME_PERIOD && framesRun < 2) {
-        if (audioPacing && this.audio.bufferedSamples() >= targetSamples) break;
-        this.runFrame();
-        this.frameTimeAccum -= FRAME_PERIOD;
-        framesRun++;
-        if (this.breakpointHit >= 0) break;
-      }
-    }
-
-    // Push rendered pixels to the display
-    if (this.needsDisplay) {
+      // Paused: keep rendering so display stays alive (noise animates,
+      // settings changes take effect immediately).
       if (this.display) this.display.updateTexture(this.ula.pixels);
-      this.needsDisplay = false;
     }
-
-    if (this.onFrame) this.onFrame();
 
     this.rafId = requestAnimationFrame(this.frameLoop);
   };

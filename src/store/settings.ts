@@ -51,6 +51,10 @@ const _noise = /*@once*/ createRoot(() => createSignal(getSavedNumber('noise', '
 export const noise = _noise[0];
 export const setNoise = _noise[1];
 
+const _scalingMode = /*@once*/ createRoot(() => createSignal(getSavedNumber('scaling-mode', '0')));
+export const scalingMode = _scalingMode[0];
+export const setScalingMode = _scalingMode[1];
+
 const _monitor = /*@once*/ createRoot(() => createSignal(getSaved('monitor', 'raw')));
 export const monitor = _monitor[0];
 export const setMonitor = _monitor[1];
