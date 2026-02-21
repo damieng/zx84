@@ -6,6 +6,8 @@ export interface MenuItem {
   label: string;
   /** If defined (true or false), renders as a checkable toggle item. */
   checked?: boolean;
+  /** Sub-menu items — renders as a flyout on hover. */
+  children?: MenuItem[];
 }
 
 interface Props {
@@ -51,11 +53,37 @@ export function DropDownMenuButton(props: Props) {
   });
 
   function handleClick(item: MenuItem) {
+    if (item.children) return; // parent items don't fire
     props.onSelect(item.value);
     // Checkable items stay open (they're toggles); action items close
     if (item.checked === undefined) {
       close();
     }
+  }
+
+  function renderItem(item: MenuItem) {
+    if (item.children) {
+      return (
+        <div class="ddmenu-item ddmenu-parent">
+          <span>{item.label}</span>
+          <span class="ddmenu-arrow">{'\u25B8'}</span>
+          <div class="ddmenu ddmenu-sub">
+            {item.children.map((child) => renderItem(child))}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        class="ddmenu-item"
+        onClick={() => handleClick(item)}
+      >
+        {item.checked !== undefined && (
+          <span class="ddmenu-check">{item.checked ? '\u2713' : ''}</span>
+        )}
+        <span>{item.label}</span>
+      </div>
+    );
   }
 
   return (
@@ -74,17 +102,7 @@ export function DropDownMenuButton(props: Props) {
           class="ddmenu"
           style={{ top: `${pos().top}px`, left: `${pos().left}px` }}
         >
-          {props.items.map((item) => (
-            <div
-              class="ddmenu-item"
-              onClick={() => handleClick(item)}
-            >
-              {item.checked !== undefined && (
-                <span class="ddmenu-check">{item.checked ? '\u2713' : ''}</span>
-              )}
-              <span>{item.label}</span>
-            </div>
-          ))}
+          {props.items.map((item) => renderItem(item))}
         </div>
       </Show>
     </>

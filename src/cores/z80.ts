@@ -215,8 +215,13 @@ export class Z80 {
   }
 
   push16(val: number): void {
-    this.sp = (this.sp - 2) & 0xFFFF;
-    this.write16(this.sp, val);
+    // Real Z80 writes high byte first to (--SP), then low byte to (--SP).
+    // This order matters for contention timing when SP is in contended memory.
+    this.sp = (this.sp - 1) & 0xFFFF;
+    this.write8(this.sp, (val >> 8) & 0xFF);
+    this.tStates += 3;
+    this.sp = (this.sp - 1) & 0xFFFF;
+    this.write8(this.sp, val & 0xFF);
   }
 
   pop16(): number {

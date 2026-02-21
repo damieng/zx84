@@ -177,6 +177,74 @@ export function parseDSK(data: Uint8Array): DskImage {
   return image;
 }
 
+// ── Blank disk creation ─────────────────────────────────────────────────────
+
+export interface DiskFormat {
+  label: string;
+  sides: number;
+  tracks: number;
+  sectors: number;
+  sectorSize: number;
+  gap3: number;
+  filler: number;
+  firstSector: number;
+}
+
+function formatCapacityKB(fmt: DiskFormat): number {
+  return (fmt.sides * fmt.tracks * fmt.sectors * fmt.sectorSize) / 1024;
+}
+
+export const DISK_FORMATS: DiskFormat[] = [
+  {
+    label: '+3DOS / PCW CF2',
+    sides: 1, tracks: 40, sectors: 9, sectorSize: 512,
+    gap3: 82, filler: 0xE5, firstSector: 1,
+  },
+  {
+    label: 'PCW CF2DD',
+    sides: 2, tracks: 80, sectors: 9, sectorSize: 512,
+    gap3: 82, filler: 0xE5, firstSector: 1,
+  },
+];
+
+/** Label with capacity, e.g. "+3DOS / PCW CF2 (180K)" */
+export function formatLabel(fmt: DiskFormat): string {
+  return `${fmt.label} (${formatCapacityKB(fmt)}K)`;
+}
+
+export function createBlankDisk(fmt: DiskFormat): DskImage {
+  const sizeCode = Math.log2(fmt.sectorSize / 128); // N value: 512 → 2
+  const tracks: (DskTrack | null)[][] = [];
+
+  for (let cyl = 0; cyl < fmt.tracks; cyl++) {
+    const sides: (DskTrack | null)[] = [];
+    for (let head = 0; head < fmt.sides; head++) {
+      const sectors: DskSector[] = [];
+      const sectorMap = new Map<number, number>();
+      for (let i = 0; i < fmt.sectors; i++) {
+        const r = fmt.firstSector + i;
+        const data = new Uint8Array(fmt.sectorSize);
+        data.fill(fmt.filler);
+        sectors.push({ c: cyl, h: head, r, n: sizeCode, st1: 0, st2: 0, data });
+        sectorMap.set(r, i);
+      }
+      sides.push({ sectors, sectorMap, gap3: fmt.gap3, filler: fmt.filler });
+    }
+    tracks.push(sides);
+  }
+
+  const image: DskImage = {
+    format: 'standard',
+    numTracks: fmt.tracks,
+    numSides: fmt.sides,
+    tracks,
+    diskFormat: '',
+    protection: '',
+  };
+  image.diskFormat = detectDiskFormat(image);
+  return image;
+}
+
 // ── Format detection ────────────────────────────────────────────────────────
 
 function detectDiskFormat(image: DskImage): string {

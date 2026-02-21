@@ -1250,6 +1250,24 @@ input[type="range"]::-moz-range-thumb {
   text-align: center;
   flex-shrink: 0;
 }
+.ddmenu-parent {
+  position: relative;
+}
+.ddmenu-arrow {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 0.65em;
+  color: #888;
+}
+.ddmenu-sub {
+  display: none;
+  position: absolute;
+  top: -4px;
+  left: 100%;
+}
+.ddmenu-parent:hover > .ddmenu-sub {
+  display: block;
+}
 
 .disasm-output {
   font-family: var(--font-mono);

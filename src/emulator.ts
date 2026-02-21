@@ -11,7 +11,7 @@ import { PALETTES } from '@/cores/ula.ts';
 import { saveSZX } from '@/snapshot/szx.ts';
 import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
-import { parseDSK } from '@/plus3/dsk.ts';
+import { parseDSK, type DskImage } from '@/plus3/dsk.ts';
 import { loadSZX } from '@/snapshot/szx.ts';
 import { clearLastFile, restoreTape, restoreDisk, dbSave, dbLoad } from '@/store/persistence.ts';
 import * as settings from '@/store/settings.ts';
@@ -233,7 +233,8 @@ export async function createMachine(): Promise<boolean> {
 
   // Apply saved disk mode for +3
   if (isPlus3(model)) {
-
+    spectrum.fdc.writeProtect[0] = settings.writeProtectA();
+    spectrum.fdc.writeProtect[1] = settings.writeProtectB();
   }
 
   // Floppy sound
@@ -715,6 +716,18 @@ export function ejectDisk(unit: number = 0): void {
       setCurrentDiskNameB('');
     }
   }, setStatus);
+}
+
+export function insertBlankDisk(image: DskImage, name: string, unit: number): void {
+  if (!spectrum) return;
+  spectrum.fdc.insertDisk(image, unit);
+  if (unit === 0) {
+    setCurrentDiskInfo(image);
+    setCurrentDiskName(name);
+  } else {
+    setCurrentDiskInfoB(image);
+    setCurrentDiskNameB(name);
+  }
 }
 
 export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number): void {

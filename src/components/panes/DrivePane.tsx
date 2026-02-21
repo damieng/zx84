@@ -6,7 +6,7 @@ import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  ejectDisk, loadFile, spectrum,
+  ejectDisk, loadFile, insertBlankDisk, spectrum,
 } from '@/emulator.ts';
 import {
   diskSoundA, setDiskSoundA, diskSoundB, setDiskSoundB,
@@ -14,16 +14,18 @@ import {
   persistSetting,
 } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
-import type { DskImage } from '@/plus3/dsk.ts';
+import { DISK_FORMATS, formatLabel, createBlankDisk, type DskImage } from '@/plus3/dsk.ts';
 
 function renderDiskInfoStr(img: DskImage): string {
   const n = '<span class="reg-name">';
   const e = '</span>';
   const t0 = img.tracks[0]?.[0];
   const spt = t0 ? t0.sectors.length : 0;
+  const sectorSize = t0?.sectors[0] ? (128 << t0.sectors[0].n) : 0;
+  const capacityKB = (img.numSides * img.numTracks * spt * sectorSize) / 1024;
   return [
     `${n}Sides${e} ${img.numSides}  ${n}Tracks${e} ${img.numTracks}  ${n}Sectors${e} ${spt}`,
-    `${n}Format${e}   ${img.diskFormat}`,
+    `${n}Format${e}   ${img.diskFormat}   ${n}Capacity${e} ${capacityKB} KB`,
     `${n}Protect${e}  ${img.protection || 'None'}`,
   ].join('\n');
 }
@@ -40,6 +42,11 @@ function DiskInfo(props: {
   onToggleWriteProtect: () => void;
 }) {
   const label = props.unit === 0 ? 'A:' : 'B:';
+  const newDiskItem = {
+    value: 'new-disk',
+    label: 'New Disk',
+    children: DISK_FORMATS.map((fmt, i) => ({ value: `new-${i}`, label: formatLabel(fmt) })),
+  };
   return (
     <div class="disk-section">
       <div class="disk-name-row">
@@ -64,12 +71,17 @@ function DiskInfo(props: {
           icon={<HiOutlineEllipsisVertical />}
           title={`Drive ${label} options`}
           items={[
+            newDiskItem,
             { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
             { value: 'wp', label: 'Write protect', checked: props.writeProtected },
           ]}
           onSelect={(value) => {
             if (value === 'sound') props.onToggleSound();
             else if (value === 'wp') props.onToggleWriteProtect();
+            else if (value.startsWith('new-')) {
+              const fmt = DISK_FORMATS[parseInt(value.slice(4))];
+              if (fmt) insertBlankDisk(createBlankDisk(fmt), formatLabel(fmt), props.unit);
+            }
           }}
         />
       </div>

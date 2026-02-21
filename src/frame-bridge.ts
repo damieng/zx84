@@ -392,8 +392,10 @@ export function onFrame(): void {
     }
   });
 
-  // Floppy sound (non-signal, side effect)
-  if (floppySound && isPlus3(model) && settings.diskSoundEnabled()) {
+  // Floppy sound (non-signal, side effect) — check active drive's sound setting
+  const activeUnit = spectrum!.fdc.currentUnit;
+  const driveSoundOn = activeUnit === 0 ? settings.diskSoundA() : settings.diskSoundB();
+  if (floppySound && isPlus3(model) && driveSoundOn) {
     // Attach to audio context if not already attached
     if (!floppySound['ctx'] && spectrum!['audio'].ctx) {
       floppySound.attach(spectrum!['audio'].ctx);
