@@ -302,7 +302,7 @@ export function onFrame(): void {
   batch(() => {
     setLedKbd(a.ulaReads > 0);
     setLedKemp(a.kempstonReads > 0);
-    setLedEar(a.earReads > 100);
+    setLedEar(a.earReads > 0);
     setLedLoad(a.tapeLoads > 0);
     setLedBeep(a.beeperToggled);
     setLedAy(a.ayWrites > 5);

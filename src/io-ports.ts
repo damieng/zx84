@@ -158,7 +158,10 @@ export function wirePortIO(s: Spectrum): void {
       // This ensures the ROM's IN A,($FE) sees the correct tape signal
       // at the exact T-state of the read, not one instruction behind.
       s.advanceTapeTo();
-      if (s.ula.tapeActive) s.activity.earReads++;
+      // Count as an EAR read only when no keyboard row is selected (high
+      // byte = 0xFF).  Tape loaders use IN A,(0xFE) with A=0xFF to sample
+      // EAR; keyboard scans select specific half-rows (0xFE, 0xFD, etc.).
+      if (s.ula.tapeActive && (port >> 8) === 0xFF) s.activity.earReads++;
 
       // Loader detection: auto-start tape when code reads EAR in a tight loop.
       // Works for both ROM loaders (LD-BYTES reading EAR) and custom loaders

@@ -168,8 +168,6 @@ export class Spectrum {
   private _tapeTurboActive = false;
   /** Frames remaining before tape turbo disengages (cooldown) */
   private _tapeTurboCooldown = 0;
-  /** Frames remaining before tape auto-pauses due to inactivity */
-  private _tapeAutoPauseCooldown = 0;
 
   /** Breakpoints (checked every instruction in runFrame) */
   breakpoints = new Set<number>();
@@ -478,7 +476,6 @@ export class Spectrum {
         if (this.tape.paused) {
           this.tape.paused = false;
           this.tape.startPlayback();
-          this._tapeAutoPauseCooldown = 50;
         }
         trapTapeLoad(this.cpu, this.tape);
         this.tape.skipBlock(); // advance player past the consumed block
@@ -551,46 +548,27 @@ export class Spectrum {
       }
     }
 
-    // Tape turbo: engage/disengage based on EAR port read activity.
-    // Engage when custom loader is actively reading EAR; disengage after
-    // a cooldown of frames with no EAR reads (to handle brief inter-block gaps).
-    if (this.tapeTurbo && this.tape.loaded && !this.tape.finished) {
-      if (this.activity.earReads > 0) {
-        if (!this._tapeTurboActive) {
+    // Tape turbo + auto-pause.
+    // earReads only counts ULA reads with high byte 0xFF (no keyboard row
+    // selected), so it genuinely reflects tape loading, not keyboard polling.
+    const tapeLoading = this.activity.earReads > 0 || this.activity.tapeLoads > 0;
+
+    if (this.tape.loaded && !this.tape.finished) {
+      if (tapeLoading) {
+        if (this.tapeTurbo && !this._tapeTurboActive) {
           this._tapeTurboActive = true;
         }
         this._tapeTurboCooldown = 25; // ~0.5s at 50Hz
-      } else if (this._tapeTurboActive) {
+      } else if (this._tapeTurboCooldown > 0) {
         if (--this._tapeTurboCooldown <= 0) {
           this._tapeTurboActive = false;
-          // Auto-pause tape: loader has stopped reading EAR, so the
-          // program has finished loading.  Pausing prevents the tape
-          // from advancing through remaining blocks uselessly.
           this.tape.paused = true;
-          // Reset audio state so playback resumes cleanly
           this.mixer.reset();
         }
       }
     } else if (this._tapeTurboActive) {
-      // Tape finished or turbo disabled — disengage immediately
       this._tapeTurboActive = false;
       this.mixer.reset();
-    }
-
-    // General tape auto-pause: if the tape is playing and nobody is reading
-    // EAR or triggering ROM tape loads, auto-pause after a cooldown.
-    // This catches cases where instant-load finishes but turbo was never engaged,
-    // or turbo is disabled entirely.
-    if (this.tape.loaded && this.tape.playing && !this.tape.paused && !this.tape.finished) {
-      if (this.activity.earReads > 0 || this.activity.tapeLoads > 0) {
-        this._tapeAutoPauseCooldown = 50; // ~1s at 50Hz
-      } else if (this._tapeAutoPauseCooldown > 0) {
-        if (--this._tapeAutoPauseCooldown <= 0) {
-          this.tape.paused = true;
-        }
-      }
-    } else {
-      this._tapeAutoPauseCooldown = 0;
     }
 
     // Adjust loader detector T-state tracking across frame boundary
