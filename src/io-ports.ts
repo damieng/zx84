@@ -57,8 +57,12 @@ export function installMemoryHooks(s: Spectrum): void {
         return; // Normal ROM — discard
       }
     }
-    // Flush beam before VRAM writes so completed scanlines see old data
-    if (addr >= 0x4000 && addr < 0x5B00) {
+    // Flush beam before bitmap writes so completed scanlines see old data.
+    // Attribute writes (0x5800–0x5AFF) are excluded: multicolor engines like
+    // Bifrost write attributes just ahead of the beam, and renderPendingScanlines
+    // (called every instruction) handles them correctly.  Including attributes
+    // here would cause flushBeam to render earlier cells with stale attrs.
+    if (addr >= 0x4000 && addr < 0x5800) {
       s.flushBeam();
     }
     // Count attribute writes for rainbow detection
