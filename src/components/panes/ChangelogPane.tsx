@@ -6,13 +6,12 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     items: [
       'Multiface 1 / 128 / 3 support',
       'Rewritten display engine for border effects',
-      'Full-size border rendering',
-      'ULA contention timing accuracy (48K, 128K, +2A/+3)',
-      'Text/OCR screen overlay with custom fonts',
-      'Improved tape auto-start/pause',
-      'Improved drive pane with drive-specific menus',
-      'Save DSK support for +2A/+3',
-      'New disk/format support for +2A/+3'
+      'ULA contention accuracy improvements',
+      'SZX saving implemented/fixed',
+      'Text overlay with native fonts rewritten',
+      'Tape auto-start/pause improvements',
+      'Per-drive menus with New disk, save',
+      'New 3.5" drive sounds & write-protect',
     ],
   },
 ];
