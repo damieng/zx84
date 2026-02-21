@@ -400,6 +400,15 @@ export function onFrame(): void {
     if (!floppySound['ctx'] && spectrum!['audio'].ctx) {
       floppySound.attach(spectrum!['audio'].ctx);
     }
+    // Select sound profile based on disk capacity
+    const disk = spectrum!.fdc.getDiskImage(activeUnit);
+    if (disk) {
+      const t0 = disk.tracks[0]?.[0];
+      const spt = t0 ? t0.sectors.length : 0;
+      const secSize = t0?.sectors[0] ? (128 << t0.sectors[0].n) : 512;
+      const capacityKB = (disk.numSides * disk.numTracks * spt * secSize) / 1024;
+      floppySound.driveType = capacityKB > 500 ? '3.5inch' : '3inch';
+    }
     // Update motor state (this generates the sounds)
     floppySound.update(spectrum!.fdc.motorOn, spectrum!.fdc.currentTrack);
   } else if (floppySound) {
