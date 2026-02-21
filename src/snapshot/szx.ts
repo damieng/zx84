@@ -14,6 +14,7 @@
 
 import { Z80 } from '@/cores/Z80.ts';
 import { SpectrumMemory } from '@/memory.ts';
+import type { SpectrumModel } from '@/spectrum.ts';
 
 export interface SZXResult {
   is128K: boolean;
@@ -98,8 +99,16 @@ async function inflate(compressed: Uint8Array): Promise<Uint8Array> {
 
 // ── Machine ID mapping ──────────────────────────────────────────────────
 
+/** SZX machine ID: 0=16K, 1=48K, 2=128K, 3=+2, 4=+2A/+2B, 5=+3, 6=+3e */
+const MODEL_TO_MACHINE_ID: Record<SpectrumModel, number> = {
+  '48k': 1,
+  '128k': 2,
+  '+2': 3,
+  '+2a': 4,
+  '+3': 5,
+};
+
 function machineIs128K(machineId: number): boolean {
-  // 0=16K, 1=48K, 2=128K, 3=+2, 4=+2A, 5=+3
   return machineId >= 2;
 }
 
@@ -310,7 +319,7 @@ function writeBlockHeader(data: Uint8Array, offset: number, id: string, size: nu
   return offset + 8;
 }
 
-export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
+export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, model: SpectrumModel, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
   // Flush live flat[] data back to ramBanks[] before serialising
   memory.saveToRAMBanks();
 
@@ -335,7 +344,7 @@ export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: num
   // Calculate total size
   const headerSize = 8;
   const z80rSize = 8 + 37;
-  const spcrSize = 8 + 4;
+  const spcrSize = 8 + 8; // 4 fields + 4 reserved bytes
   const rampSize = compressedPages.reduce((sum, p) => sum + 8 + 3 + p.data.length, 0);
   const aySize = ayRegs ? 8 + 18 : 0;
   const totalSize = headerSize + z80rSize + spcrSize + rampSize + aySize;
@@ -350,7 +359,7 @@ export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: num
   data[offset++] = 0x54; // 'T'
   data[offset++] = 1;    // major version
   data[offset++] = 4;    // minor version
-  data[offset++] = memory.is128K ? 2 : 1; // machine ID: 1=48K, 2=128K
+  data[offset++] = MODEL_TO_MACHINE_ID[model]; // machine ID
   data[offset++] = 0;    // flags
 
   // ── Z80R block (CPU registers) ──────────────────────────────────────
@@ -380,11 +389,13 @@ export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: num
   offset += 37;
 
   // ── SPCR block (Spectrum-specific) ──────────────────────────────────
-  offset = writeBlockHeader(data, offset, 'SPCR', 4);
-  data[offset++] = borderColor & 0x07;
-  data[offset++] = memory.port7FFD;
-  data[offset++] = memory.port1FFD;
-  data[offset++] = (borderColor & 0x07) << 1; // portFE
+  offset = writeBlockHeader(data, offset, 'SPCR', 8);
+  data[offset++] = borderColor & 0x07;  // chBorder
+  data[offset++] = memory.port7FFD;     // ch7ffd
+  data[offset++] = memory.port1FFD;     // ch1ffd
+  data[offset++] = borderColor & 0x07;  // chFe (bits 0-2 = border)
+  w32(data, offset, 0);                 // chReserved (4 bytes, must be 0)
+  offset += 4;
 
   // ── RAMP blocks (RAM pages) ─────────────────────────────────────────
   for (const { page, data: pageData, compressed } of compressedPages) {

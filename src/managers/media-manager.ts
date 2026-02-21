@@ -204,11 +204,15 @@ export class MediaManager {
         if (result.is128K) {
           spectrum.memory.port7FFD = result.port7FFD;
           spectrum.memory.currentBank = result.port7FFD & 0x07;
-          spectrum.memory.currentROM = (result.port7FFD >> 4) & 1;
           spectrum.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
           if (isPlus2AClass(currentModel)) {
             spectrum.memory.port1FFD = result.port1FFD;
             spectrum.memory.specialPaging = (result.port1FFD & 1) !== 0;
+            // +2A/+3: ROM = bit 2 of 1FFD (high) | bit 4 of 7FFD (low)
+            spectrum.memory.currentROM =
+              (((result.port1FFD >> 2) & 1) << 1) | ((result.port7FFD >> 4) & 1);
+          } else {
+            spectrum.memory.currentROM = (result.port7FFD >> 4) & 1;
           }
           spectrum.memory.applyBanking();
         }

@@ -105,6 +105,8 @@ export class Z80 {
   iff2 = false;
   im = 1;
   halted = false;
+  /** EI delay: interrupts suppressed for one instruction after EI. */
+  eiDelay = false;
 
   // T-state counter
   tStates = 0;
@@ -158,6 +160,7 @@ export class Z80 {
     this.iff2 = false;
     this.im = 1;
     this.halted = false;
+    this.eiDelay = false;
 
     this.memptr = 0;
     this._qReg = 0;
@@ -251,7 +254,7 @@ export class Z80 {
 
   // --- Interrupt handling ---
   interrupt(): number {
-    if (!this.iff1) return 0;
+    if (!this.iff1 || this.eiDelay) return 0;
 
     this.halted = false;
     this.iff1 = false;
@@ -1058,8 +1061,11 @@ export class Z80 {
                 break;
               case 7:
                 // EI: 4T (M1 auto-counted)
+                // Real Z80 suppresses interrupts for one instruction after EI.
+                // The run loop clears eiDelay after the *next* instruction.
                 this.iff1 = true;
                 this.iff2 = true;
+                this.eiDelay = true;
                 break;
             }
             break;

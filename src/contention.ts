@@ -53,8 +53,8 @@ export const TIMING_PLUS2A: MachineTiming = {
   cpuClock: 3546900,
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
-  contentionStart: 14361,   // same as 128K — ULA fetch starts here
-  displayOrigin: 14364,     // first pixel 3T after contention start (Amstrad ASIC)
+  contentionStart: 14361,   // Amstrad ASIC ULA fetch starts here
+  displayOrigin: 14364,     // first pixel output (63 lines × 228T)
   intLength: 32,
   floatingBusAdjust: 1,
 };

@@ -578,18 +578,18 @@ export async function saveSnapshot(format: 'z80' | 'szx' = 'szx'): Promise<void>
   const wasPaused = emulationPaused();
   if (!wasPaused) spectrum.stop();
 
-  const model = is128kClass(currentModel()) ? '128k' : '48k';
+  const model = currentModel();
   let data: Uint8Array;
 
   if (format === 'szx') {
     const ayRegs = spectrum.ay.getRegisters();
-    data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, ayRegs, spectrum.ay.selectedReg);
+    data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, model, ayRegs, spectrum.ay.selectedReg);
   } else {
     // .z80 format
     data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, is128kClass(currentModel()));
   }
 
-  const filename = `zx84-${model}.${format}`;
+  const filename = `zx84-${model.replace('+', 'plus')}.${format}`;
 
   downloadFile(data, filename);
 
@@ -961,6 +961,7 @@ export async function saveHMRState(): Promise<void> {
       spectrum.cpu,
       spectrum.memory,
       spectrum.ula.borderColor,
+      currentModel(),
       ayRegs,
       spectrum.ay.selectedReg
     );
