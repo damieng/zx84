@@ -31,7 +31,7 @@ const MONITOR_PRESETS: Record<string, MonitorPreset> = {
   'amstrad-cm14': { maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60 },
   'sony-trinitron': { maskType: 2, dotPitch: 10, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20, brightness: -5, contrast: 55 },
   'atari-sc1224': { maskType: 1, dotPitch: 10, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40 },
-  'cheap-tv': { maskType: 1, dotPitch: 30, curvature: 80, curvatureMode: 0, scanlines: 65, smoothing: 70, brightness: -5, contrast: 55 },
+  'cheap-tv': { maskType: 1, dotPitch: 15, curvature: 80, curvatureMode: 0, scanlines: 65, smoothing: 70, brightness: -5, contrast: 55 },
 };
 
 function applyPreset(preset: MonitorPreset) {

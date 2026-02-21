@@ -130,12 +130,35 @@ const FRAG_CRT = `
       float triad = pitch * 3.0;
 
       if (u_maskType == 1) {
-        // Shadow mask (dot trio): staggered RGB triads, per-row stagger
-        float stagger = mod(fpy, 2.0) * (triad * 0.5);
-        float ch = floor(mod(fpx + stagger, triad) / pitch);
-        vec3 mask = vec3(base);
-        mask += highlight * vec3(1.0 - min(ch, 1.0), 1.0 - abs(ch - 1.0), max(ch - 1.0, 0.0));
-        col *= mask;
+        // Shadow mask: round phosphor dots in delta/triangular arrangement
+        float rowH = pitch * 1.5;
+        float row = floor(fpy / rowH);
+        // 3-phase stagger (0, pitch, 2*pitch) gives true triangular layout
+        float stagger = mod(row, 3.0) * pitch;
+        float lx = mod(fpx + stagger, triad);
+        float ly = mod(fpy, rowH);
+        float cy = rowH * 0.5;
+
+        // Wrapped horizontal distance to each phosphor dot centre
+        float dxR = abs(lx - 0.5 * pitch); dxR = min(dxR, triad - dxR);
+        float dxG = abs(lx - 1.5 * pitch); dxG = min(dxG, triad - dxG);
+        float dxB = abs(lx - 2.5 * pitch); dxB = min(dxB, triad - dxB);
+        float dy = ly - cy;
+
+        // Euclidean distance to each dot centre
+        float distR = length(vec2(dxR, dy));
+        float distG = length(vec2(dxG, dy));
+        float distB = length(vec2(dxB, dy));
+
+        // Soft circular phosphor profile
+        float r = pitch * 0.55;
+        float edge = max(0.7, pitch * 0.25);
+        vec3 dots = vec3(
+          smoothstep(r, r - edge, distR),
+          smoothstep(r, r - edge, distG),
+          smoothstep(r, r - edge, distB)
+        );
+        col *= base + highlight * dots;
       } else if (u_maskType == 2) {
         // Aperture grille: vertical RGB stripes (Trinitron-style), no horizontal gaps
         float ch = floor(mod(fpx, triad) / pitch);
