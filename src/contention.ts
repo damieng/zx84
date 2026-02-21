@@ -44,7 +44,7 @@ export const TIMING_128K: MachineTiming = {
   tStatesPerFrame: 70908,   // 228 × 311
   tStatesPerLine: 228,
   contentionStart: 14361,
-  displayOrigin: 14361,     // 63 lines × 228 (7 VBlank + 56 border)
+  displayOrigin: 14362,     // contentionStart + 1T Ferranti pipeline delay
   intLength: 36,
   floatingBusAdjust: 1,
 };
