@@ -6,9 +6,13 @@ import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
-  ejectDisk, loadFile,
+  ejectDisk, loadFile, spectrum,
 } from '@/emulator.ts';
-import { dualDrives, setDualDrives, diskSoundEnabled, setDiskSoundEnabled, persistSetting } from '@/store/settings.ts';
+import {
+  diskSoundA, setDiskSoundA, diskSoundB, setDiskSoundB,
+  writeProtectA, setWriteProtectA, writeProtectB, setWriteProtectB,
+  persistSetting,
+} from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 
@@ -24,26 +28,50 @@ function renderDiskInfoStr(img: DskImage): string {
   ].join('\n');
 }
 
-function DiskInfo(props: { unit: number; name: string; diskInfo: DskImage | null; status: string; onInsert: () => void }) {
+function DiskInfo(props: {
+  unit: number;
+  name: string;
+  diskInfo: DskImage | null;
+  status: string;
+  soundEnabled: boolean;
+  writeProtected: boolean;
+  onInsert: () => void;
+  onToggleSound: () => void;
+  onToggleWriteProtect: () => void;
+}) {
   const label = props.unit === 0 ? 'A:' : 'B:';
   return (
     <div class="disk-section">
-      <div 
-        class="disk-name" 
-        classList={{ 'disk-name-clickable': !props.name }}
-        onClick={() => !props.name && props.onInsert()}
-      >
-        <span class="disk-label">{label}</span>
-        <span class="disk-name-text" title={props.name || ''}>
-          {props.name || 'No disk inserted'}
-        </span>
-        <Show when={props.name}>
-          <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-              <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
-            </svg>
-          </button>
-        </Show>
+      <div class="disk-name-row">
+        <div
+          class="disk-name"
+          classList={{ 'disk-name-clickable': !props.name }}
+          onClick={() => !props.name && props.onInsert()}
+        >
+          <span class="disk-label">{label}</span>
+          <span class="disk-name-text" title={props.name || ''}>
+            {props.name || 'No disk inserted'}
+          </span>
+          <Show when={props.name}>
+            <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
+              </svg>
+            </button>
+          </Show>
+        </div>
+        <DropDownMenuButton
+          icon={<HiOutlineEllipsisVertical />}
+          title={`Drive ${label} options`}
+          items={[
+            { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
+            { value: 'wp', label: 'Write protect', checked: props.writeProtected },
+          ]}
+          onSelect={(value) => {
+            if (value === 'sound') props.onToggleSound();
+            else if (value === 'wp') props.onToggleWriteProtect();
+          }}
+        />
       </div>
       <Show when={props.diskInfo}>
         <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />
@@ -53,67 +81,78 @@ function DiskInfo(props: { unit: number; name: string; diskInfo: DskImage | null
   );
 }
 
+function syncWriteProtect(unit: number, value: boolean): void {
+  if (spectrum) spectrum.fdc.writeProtect[unit] = value;
+}
+
 export function DrivePane() {
   let fileInputRefA!: HTMLInputElement;
   let fileInputRefB!: HTMLInputElement;
 
   return (
     <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())}>
-      <div class="drive-toolbar">
-        <div style="flex: 1" />
-        <DropDownMenuButton
-          icon={<HiOutlineEllipsisVertical />}
-          title="Drive options"
-          items={[
-
-            { value: 'dual', label: 'Enable B: drive', checked: dualDrives() },
-            { value: 'disk-sound', label: 'Drive sounds', checked: diskSoundEnabled() },
-          ]}
-          onSelect={(value) => {
-            if (value === 'dual') {
-              setDualDrives(!dualDrives());
-              persistSetting('dual-drives', dualDrives() ? 'on' : 'off');
-            } else if (value === 'disk-sound') {
-              setDiskSoundEnabled(!diskSoundEnabled());
-              persistSetting('disk-sound', diskSoundEnabled() ? 'on' : 'off');
-            } else {
-
-            }
-          }}
-        />
-        <input
-          type="file"
-          ref={fileInputRefA}
-          accept=".dsk,.zip"
-          style="display:none"
-          onChange={async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-            const data = new Uint8Array(await file.arrayBuffer());
-            await loadFile(data, file.name, 0);
-            (e.target as HTMLInputElement).value = '';
-          }}
-        />
-        <Show when={dualDrives()}>
-          <input
-            type="file"
-            ref={fileInputRefB}
-            accept=".dsk,.zip"
-            style="display:none"
-            onChange={async (e) => {
-              const file = (e.target as HTMLInputElement).files?.[0];
-              if (!file) return;
-              const data = new Uint8Array(await file.arrayBuffer());
-              await loadFile(data, file.name, 1);
-              (e.target as HTMLInputElement).value = '';
-            }}
-          />
-        </Show>
-      </div>
-      <DiskInfo unit={0} name={currentDiskName()} diskInfo={currentDiskInfo()} status={driveAStatus()} onInsert={() => fileInputRefA?.click()} />
-      <Show when={dualDrives()}>
-        <DiskInfo unit={1} name={currentDiskNameB()} diskInfo={currentDiskInfoB()} status={driveBStatus()} onInsert={() => fileInputRefB?.click()} />
-      </Show>
+      <input
+        type="file"
+        ref={fileInputRefA}
+        accept=".dsk,.zip"
+        style="display:none"
+        onChange={async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          const data = new Uint8Array(await file.arrayBuffer());
+          await loadFile(data, file.name, 0);
+          (e.target as HTMLInputElement).value = '';
+        }}
+      />
+      <input
+        type="file"
+        ref={fileInputRefB}
+        accept=".dsk,.zip"
+        style="display:none"
+        onChange={async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          const data = new Uint8Array(await file.arrayBuffer());
+          await loadFile(data, file.name, 1);
+          (e.target as HTMLInputElement).value = '';
+        }}
+      />
+      <DiskInfo
+        unit={0}
+        name={currentDiskName()}
+        diskInfo={currentDiskInfo()}
+        status={driveAStatus()}
+        soundEnabled={diskSoundA()}
+        writeProtected={writeProtectA()}
+        onInsert={() => fileInputRefA?.click()}
+        onToggleSound={() => {
+          setDiskSoundA(!diskSoundA());
+          persistSetting('disk-sound-a', diskSoundA() ? 'on' : 'off');
+        }}
+        onToggleWriteProtect={() => {
+          setWriteProtectA(!writeProtectA());
+          persistSetting('write-protect-a', writeProtectA() ? 'on' : 'off');
+          syncWriteProtect(0, writeProtectA());
+        }}
+      />
+      <DiskInfo
+        unit={1}
+        name={currentDiskNameB()}
+        diskInfo={currentDiskInfoB()}
+        status={driveBStatus()}
+        soundEnabled={diskSoundB()}
+        writeProtected={writeProtectB()}
+        onInsert={() => fileInputRefB?.click()}
+        onToggleSound={() => {
+          setDiskSoundB(!diskSoundB());
+          persistSetting('disk-sound-b', diskSoundB() ? 'on' : 'off');
+        }}
+        onToggleWriteProtect={() => {
+          setWriteProtectB(!writeProtectB());
+          persistSetting('write-protect-b', writeProtectB() ? 'on' : 'off');
+          syncWriteProtect(1, writeProtectB());
+        }}
+      />
       <Show when={showTrapLog()}>
         <RawHtml id="trap-log" html={trapLogHtml} />
       </Show>

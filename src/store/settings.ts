@@ -178,15 +178,21 @@ export const setOcrScaleY = _ocrScaleY[1];
 
 // ── Disk mode ───────────────────────────────────────────────────────────
 
+const _diskSoundA = /*@once*/ createRoot(() => createSignal(getSaved('disk-sound-a', 'on') === 'on'));
+export const diskSoundA = _diskSoundA[0];
+export const setDiskSoundA = _diskSoundA[1];
 
+const _diskSoundB = /*@once*/ createRoot(() => createSignal(getSaved('disk-sound-b', 'on') === 'on'));
+export const diskSoundB = _diskSoundB[0];
+export const setDiskSoundB = _diskSoundB[1];
 
-const _dualDrives = /*@once*/ createRoot(() => createSignal(getSaved('dual-drives', 'off') === 'on'));
-export const dualDrives = _dualDrives[0];
-export const setDualDrives = _dualDrives[1];
+const _writeProtectA = /*@once*/ createRoot(() => createSignal(getSaved('write-protect-a', 'off') === 'on'));
+export const writeProtectA = _writeProtectA[0];
+export const setWriteProtectA = _writeProtectA[1];
 
-const _diskSoundEnabled = /*@once*/ createRoot(() => createSignal(getSaved('disk-sound', 'on') === 'on'));
-export const diskSoundEnabled = _diskSoundEnabled[0];
-export const setDiskSoundEnabled = _diskSoundEnabled[1];
+const _writeProtectB = /*@once*/ createRoot(() => createSignal(getSaved('write-protect-b', 'off') === 'on'));
+export const writeProtectB = _writeProtectB[0];
+export const setWriteProtectB = _writeProtectB[1];
 
 // ── Tape settings ───────────────────────────────────────────────────────
 

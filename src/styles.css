@@ -844,23 +844,6 @@ input[type="range"]::-moz-range-thumb {
 
 /* Drive pane (live FDC state) */
 
-.drive-toolbar {
-  display: flex;
-  gap: 2px;
-}
-
-.drive-toolbar button {
-  flex: 0 0 auto;
-  padding: 4px 8px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.drive-toolbar button:hover { background: #ddd; }
 
 #drive-output {
   margin: 0;
@@ -1024,6 +1007,23 @@ input[type="range"]::-moz-range-thumb {
   color: #999;
   font-style: italic;
   font-weight: 400;
+}
+.disk-name-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.disk-name-row > .disk-name {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.disk-name-row > .ddmenu-btn {
+  flex: 0 0 auto;
+  width: 2em;
+  align-self: stretch;
+  padding: 0;
 }
 .disk-info-output {
   padding: 6px;

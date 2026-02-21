@@ -105,6 +105,9 @@ export class UPD765A {
 
   private disks: (DskImage | null)[] = [null, null, null, null];
 
+  /** Per-drive write-protect flag (software-controlled, like a physical tab) */
+  writeProtect = [false, false, false, false];
+
   /** Per-drive Read ID cycling index */
   private idIndex = [0, 0, 0, 0];
 
@@ -458,6 +461,7 @@ export class UPD765A {
     let st3 = unit | (head << 2) | 0x08; // bit 3 = two-side
     if (this.pcn[unit] === 0) st3 |= 0x10; // Track 0
     if (this.disks[unit]) st3 |= 0x20; // bit 5 = ready
+    if (this.writeProtect[unit]) st3 |= 0x40; // bit 6 = write protected
     this.result([st3]);
   }
 
@@ -542,6 +546,14 @@ export class UPD765A {
     const sector = track.sectors[idx];
     this.log(`  ✓ Found sector: actual size=${sector.data.length} bytes, ST1=0x${sector.st1.toString(16).padStart(2, '0')} ST2=0x${sector.st2.toString(16).padStart(2, '0')}`);
     const isWrite = cmd === CMD_WRITE_DATA || cmd === CMD_WRITE_DELETED;
+
+    // Write-protected disk — reject with ST1 NW (Not Writeable)
+    if (isWrite && this.writeProtect[unit]) {
+      this.log(`  ✗ Write rejected — drive ${unit} is write-protected`);
+      const st0 = ST0_ABNORMAL | (head << 2) | unit;
+      this.result([st0, 0x02, 0x00, c, h, r, n]); // ST1=NW (bit 1)
+      return;
+    }
 
     // Save execution state
     this.exUnit = unit;
@@ -823,11 +835,16 @@ export class UPD765A {
     this.result([st0, 0x00, 0x00, sector.c, sector.h, sector.r, sector.n]);
   }
 
-  /** Format Track — no disk → error. */
+  /** Format Track — no disk or write-protected → error. */
   private cmdFormat(): void {
     const unit = this.cmdBuf[1] & 0x03;
     const head = (this.cmdBuf[1] >> 2) & 1;
     const n = this.cmdBuf[2];
+    if (this.writeProtect[unit]) {
+      const st0 = ST0_ABNORMAL | (head << 2) | unit;
+      this.result([st0, 0x02, 0x00, 0, 0, 0, n]); // ST1=NW
+      return;
+    }
     const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
     this.result([st0, 0x01, 0x00, 0, 0, 0, n]);
   }
