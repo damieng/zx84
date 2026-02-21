@@ -6,11 +6,11 @@ import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
 import {
   HiOutlinePlay, HiOutlinePause,
   HiOutlineArrowDownRight, HiOutlineArrowTrendingDown, HiOutlineArrowUpRight,
-  HiOutlinePencilSquare,
+  HiOutlineForward, HiOutlinePencilSquare,
 } from 'solid-icons/hi';
 import {
   disasmText, tracing, emulationPaused,
-  stepInto, stepOver, stepOut,
+  stepInto, stepOver, stepOut, stepFrame,
   startTrace, stopTrace, copyCpuState,
   togglePause, toggleBreakpoint, runTo,
 } from '@/emulator.ts';
@@ -78,6 +78,7 @@ export function DisassemblyPane() {
         <button title="Step Into (execute one instruction)" onClick={stepInto} disabled={!emulationPaused()}><HiOutlineArrowDownRight /></button>
         <button title="Step Over (execute, stepping over CALLs)" onClick={stepOver} disabled={!emulationPaused()}><HiOutlineArrowTrendingDown /></button>
         <button title="Step Out (run until RET)" onClick={stepOut} disabled={!emulationPaused()}><HiOutlineArrowUpRight /></button>
+        <button title="Step Frame (run to end of frame)" onClick={stepFrame} disabled={!emulationPaused()}><HiOutlineForward /></button>
         <Show when={tracing()} fallback={
           <DropDownMenuButton
             icon={<HiOutlinePencilSquare />}

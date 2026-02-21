@@ -99,6 +99,15 @@ export class DebugManager {
   }
 
   /**
+   * Run exactly one frame (to the next frame boundary) and update the display.
+   */
+  stepFrame(spectrum: Spectrum, onUpdate: () => void): void {
+    spectrum.tick();
+    if (spectrum.display) spectrum.display.updateTexture(spectrum.ula.pixels);
+    onUpdate();
+  }
+
+  /**
    * Toggle breakpoint at address.
    */
   toggleBreakpoint(
