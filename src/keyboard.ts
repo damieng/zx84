@@ -93,26 +93,47 @@ const SS: KeyMapping = { row: 7, bit: 1 };  // Symbol Shift
 const CS: KeyMapping = { row: 0, bit: 0 };  // Caps Shift
 
 const CHAR_MAP: Record<string, ComboMapping> = {
+  // Punctuation — SYM SHIFT + key
+  ',':  [SS, { row: 7, bit: 3 }],  // SYM + N
+  '.':  [SS, { row: 7, bit: 2 }],  // SYM + M
   ';':  [SS, { row: 5, bit: 1 }],  // SYM + O
   ':':  [SS, { row: 0, bit: 1 }],  // SYM + Z
   "'":  [SS, { row: 4, bit: 3 }],  // SYM + 7
-  '#':  [SS, { row: 3, bit: 2 }],  // SYM + 3
+  '"':  [SS, { row: 5, bit: 0 }],  // SYM + P
   '?':  [SS, { row: 0, bit: 3 }],  // SYM + C
+  '/':  [SS, { row: 0, bit: 4 }],  // SYM + V
+  '*':  [SS, { row: 7, bit: 4 }],  // SYM + B
+  '!':  [SS, { row: 3, bit: 0 }],  // SYM + 1
   '@':  [SS, { row: 3, bit: 1 }],  // SYM + 2
-  '~':  [SS, { row: 1, bit: 0 }],  // SYM + A
-  '{':  [SS, { row: 1, bit: 3 }],  // SYM + F
-  '}':  [SS, { row: 1, bit: 4 }],  // SYM + G
+  '#':  [SS, { row: 3, bit: 2 }],  // SYM + 3
+  '$':  [SS, { row: 3, bit: 3 }],  // SYM + 4
+  '%':  [SS, { row: 3, bit: 4 }],  // SYM + 5
+  '&':  [SS, { row: 4, bit: 4 }],  // SYM + 6
+  '(':  [SS, { row: 4, bit: 2 }],  // SYM + 8
+  ')':  [SS, { row: 4, bit: 1 }],  // SYM + 9
   '-':  [SS, { row: 6, bit: 3 }],  // SYM + J
   '+':  [SS, { row: 6, bit: 2 }],  // SYM + K
   '=':  [SS, { row: 6, bit: 1 }],  // SYM + L
   '_':  [SS, { row: 4, bit: 0 }],  // SYM + 0
-  '[':  [CS, SS, { row: 5, bit: 4 }],  // EXT + Y (128K extended mode)
-  ']':  [CS, SS, { row: 5, bit: 3 }],  // EXT + U (128K extended mode)
+  '<':  [SS, { row: 2, bit: 3 }],  // SYM + R
+  '>':  [SS, { row: 2, bit: 4 }],  // SYM + T
+  '^':  [SS, { row: 6, bit: 4 }],  // SYM + H
+  '~':  [SS, { row: 1, bit: 0 }],  // SYM + A
+  '|':  [SS, { row: 1, bit: 1 }],  // SYM + S
+  '\\': [SS, { row: 1, bit: 2 }],  // SYM + D
+  '{':  [SS, { row: 1, bit: 3 }],  // SYM + F
+  '}':  [SS, { row: 1, bit: 4 }],  // SYM + G
+  // 128K extended mode
+  '[':  [CS, SS, { row: 5, bit: 4 }],  // EXT + Y
+  ']':  [CS, SS, { row: 5, bit: 3 }],  // EXT + U
 };
 
 export class SpectrumKeyboard {
   /** 8 half-row bytes, bits 0-4, active low (0 = pressed) */
   rows: Uint8Array;
+
+  /** Track active CHAR_MAP combos by physical key code for correct release */
+  private activeCharCombos = new Map<string, { combo: ComboMapping; suppressedCS: boolean }>();
 
   constructor() {
     this.rows = new Uint8Array(8);
@@ -121,6 +142,7 @@ export class SpectrumKeyboard {
 
   reset(): void {
     this.rows.fill(0xFF);
+    this.activeCharCombos.clear();
   }
 
   /**
@@ -145,12 +167,36 @@ export class SpectrumKeyboard {
     }
   }
 
+  /** Check if CAPS SHIFT is currently pressed (row 0, bit 0 active-low). */
+  private get capsShiftPressed(): boolean {
+    return (this.rows[0] & 1) === 0;
+  }
+
   handleKeyEvent(code: string, pressed: boolean, key?: string): boolean {
-    // Check character map first for symbol keys (';', ':', etc.)
-    // but only when the code-based map doesn't have a direct match,
-    // or the code maps to a modifier that the char map would override.
+    // On key release, use the stored combo from keydown so we release the
+    // correct keys even if Shift state changed between press and release.
+    if (!pressed) {
+      const stored = this.activeCharCombos.get(code);
+      if (stored) {
+        for (const k of stored.combo) this.setKey(k.row, k.bit, false);
+        // Restore CAPS SHIFT if we suppressed it (physical Shift still held)
+        if (stored.suppressedCS) this.setKey(0, 0, true);
+        this.activeCharCombos.delete(code);
+        return true;
+      }
+    }
+
+    // Check character map for symbol keys (';', '-', ',', etc.)
     const charMapping = key ? CHAR_MAP[key] : undefined;
     if (charMapping) {
+      if (pressed) {
+        // If CAPS SHIFT is pressed (from physical Shift) but this combo
+        // doesn't need it, suppress CS to avoid entering extended mode.
+        const comboNeedsCS = charMapping.some(k => k.row === 0 && k.bit === 0);
+        const suppressCS = this.capsShiftPressed && !comboNeedsCS;
+        if (suppressCS) this.setKey(0, 0, false);
+        this.activeCharCombos.set(code, { combo: charMapping, suppressedCS: suppressCS });
+      }
       for (const k of charMapping) this.setKey(k.row, k.bit, pressed);
       return true;
     }
