@@ -5,6 +5,7 @@ import {
   scale, setScale, brightness, setBrightness, contrast, setContrast,
   smoothing, setSmoothing, curvature, setCurvature, scanlines, setScanlines,
   maskType, setMaskType, dotPitch, setDotPitch, curvatureMode, setCurvatureMode,
+  noise, setNoise,
   monitor, setMonitor, borderSize, setBorderSize,
   renderer, colorMap, setColorMap, persistSetting,
 } from '@/store/settings.ts';
@@ -151,6 +152,8 @@ export function DisplayPane() {
         apply={(v) => spectrum?.display?.setScanlines(v / 100)} settingKey="scanlines" />
       <SliderRow label="Smoothing" id="smoothing" min={0} max={100} sig={smoothing} setSig={setSmoothing}
         apply={(v) => spectrum?.display?.setSmoothing(v / 100)} settingKey="smoothing" />
+      <SliderRow label="Noise" id="noise" min={0} max={100} sig={noise} setSig={setNoise}
+        apply={(v) => spectrum?.display?.setNoise(v / 100)} settingKey="noise" />
       <SliderRow label="Curvature" id="curvature" min={0} max={100} sig={curvature} setSig={setCurvature}
         apply={(v) => spectrum?.display?.setCurvature(v / 100 * 0.15)} settingKey="curvature" />
       <div class="slider-row">

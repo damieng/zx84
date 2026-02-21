@@ -63,6 +63,15 @@ const FRAG_CRT = `
   uniform int   u_curvatureMode; // 0=spherical, 1=cylindrical
   uniform float u_brightness;    // -1 to 1, default 0
   uniform float u_contrast;      // 0 to 2, default 1
+  uniform float u_noise;         // 0 = off, up to 1 = heavy noise
+  uniform float u_frame;         // frame counter for varying noise
+
+  // Hash-based pseudo-random noise (returns 0..1)
+  float hash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+  }
 
   vec2 barrel(vec2 uv, float k) {
     vec2 c = uv - 0.5;
@@ -184,6 +193,12 @@ const FRAG_CRT = `
       col *= 1.0 - dot(vig, vig) * u_curvature * 3.0;
     }
 
+    // -- Noise (brightness perturbation) --
+    if (u_noise > 0.0) {
+      float n = hash(vec3(gl_FragCoord.xy, u_frame)) * 2.0 - 1.0; // -1..1
+      col += n * u_noise * 0.15;
+    }
+
     // -- Brightness / Contrast --
     col = (col - 0.5) * u_contrast + 0.5 + u_brightness;
 
@@ -220,6 +235,8 @@ export class WebGLRenderer implements IScreenRenderer {
   private curvatureMode = 0;
   private brightness = 0;
   private contrast = 1;
+  private noise = 0;
+  private frameCount = 0;
 
   // Cached uniform locations — pass 1
   private u1TexSize: WebGLUniformLocation | null = null;
@@ -235,6 +252,8 @@ export class WebGLRenderer implements IScreenRenderer {
   private u2CurvatureMode: WebGLUniformLocation | null = null;
   private u2Brightness: WebGLUniformLocation | null = null;
   private u2Contrast: WebGLUniformLocation | null = null;
+  private u2Noise: WebGLUniformLocation | null = null;
+  private u2Frame: WebGLUniformLocation | null = null;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.canvas = canvas;
@@ -285,6 +304,8 @@ export class WebGLRenderer implements IScreenRenderer {
     this.u2CurvatureMode = gl.getUniformLocation(this.progCRT, 'u_curvatureMode');
     this.u2Brightness = gl.getUniformLocation(this.progCRT, 'u_brightness');
     this.u2Contrast = gl.getUniformLocation(this.progCRT, 'u_contrast');
+    this.u2Noise = gl.getUniformLocation(this.progCRT, 'u_noise');
+    this.u2Frame = gl.getUniformLocation(this.progCRT, 'u_frame');
 
     // ── Source texture (emulator pixels, NEAREST) ──
     this.texture = gl.createTexture()!;
@@ -414,6 +435,11 @@ export class WebGLRenderer implements IScreenRenderer {
     this.glDirty = true;
   }
 
+  setNoise(v: number): void {
+    this.noise = Math.max(0, Math.min(1, v));
+    this.glDirty = true;
+  }
+
   resize(width: number, height: number): void {
     this.width = width;
     this.height = height;
@@ -468,7 +494,13 @@ export class WebGLRenderer implements IScreenRenderer {
       gl.uniform1i(this.u2CurvatureMode, this.curvatureMode);
       gl.uniform1f(this.u2Brightness, this.brightness);
       gl.uniform1f(this.u2Contrast, this.contrast);
+      gl.uniform1f(this.u2Noise, this.noise);
     }
+    // Frame counter must update every frame for noise variation
+    if (this.noise > 0) {
+      gl.uniform1f(this.u2Frame, this.frameCount);
+    }
+    this.frameCount = (this.frameCount + 1) & 0x7FFFFFFF;
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     this.glDirty = false;

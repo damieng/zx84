@@ -47,6 +47,10 @@ const _curvatureMode = /*@once*/ createRoot(() => createSignal(getSavedNumber('c
 export const curvatureMode = _curvatureMode[0];
 export const setCurvatureMode = _curvatureMode[1];
 
+const _noise = /*@once*/ createRoot(() => createSignal(getSavedNumber('noise', '0')));
+export const noise = _noise[0];
+export const setNoise = _noise[1];
+
 const _monitor = /*@once*/ createRoot(() => createSignal(getSaved('monitor', 'raw')));
 export const monitor = _monitor[0];
 export const setMonitor = _monitor[1];

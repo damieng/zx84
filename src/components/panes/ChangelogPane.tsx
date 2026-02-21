@@ -4,6 +4,12 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.0',
     items: [
+      'Noise display pattern for that retro vibe',
+    ]
+  },
+  {
+    version: '0.2.0',
+    items: [
       'Multiface 1 / 128 / 3 support',
       'Rewritten display engine for border effects',
       'ULA contention accuracy improvements',

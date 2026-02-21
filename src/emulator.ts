@@ -178,6 +178,7 @@ export function applyDisplaySettings(): void {
     spectrum.display.setMaskType(settings.maskType());
     spectrum.display.setDotPitch(settings.dotPitch() / 10);
     spectrum.display.setCurvatureMode(settings.curvatureMode());
+    spectrum.display.setNoise(settings.noise() / 100);
   }
   spectrum['audio'].setVolume(settings.volume() / 100);
   const mix = settings.ayMix() / 100;
