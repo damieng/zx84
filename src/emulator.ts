@@ -333,6 +333,15 @@ export function stepOut(): void {
   debugManager.stepOut(spectrum, updateRegsOnce);
 }
 
+export function stepFrame(): void {
+  if (!spectrum) return;
+  if (!emulationPaused()) {
+    spectrum.stop();
+    setEmulationPaused(true);
+  }
+  debugManager.stepFrame(spectrum, updateRegsOnce);
+}
+
 export function resetMachine(): void {
   floppySound?.reset();
   if (spectrum) {
@@ -583,7 +592,7 @@ export async function saveSnapshot(format: 'z80' | 'szx' = 'szx'): Promise<void>
 
   if (format === 'szx') {
     const ayRegs = spectrum.ay.getRegisters();
-    data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, model, ayRegs, spectrum.ay.selectedReg);
+    data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, model, spectrum.contention.frameStartTStates, ayRegs, spectrum.ay.selectedReg);
   } else {
     // .z80 format
     data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, is128kClass(currentModel()));
@@ -962,6 +971,7 @@ export async function saveHMRState(): Promise<void> {
       spectrum.memory,
       spectrum.ula.borderColor,
       currentModel(),
+      spectrum.contention.frameStartTStates,
       ayRegs,
       spectrum.ay.selectedReg
     );

@@ -175,6 +175,12 @@ export class Spectrum {
    *  pending interrupt is accepted or a new frame fires normally. */
   private _intPending = false;
 
+  /** Per-cell render threshold: +1 on 48K (render when beam enters cell for
+   *  tightest accuracy), 0 on all other models (render after beam fully passes
+   *  cell, avoiding the race between per-instruction rendering and multicolor
+   *  engines writing attributes ahead of the beam).  Set once in constructor. */
+  private _cellRenderOffset: 0 | 1 = 1;
+
   /** Breakpoints (checked every instruction in runFrame) */
   breakpoints = new Set<number>();
   /** Set to the hit address when a breakpoint fires mid-frame */
@@ -206,6 +212,14 @@ export class Spectrum {
     this.tape.is48K = model === '48k';
     this.tape.cpuClock = this.contention.timing.cpuClock;
     this.fdc = new UPD765A();
+    // 48K: render as the beam enters each cell (+1) for tightest accuracy.
+    // 128K/+2/+2A/+3: render after the beam fully passes (+0) to avoid a race
+    // where the per-instruction renderPendingScanlines() captures a cell with
+    // stale attributes before Bifrost (or similar engines) can write ahead of
+    // the beam.  The 228T/line timing on 128K shifts the phase relationship so
+    // that +1 intermittently renders a cell one instruction before the engine
+    // writes its new attribute.
+    this._cellRenderOffset = model === '48k' ? 1 : 0;
     installMemoryHooks(this);
     wirePortIO(this);
   }
@@ -546,6 +560,14 @@ export class Spectrum {
         }
       }
 
+      // Render display cells up to the current beam position.
+      // Called after every instruction (not just on VRAM writes) so that
+      // cells are rendered promptly — within one instruction of the beam
+      // passing them.  This prevents stale-attribute reads when Bifrost
+      // overwrites an attribute for the next scanline before a deferred
+      // render picks it up.
+      this.renderPendingScanlines();
+
       const elapsed = this.cpu.tStates - tBefore;
 
       // Advance tape playback and update ULA EAR bit (catches up any
@@ -655,14 +677,15 @@ export class Spectrum {
         if (this.nextPixelX < borderLeft) {
           ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
         }
-        // Display data — render individual cells once the beam has fully passed them.
-        // We render a cell only when the beam has moved PAST all 8 of its pixels,
-        // not as soon as the beam enters it.  This prevents a multi-byte write
-        // (like PUSH writing two adjacent attributes) from triggering premature
-        // rendering of a cell whose data hasn't been fully written yet.
-        // The 4T (8-pixel) buffer matches the ULA's fetch-to-display pipeline.
+        // Display data — render individual cells as the beam passes them.
+        // 48K uses +1 (render as beam enters cell) for tightest accuracy.
+        // All other models use +0 (render after beam fully passes cell) to
+        // prevent the per-instruction renderPendingScanlines() from capturing
+        // a cell before multicolor engines (Bifrost etc.) write ahead of the
+        // beam.  On 128K/+2 the 228T/line timing shifts the phase so +1
+        // intermittently races with attribute writes.
         if (beamX > borderLeft && this.nextDisplayCol < 32) {
-          const endCol = Math.min(32, (Math.min(beamX, dispEnd) - borderLeft) >> 3);
+          const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) >> 3) + this._cellRenderOffset);
           const dy = i - borderTop;
           for (let col = this.nextDisplayCol; col < endCol; col++) {
             ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
