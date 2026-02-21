@@ -1,10 +1,61 @@
 /**
  * Synthesised floppy drive soundscape.
  *
+ * Two profiles:
+ *  - "3inch" : Amstrad/Hitachi CF2 — clunky, resonant, pronounced engage click
+ *  - "3.5inch": Sony/Alps 720K — smoother, higher-pitched, quieter seeks
+ *
  * Motor drone, step clicks, and seek-to-zero rattle — all generated
  * from Web Audio oscillators and noise bursts. Connects directly to
  * ctx.destination via its own GainNode (independent of emulated audio).
  */
+
+export type DriveType = '3inch' | '3.5inch';
+
+interface DriveProfile {
+  motorHumFreq: number;
+  motorHumGain: number;
+  motorNoiseFreq: number;
+  motorNoiseQ: number;
+  motorNoiseGain: number;
+  motorRampUp: number;
+  motorRampDown: number;
+  engageHpStart: number;
+  engageHpEnd: number;
+  engageGain: number;
+  engageLatchFreq: number;
+  engageLatchQ: number;
+  engageLatchGain: number;
+  stepFreq: number;
+  stepQ: number;
+  stepGain: number;
+  stepDur: number;
+  seekInterval: number;
+  seekToZeroInterval: number;
+}
+
+const PROFILES: Record<DriveType, DriveProfile> = {
+  '3inch': {
+    // Amstrad/Hitachi CF2 — chunky, mechanical, resonant
+    motorHumFreq: 120, motorHumGain: 0.06,
+    motorNoiseFreq: 160, motorNoiseQ: 4, motorNoiseGain: 0.1,
+    motorRampUp: 0.1, motorRampDown: 0.15,
+    engageHpStart: 3000, engageHpEnd: 400, engageGain: 0.3,
+    engageLatchFreq: 1800, engageLatchQ: 5, engageLatchGain: 0.45,
+    stepFreq: 1200, stepQ: 2, stepGain: 1.0, stepDur: 0.03,
+    seekInterval: 0.01, seekToZeroInterval: 0.008,
+  },
+  '3.5inch': {
+    // Sony/Alps 720K — smoother, lighter, higher-pitched
+    motorHumFreq: 180, motorHumGain: 0.03,
+    motorNoiseFreq: 280, motorNoiseQ: 3, motorNoiseGain: 0.06,
+    motorRampUp: 0.06, motorRampDown: 0.1,
+    engageHpStart: 4000, engageHpEnd: 800, engageGain: 0.15,
+    engageLatchFreq: 2800, engageLatchQ: 3, engageLatchGain: 0.25,
+    stepFreq: 2200, stepQ: 3, stepGain: 0.5, stepDur: 0.015,
+    seekInterval: 0.006, seekToZeroInterval: 0.005,
+  },
+};
 
 export class FloppySound {
   private ctx: AudioContext | null = null;
@@ -19,6 +70,11 @@ export class FloppySound {
   // Previous state for edge detection
   private prevMotor = false;
   private prevTrack = 0;
+
+  /** Current drive sound profile */
+  driveType: DriveType = '3inch';
+
+  private get P(): DriveProfile { return PROFILES[this.driveType]; }
 
   /** Attach to an existing AudioContext (lazy — may not exist until first click). */
   attach(ctx: AudioContext): void {
@@ -75,22 +131,23 @@ export class FloppySound {
     this.motorRunning = true;
     const ctx = this.ctx;
     const now = ctx.currentTime;
+    const P = this.P;
 
     // Gain envelope
     this.motorGain = ctx.createGain();
     this.motorGain.gain.setValueAtTime(0, now);
-    this.motorGain.gain.linearRampToValueAtTime(1, now + 0.1);
+    this.motorGain.gain.linearRampToValueAtTime(1, now + P.motorRampUp);
     this.motorGain.connect(this.masterGain);
 
-    // Mechanical engage "kurlick" — short downward sweep + noise burst
+    // Mechanical engage click
     this.motorStartClick(now);
 
     // Subtle motor hum
     this.motorOsc = ctx.createOscillator();
     this.motorOsc.type = 'sine';
-    this.motorOsc.frequency.value = 120;
+    this.motorOsc.frequency.value = P.motorHumFreq;
     const oscGain = ctx.createGain();
-    oscGain.gain.value = 0.06;
+    oscGain.gain.value = P.motorHumGain;
     this.motorOsc.connect(oscGain);
     oscGain.connect(this.motorGain);
     this.motorOsc.start(now);
@@ -106,11 +163,11 @@ export class FloppySound {
 
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 160;
-    bp.Q.value = 4;
+    bp.frequency.value = P.motorNoiseFreq;
+    bp.Q.value = P.motorNoiseQ;
 
     const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.1;
+    noiseGain.gain.value = P.motorNoiseGain;
     this.motorNoise.connect(bp);
     bp.connect(noiseGain);
     noiseGain.connect(this.motorGain);
@@ -125,7 +182,7 @@ export class FloppySound {
     if (this.motorGain) {
       this.motorGain.gain.cancelScheduledValues(now);
       this.motorGain.gain.setValueAtTime(this.motorGain.gain.value, now);
-      this.motorGain.gain.linearRampToValueAtTime(0, now + 0.15);
+      this.motorGain.gain.linearRampToValueAtTime(0, now + this.P.motorRampDown);
     }
 
     const cleanup = () => {
@@ -141,15 +198,16 @@ export class FloppySound {
     setTimeout(cleanup, 200);
   }
 
-  // ── Motor start "kurlick" ───────────────────────────────────────────
+  // ── Motor start click ─────────────────────────────────────────────
 
   private motorStartClick(now: number): void {
     if (!this.ctx || !this.masterGain) return;
     const ctx = this.ctx;
+    const P = this.P;
     const dur = 0.09;
     const samples = Math.ceil(ctx.sampleRate * dur);
 
-    // "shuhh" — filtered noise that sweeps downward, like a mechanism sliding
+    // Filtered noise sweep — mechanism engaging
     const noiseBuf = ctx.createBuffer(1, samples, ctx.sampleRate);
     const data = noiseBuf.getChannelData(0);
     for (let i = 0; i < samples; i++) data[i] = Math.random() * 2 - 1;
@@ -158,12 +216,12 @@ export class FloppySound {
 
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
-    hp.frequency.setValueAtTime(3000, now);
-    hp.frequency.exponentialRampToValueAtTime(400, now + 0.06);
+    hp.frequency.setValueAtTime(P.engageHpStart, now);
+    hp.frequency.exponentialRampToValueAtTime(P.engageHpEnd, now + 0.06);
 
     const noiseEnv = ctx.createGain();
-    noiseEnv.gain.setValueAtTime(0.3, now);
-    noiseEnv.gain.linearRampToValueAtTime(0.15, now + 0.04);
+    noiseEnv.gain.setValueAtTime(P.engageGain, now);
+    noiseEnv.gain.linearRampToValueAtTime(P.engageGain * 0.5, now + 0.04);
     noiseEnv.gain.exponentialRampToValueAtTime(0.01, now + dur);
 
     noiseSrc.connect(hp);
@@ -172,7 +230,7 @@ export class FloppySound {
     noiseSrc.start(now);
     noiseSrc.stop(now + dur);
 
-    // "ckl" — sharp resonant click at the end, like a latch catching
+    // Sharp resonant click — latch catching
     const clickTime = now + 0.05;
     const clickBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.015), ctx.sampleRate);
     const clickData = clickBuf.getChannelData(0);
@@ -182,11 +240,11 @@ export class FloppySound {
 
     const clickBp = ctx.createBiquadFilter();
     clickBp.type = 'bandpass';
-    clickBp.frequency.value = 1800;
-    clickBp.Q.value = 5;
+    clickBp.frequency.value = P.engageLatchFreq;
+    clickBp.Q.value = P.engageLatchQ;
 
     const clickEnv = ctx.createGain();
-    clickEnv.gain.setValueAtTime(0.45, clickTime);
+    clickEnv.gain.setValueAtTime(P.engageLatchGain, clickTime);
     clickEnv.gain.exponentialRampToValueAtTime(0.01, clickTime + 0.015);
 
     clickSrc.connect(clickBp);
@@ -201,9 +259,10 @@ export class FloppySound {
   private stepClick(when?: number): void {
     if (!this.ctx || !this.masterGain) return;
     const ctx = this.ctx;
+    const P = this.P;
     const t = when ?? ctx.currentTime;
 
-    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.03), ctx.sampleRate);
+    const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * P.stepDur), ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
@@ -212,18 +271,18 @@ export class FloppySound {
 
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = 1200;
-    bp.Q.value = 2;
+    bp.frequency.value = P.stepFreq;
+    bp.Q.value = P.stepQ;
 
     const env = ctx.createGain();
-    env.gain.setValueAtTime(1, t);
-    env.gain.exponentialRampToValueAtTime(0.01, t + 0.03);
+    env.gain.setValueAtTime(P.stepGain, t);
+    env.gain.exponentialRampToValueAtTime(0.01, t + P.stepDur);
 
     src.connect(bp);
     bp.connect(env);
     env.connect(this.masterGain);
     src.start(t);
-    src.stop(t + 0.03);
+    src.stop(t + P.stepDur);
   }
 
   // ── Seek-to-zero rattle ──────────────────────────────────────────────
@@ -233,7 +292,7 @@ export class FloppySound {
     const count = Math.min(fromTrack, 80);
     const now = this.ctx.currentTime;
     for (let i = 0; i < count; i++) {
-      this.stepClick(now + i * 0.008);
+      this.stepClick(now + i * this.P.seekToZeroInterval);
     }
   }
 
@@ -243,7 +302,7 @@ export class FloppySound {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     for (let i = 0; i < steps; i++) {
-      this.stepClick(now + i * 0.01);
+      this.stepClick(now + i * this.P.seekInterval);
     }
   }
 }
