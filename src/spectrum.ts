@@ -586,8 +586,13 @@ export class Spectrum {
           if (this.nextPixelX < borderLeft2) {
             this.ula.fillBorder(i, this.nextPixelX, borderLeft2, this.ula.borderColor);
           }
-          if (this.nextPixelX <= borderLeft2) {
-            this.ula.renderDisplayData(i - borderTop, this.memory.screenBank, 0x4000);
+          // Render any remaining display cells not yet drawn
+          if (this.nextPixelX < dispEnd) {
+            const startCol = Math.max(0, (this.nextPixelX - borderLeft2) >> 3);
+            const dy = i - borderTop;
+            for (let col = startCol; col < 32; col++) {
+              this.ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
+            }
           }
           if (this.nextPixelX < w) {
             this.ula.fillBorder(i, Math.max(this.nextPixelX, dispEnd), w, this.ula.borderColor);
@@ -634,9 +639,14 @@ export class Spectrum {
         if (this.nextPixelX < borderLeft) {
           ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
         }
-        // Display data — render once when beam first enters display area
-        if (this.nextPixelX <= borderLeft && beamX > borderLeft) {
-          ula.renderDisplayData(i - borderTop, this.memory.screenBank, 0x4000);
+        // Display data — render individual cells as beam crosses each 8px boundary
+        if (beamX > borderLeft && this.nextPixelX < dispEnd) {
+          const startCol = Math.max(0, (this.nextPixelX - borderLeft) >> 3);
+          const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) + 7) >> 3);
+          const dy = i - borderTop;
+          for (let col = startCol; col < endCol; col++) {
+            ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
+          }
         }
         // Right border portion
         if (beamX > dispEnd && this.nextPixelX < w) {

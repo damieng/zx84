@@ -303,45 +303,50 @@ export class ULA {
   }
 
   /**
-   * Render only the 256-pixel display data for one scanline (no borders).
-   * Used by the inline scanline renderer which handles borders separately
-   * with sub-scanline precision.
+   * Render a single 8-pixel character cell on a display scanline.
+   * y: display line 0..191, col: character column 0..31.
    */
-  renderDisplayData(y: number, memory: Uint8Array, vramOffset = 0): void {
+  renderDisplayCell(y: number, col: number, memory: Uint8Array, vramOffset = 0): void {
     const screenY = y + this.borderTop;
     const rowStart = screenY * this.screenWidth;
 
     const bitmapAddr = (0x4000 |
       ((y & 0xC0) << 5) |
       ((y & 0x07) << 8) |
-      ((y & 0x38) << 2)) - vramOffset;
+      ((y & 0x38) << 2)) - vramOffset + col;
 
-    const attrBase = 0x5800 + ((y >> 3) << 5) - vramOffset;
+    const attr = memory[0x5800 + ((y >> 3) << 5) + col - vramOffset];
 
+    const bright = (attr & 0x40) ? 8 : 0;
+    let ink = (attr & 0x07) + bright;
+    let paper = ((attr >> 3) & 0x07) + bright;
+
+    if ((attr & 0x80) && this.flashState) {
+      const tmp = ink;
+      ink = paper;
+      paper = tmp;
+    }
+
+    const inkRGBA = this.palette[ink];
+    const paperRGBA = this.palette[paper];
+
+    const byteVal = memory[bitmapAddr];
+    const baseIdx = rowStart + this.borderLeft + (col << 3);
+
+    for (let bit = 7; bit >= 0; bit--) {
+      this.pixels32[baseIdx + (7 - bit)] =
+        (byteVal & (1 << bit)) ? inkRGBA : paperRGBA;
+    }
+  }
+
+  /**
+   * Render only the 256-pixel display data for one scanline (no borders).
+   * Used by the inline scanline renderer which handles borders separately
+   * with sub-scanline precision.
+   */
+  renderDisplayData(y: number, memory: Uint8Array, vramOffset = 0): void {
     for (let col = 0; col < 32; col++) {
-      const byteVal = memory[bitmapAddr + col];
-      const attr = memory[attrBase + col];
-
-      const bright = (attr & 0x40) ? 8 : 0;
-      let ink = (attr & 0x07) + bright;
-      let paper = ((attr >> 3) & 0x07) + bright;
-
-      if ((attr & 0x80) && this.flashState) {
-        const tmp = ink;
-        ink = paper;
-        paper = tmp;
-      }
-
-      const inkRGBA = this.palette[ink];
-      const paperRGBA = this.palette[paper];
-
-      const px = this.borderLeft + (col << 3);
-      const baseIdx = rowStart + px;
-
-      for (let bit = 7; bit >= 0; bit--) {
-        this.pixels32[baseIdx + (7 - bit)] =
-          (byteVal & (1 << bit)) ? inkRGBA : paperRGBA;
-      }
+      this.renderDisplayCell(y, col, memory, vramOffset);
     }
   }
 
