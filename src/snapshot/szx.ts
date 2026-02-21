@@ -319,7 +319,7 @@ function writeBlockHeader(data: Uint8Array, offset: number, id: string, size: nu
   return offset + 8;
 }
 
-export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, model: SpectrumModel, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
+export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, model: SpectrumModel, frameStartTStates: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
   // Flush live flat[] data back to ramBanks[] before serialising
   memory.saveToRAMBanks();
 
@@ -382,7 +382,8 @@ export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: num
   data[offset + 26] = cpu.iff1 ? 1 : 0;
   data[offset + 27] = cpu.iff2 ? 1 : 0;
   data[offset + 28] = cpu.im;
-  w32(data, offset + 29, cpu.tStates);
+  // dwCyclesStart: frame-relative T-states (0 to tStatesPerFrame)
+  w32(data, offset + 29, cpu.tStates - frameStartTStates);
   data[offset + 33] = 0; // chHoldIntReqCycles
   data[offset + 34] = cpu.halted ? 0x02 : 0; // chFlags
   w16(data, offset + 35, 0); // wMemPtr
