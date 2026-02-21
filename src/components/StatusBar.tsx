@@ -20,7 +20,7 @@ function Led(props: {
       style={props.onClick ? 'cursor:pointer' : undefined}
       title={props.tip}
     >
-      <span class="led-dot" />{props.label}
+      {props.label}
     </div>
   );
 }

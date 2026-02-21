@@ -352,6 +352,9 @@ canvas {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  border-top: 1px solid #333;
+  margin-top: 4px;
+  padding-top: 4px;
 }
 
 #activity {
@@ -363,35 +366,18 @@ canvas {
 
 .led-group {
   display: flex;
-  gap: 8px;
+  gap: 12px;
 }
 
 .led {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   font-size: 0.7rem;
   color: inherit;
 }
 
-.led-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #333;
-  transition: background 0.05s;
-}
-
-.led.on .led-dot { background: #0f0; }
 .led.on { color: #8f8; }
-.led[data-kind="ear"].on .led-dot { background: #f80; }
 .led[data-kind="ear"].on { color: #ca6; }
-.led[data-kind="dsk"].on .led-dot { background: #0f0; }
-.led[data-kind="rainbow"].on .led-dot { background: #f0f; }
 .led[data-kind="rainbow"].on { color: #f8f; }
-.led[data-kind="mouse"].on .led-dot { background: #0af; }
 .led[data-kind="mouse"].on { color: #8cf; }
-.led[data-kind="accel"].on .led-dot { background: #ff0; }
 .led[data-kind="accel"].on { color: #ff8; }
 
 /* Mouse pane */
