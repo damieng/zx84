@@ -25,6 +25,16 @@ export function installMemoryHooks(s: Spectrum): void {
     return s.cpu.memory[addr];
   };
 
+  // Internal bus contention (no MREQ). On Ferranti ULA (48K/128K/+2),
+  // internal processing cycles get contended when the address is in
+  // contended memory. On Amstrad gate array (+2A/+3), MREQ must be
+  // asserted for contention, so internal cycles are never contended.
+  s.cpu.contend = isPlus2AClass(s.model) ? () => {} : (addr: number): void => {
+    if (contention.isContended(addr)) {
+      s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
+    }
+  };
+
   s.cpu.write8 = (addr: number, val: number): void => {
     addr &= 0xFFFF;
     if (contention.isContended(addr)) {
