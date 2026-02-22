@@ -10,6 +10,7 @@
  */
 
 import type { IScreenRenderer } from '@/display/display.ts';
+import hq4xLutUrl from '@/display/hq4x-lut.png';  // 256×256 RGBA LUT for HQ4x blend weights
 
 const VERT_SRC = `
   attribute vec2 a_pos;
@@ -320,111 +321,108 @@ const FRAG_SCALE3X = UPSCALE_HEAD + HQ_COMMON + LUMINANCE + `
   }
 `;
 
-// 4: HQ4x — high-quality 4x with graduated blending.
-// Each source pixel maps to a 4x4 output block.  The inner 2x2 is always
-// the source color.  Edge sub-pixels get mild blending, and corner
-// sub-pixels get the strongest blending — producing smooth curves at 4x.
-const FRAG_HQ4X = UPSCALE_HEAD + HQ_COMMON + `
+// 4: HQ4x — LUT-based reference implementation.
+// Based on gizmo98/common-shaders (Maxim Stepin / Cameron Zemek / Jules Blok).
+//
+// Uses a 256×256 RGBA lookup texture containing pre-computed blend weights.
+// The LUT is indexed by:
+//   x = 8-bit pattern (which of 8 neighbors differ from center in YUV space)
+//   y = cross_pattern * 16 + sub_pixel_position
+//
+// For each output pixel, only 4 source pixels contribute:
+//   p1 = center (E), p2 = diagonal, p3 = horizontal, p4 = vertical
+// selected by which quadrant of the 4x4 block we're in.
+//
+// The LUT returns RGBA weights for these 4 pixels.
+const FRAG_HQ4X = UPSCALE_HEAD + `
+  uniform sampler2D u_lut;
+
+  // Per-channel YUV thresholds (from original hqx algorithm)
+  const vec3 yuv_threshold = vec3(48.0/255.0, 7.0/255.0, 6.0/255.0);
+
+  // RGB → YUV conversion
+  vec3 toYUV(vec3 c) {
+    return vec3(
+      dot(c, vec3( 0.299,  0.587,  0.114)),
+      dot(c, vec3(-0.169, -0.331,  0.500)),
+      dot(c, vec3( 0.500, -0.419, -0.081))
+    );
+  }
+
+  bool hqdiff(vec3 yuv1, vec3 yuv2) {
+    vec3 d = abs(yuv1 - yuv2);
+    return d.x > yuv_threshold.x || d.y > yuv_threshold.y || d.z > yuv_threshold.z;
+  }
+
+  vec4 T(vec2 p) { return texture2D(u_tex, (floor(p) + 0.5) / u_texSize); }
+
   void main() {
     vec2 pos = v_uv * u_texSize;
-    vec2 i = floor(pos);
-    vec2 f = fract(pos);
+    vec2 fp = fract(pos);
+    vec2 ip = floor(pos);
 
-    //   A B C
-    //   D E F
-    //   G H I
-    vec4 A = T(i + vec2(-1,-1));
-    vec4 B = T(i + vec2( 0,-1));
-    vec4 C = T(i + vec2( 1,-1));
-    vec4 D = T(i + vec2(-1, 0));
-    vec4 E = T(i);
-    vec4 F = T(i + vec2( 1, 0));
-    vec4 G = T(i + vec2(-1, 1));
-    vec4 H = T(i + vec2( 0, 1));
-    vec4 I = T(i + vec2( 1, 1));
+    // Which quadrant of the 4x4 block?
+    vec2 quad = sign(-0.5 + fp);
+    // quad is (-1,-1), (1,-1), (-1,1), or (1,1)
 
-    // Sub-pixel position in 4x4 grid (0..3)
-    int sx = int(f.x * 4.0);
-    int sy = int(f.y * 4.0);
-    if (sx > 3) sx = 3;
-    if (sy > 3) sy = 3;
+    // 4 candidate pixels for this quadrant
+    vec4 p1 = T(ip);                                     // center
+    vec4 p2 = T(ip + quad);                               // diagonal
+    vec4 p3 = T(ip + vec2(quad.x, 0.0));                  // horizontal
+    vec4 p4 = T(ip + vec2(0.0, quad.y));                   // vertical
 
-    // Inner 2x2 (sx 1-2, sy 1-2) = always E
-    vec4 result = E;
+    // Sample all 9 neighbors and convert to YUV
+    vec3 w1 = toYUV(T(ip + vec2(-1,-1)).rgb);
+    vec3 w2 = toYUV(T(ip + vec2( 0,-1)).rgb);
+    vec3 w3 = toYUV(T(ip + vec2( 1,-1)).rgb);
+    vec3 w4 = toYUV(T(ip + vec2(-1, 0)).rgb);
+    vec3 w5 = toYUV(p1.rgb);
+    vec3 w6 = toYUV(T(ip + vec2( 1, 0)).rgb);
+    vec3 w7 = toYUV(T(ip + vec2(-1, 1)).rgb);
+    vec3 w8 = toYUV(T(ip + vec2( 0, 1)).rgb);
+    vec3 w9 = toYUV(T(ip + vec2( 1, 1)).rgb);
 
-    // Edge detection
-    bool eDB = !diff(D,B), eBF = !diff(B,F);
-    bool eDH = !diff(D,H), eHF = !diff(H,F);
-    bool eDF = diff(D,F),  eBH = diff(B,H);
+    // Build 8-bit pattern: which neighbors differ from center?
+    //   bit 0 = w1 (TL), bit 1 = w2 (T), bit 2 = w3 (TR)
+    //   bit 3 = w4 (L),  bit 4 = w6 (R)
+    //   bit 5 = w7 (BL), bit 6 = w8 (B), bit 7 = w9 (BR)
+    float pattern =
+      (hqdiff(w5, w1) ? 1.0 : 0.0) +
+      (hqdiff(w5, w2) ? 2.0 : 0.0) +
+      (hqdiff(w5, w3) ? 4.0 : 0.0) +
+      (hqdiff(w5, w4) ? 8.0 : 0.0) +
+      (hqdiff(w5, w6) ? 16.0 : 0.0) +
+      (hqdiff(w5, w7) ? 32.0 : 0.0) +
+      (hqdiff(w5, w8) ? 64.0 : 0.0) +
+      (hqdiff(w5, w9) ? 128.0 : 0.0);
 
-    if (eDF && eBH) {
-      // ── Top edge (sy == 0) ──
-      if (sy == 0) {
-        if (sx == 0) {
-          // Top-left corner: strongest blend
-          if (eDB) result = mix(E, mix(D,B,0.5), 0.75);
-          else if (!diff(E,A)) result = E;
-          else if (!diff(D,A)) result = mix(E, D, 0.375);
-          else if (!diff(B,A)) result = mix(E, B, 0.375);
-        } else if (sx == 1) {
-          // Top-left-center
-          if (eDB && diff(E,C)) result = mix(E, B, 0.375);
-          else if (eBF && diff(E,A)) result = mix(E, B, 0.25);
-        } else if (sx == 2) {
-          // Top-right-center
-          if (eBF && diff(E,A)) result = mix(E, B, 0.375);
-          else if (eDB && diff(E,C)) result = mix(E, B, 0.25);
-        } else {
-          // Top-right corner: strongest blend
-          if (eBF) result = mix(E, mix(B,F,0.5), 0.75);
-          else if (!diff(E,C)) result = E;
-          else if (!diff(B,C)) result = mix(E, B, 0.375);
-          else if (!diff(F,C)) result = mix(E, F, 0.375);
-        }
-      }
-      // ── Bottom edge (sy == 3) ──
-      else if (sy == 3) {
-        if (sx == 0) {
-          if (eDH) result = mix(E, mix(D,H,0.5), 0.75);
-          else if (!diff(E,G)) result = E;
-          else if (!diff(D,G)) result = mix(E, D, 0.375);
-          else if (!diff(H,G)) result = mix(E, H, 0.375);
-        } else if (sx == 1) {
-          if (eDH && diff(E,I)) result = mix(E, H, 0.375);
-          else if (eHF && diff(E,G)) result = mix(E, H, 0.25);
-        } else if (sx == 2) {
-          if (eHF && diff(E,G)) result = mix(E, H, 0.375);
-          else if (eDH && diff(E,I)) result = mix(E, H, 0.25);
-        } else {
-          if (eHF) result = mix(E, mix(H,F,0.5), 0.75);
-          else if (!diff(E,I)) result = E;
-          else if (!diff(H,I)) result = mix(E, H, 0.375);
-          else if (!diff(F,I)) result = mix(E, F, 0.375);
-        }
-      }
-      // ── Left edge (sy 1-2, sx == 0) ──
-      else if (sx == 0) {
-        if (sy == 1) {
-          if (eDB && diff(E,G)) result = mix(E, D, 0.375);
-          else if (eDH && diff(E,A)) result = mix(E, D, 0.25);
-        } else {
-          if (eDH && diff(E,A)) result = mix(E, D, 0.375);
-          else if (eDB && diff(E,G)) result = mix(E, D, 0.25);
-        }
-      }
-      // ── Right edge (sy 1-2, sx == 3) ──
-      else if (sx == 3) {
-        if (sy == 1) {
-          if (eBF && diff(E,I)) result = mix(E, F, 0.375);
-          else if (eHF && diff(E,C)) result = mix(E, F, 0.25);
-        } else {
-          if (eHF && diff(E,C)) result = mix(E, F, 0.375);
-          else if (eBF && diff(E,I)) result = mix(E, F, 0.25);
-        }
-      }
-    }
+    // Build 4-bit cross pattern
+    float cross =
+      (hqdiff(w4, w2) ? 1.0 : 0.0) +
+      (hqdiff(w2, w6) ? 2.0 : 0.0) +
+      (hqdiff(w8, w4) ? 4.0 : 0.0) +
+      (hqdiff(w6, w8) ? 8.0 : 0.0);
 
-    gl_FragColor = result;
+    // Sub-pixel index within the 4x4 block (0-15)
+    vec2 spf = floor(fp * 4.0);
+    float subpixel = spf.x + spf.y * 4.0;
+
+    // LUT lookup
+    vec2 index = vec2(pattern, cross * 16.0 + subpixel);
+    vec2 lutStep = vec2(1.0 / 256.0, 1.0 / 256.0);
+    vec2 lutOffset = lutStep * 0.5;
+    vec4 weights = texture2D(u_lut, index * lutStep + lutOffset);
+
+    // Normalize weights and apply
+    float sum = dot(weights, vec4(1.0));
+    weights /= sum;
+
+    vec3 result = weights.x * p1.rgb
+                + weights.y * p2.rgb
+                + weights.z * p3.rgb
+                + weights.w * p4.rgb;
+
+    gl_FragColor = vec4(result, 1.0);
   }
 `;
 
@@ -1000,8 +998,9 @@ export class WebGLRenderer implements IScreenRenderer {
 
   // Pass 1 (upscale) — one program per scaling algorithm
   private upscalePrograms: WebGLProgram[] = [];
-  private upscaleUniforms: { texSize: WebGLUniformLocation | null; smoothing: WebGLUniformLocation | null }[] = [];
+  private upscaleUniforms: { texSize: WebGLUniformLocation | null; smoothing: WebGLUniformLocation | null; lut: WebGLUniformLocation | null }[] = [];
   private scalingMode = 0;
+  private lutTex: WebGLTexture | null = null;
   private fbo: WebGLFramebuffer;
   private fboTex: WebGLTexture;
 
@@ -1078,8 +1077,12 @@ export class WebGLRenderer implements IScreenRenderer {
       this.upscaleUniforms.push({
         texSize: gl.getUniformLocation(prog, 'u_texSize'),
         smoothing: gl.getUniformLocation(prog, 'u_smoothing'),
+        lut: gl.getUniformLocation(prog, 'u_lut'),
       });
     }
+
+    // ── Load HQ4x LUT texture asynchronously ──
+    this.loadLUT();
 
     // ── Pass 2 program (CRT) ──
     this.progCRT = this.buildProgram(VERT_SRC, FRAG_CRT);
@@ -1145,6 +1148,24 @@ export class WebGLRenderer implements IScreenRenderer {
       throw new Error('Shader compile failed: ' + gl.getShaderInfoLog(shader));
     }
     return shader;
+  }
+
+  private loadLUT(): void {
+    const gl = this.gl;
+    const img = new Image();
+    img.onload = () => {
+      this.lutTex = gl.createTexture()!;
+      gl.activeTexture(gl.TEXTURE2);  // use unit 2 to avoid disturbing units 0-1
+      gl.bindTexture(gl.TEXTURE_2D, this.lutTex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.activeTexture(gl.TEXTURE0);
+      this.glDirty = true;
+    };
+    img.src = hq4xLutUrl;
   }
 
   private bindAttributes(program: WebGLProgram, buf?: WebGLBuffer): void {
@@ -1274,6 +1295,13 @@ export class WebGLRenderer implements IScreenRenderer {
       gl.uniform2f(unis.texSize, this.width, this.height);
     }
     gl.uniform1f(unis.smoothing, this.smoothing);
+    // Bind LUT texture for HQ4x
+    if (unis.lut !== null && this.lutTex) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.lutTex);
+      gl.uniform1i(unis.lut, 1);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
     // ── Pass 2: CRT effects to screen ──
