@@ -193,10 +193,6 @@ export class Spectrum {
   /** Frames remaining before tape turbo disengages (cooldown) */
   private _tapeTurboCooldown = 0;
 
-  /** Persistent interrupt-pending flag (see timings.md § intPending Mechanism).
-   *  Set when INT fires but IFF1 is false (DI active). Cleared when the
-   *  pending interrupt is accepted or a new frame fires normally. */
-  private _intPending = false;
 
   /** Per-cell render threshold: +1 on 48K (render when beam enters cell for
    *  tightest accuracy), 0 on all other models (render after beam fully passes
@@ -348,7 +344,6 @@ export class Spectrum {
     this.multiface.reset();
     this.loaderDetector.reset();
     this.contention.frameStartTStates = 0;
-    this._intPending = false;
     this.needsDisplay = true;
     this.setStatus('Reset');
   }
@@ -480,18 +475,15 @@ export class Spectrum {
     const frameStart = this.contention.frameStartTStates;
     this.tapeLastAdvanceT = this.cpu.tStates;
     const frameEnd = frameStart + tpf;
+    const intWindowEnd = frameStart + this.contention.timing.intLength;
+
     // Fire interrupt (IM 1 = 13T, IM 2 = 19T — consumed from the frame budget).
-    // See timings.md § intPending Mechanism for the three-case logic:
-    //   - Fires (IFF1=true, no eiDelay) → clear _intPending
-    //   - Blocked by DI (!IFF1)         → set _intPending
-    //   - Blocked by eiDelay            → leave _intPending unchanged
+    // On real hardware, INT is held LOW for a model-dependent window:
+    //   48K: 32T, 128K/+2: 36T, +2A/+3: 32T
+    // If IFF1 is false (DI), the interrupt stays pending until EI re-enables it,
+    // but only within the INT window — after that, it's lost until the next frame.
     let intT = this.cpu.interrupt();
-    if (intT > 0) {
-      this._intPending = false;
-    } else if (!this.cpu.iff1) {
-      this._intPending = true;
-    }
-    // eiDelay case: leave _intPending as-is (see timings.md for rationale)
+    let intPending = intT === 0 && !this.cpu.iff1;  // blocked by DI
 
     // AMX mouse: drain queued movement steps as PIO interrupts spread across frame
     if (this.amxMouse.enabled && (this.amxMouse.pendingX !== 0 || this.amxMouse.pendingY !== 0)) {
@@ -583,14 +575,18 @@ export class Spectrum {
         this.cpu.eiDelay = false;
       }
 
-      // Pending interrupt: if INT was blocked by DI at frame start,
-      // fire it as soon as EI re-enables interrupts.  No time limit —
-      // the pending flag persists until accepted or a new frame fires.
+      // Pending interrupt: INT is only held LOW for a limited window.
+      // If EI re-enables interrupts within the window, fire the interrupt.
+      // After the window closes, the interrupt is lost until the next frame.
       // (eiDelay was already cleared above, so interrupt() can fire.)
-      if (this._intPending && this.cpu.iff1) {
-        intT = this.cpu.interrupt();
-        if (intT > 0) {
-          this._intPending = false;
+      if (intPending) {
+        if (this.cpu.tStates >= intWindowEnd) {
+          intPending = false;
+        } else if (this.cpu.iff1) {
+          intT = this.cpu.interrupt();
+          if (intT > 0) {
+            intPending = false;
+          }
         }
       }
 

@@ -44,6 +44,10 @@ export function installMemoryHooks(s: Spectrum): void {
     }
   };
 
+  // 48K: flush beam on all VRAM writes (bitmap + attr) for correct multicolor.
+  // Non-48K: flush only on bitmap writes; attr writes handled by per-instruction render.
+  const vramFlushEnd = s.model === '48k' ? 0x5B00 : 0x5800;
+
   s.cpu.write8 = (addr: number, val: number): void => {
     addr &= 0xFFFF;
     if (contention.isContended(addr)) {
@@ -57,12 +61,14 @@ export function installMemoryHooks(s: Spectrum): void {
         return; // Normal ROM — discard
       }
     }
-    // Flush beam before bitmap writes so completed scanlines see old data.
-    // Attribute writes (0x5800–0x5AFF) are excluded: multicolor engines like
-    // Bifrost write attributes just ahead of the beam, and renderPendingScanlines
-    // (called every instruction) handles them correctly.  Including attributes
-    // here would cause flushBeam to render earlier cells with stale attrs.
-    if (addr >= 0x4000 && addr < 0x5800) {
+    // Flush beam before VRAM writes so completed scanlines see old data.
+    // 48K: flush on ALL VRAM writes (bitmap + attributes).  Multicolor demos
+    //   like Shock write attributes at/behind the beam; the flush ensures cells
+    //   already passed are rendered with the old attribute value.
+    // Non-48K: flush only on bitmap writes (0x4000-0x57FF).  Engines like
+    //   Bifrost write attributes ahead of the beam; flushing would capture
+    //   stale attrs before the engine finishes writing.
+    if (addr >= 0x4000 && addr < vramFlushEnd) {
       s.flushBeam();
     }
     // Count attribute writes for rainbow detection
