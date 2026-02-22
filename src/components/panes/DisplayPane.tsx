@@ -75,14 +75,9 @@ const SCALING_ALGOS: { mode: number; label: string; nativeScale: number }[] = [
   { mode: 0,  label: 'None',            nativeScale: 0 },  // 0 = any scale
   { mode: 1,  label: 'HQ2x',            nativeScale: 2 },
   { mode: 2,  label: 'HQ3x',            nativeScale: 3 },
-  { mode: 3,  label: 'Scale3x',         nativeScale: 3 },
-  { mode: 4,  label: 'HQ4x',            nativeScale: 4 },
-  { mode: 5,  label: 'xBR-lv2',         nativeScale: 0 },  // any scale
-  { mode: 6,  label: 'AdvMAME2x',       nativeScale: 2 },
-  { mode: 7,  label: '2xSaI',           nativeScale: 2 },
-  { mode: 8,  label: 'SAA5050',         nativeScale: 2 },
-  { mode: 9,  label: 'ScaleFX',         nativeScale: 3 },
-  { mode: 10, label: 'xBR-lv3',         nativeScale: 0 },  // any scale
+  { mode: 3,  label: 'HQ4x',            nativeScale: 4 },
+  { mode: 4,  label: 'xBR-lv2',         nativeScale: 0 },  // any scale
+  { mode: 5,  label: 'xBR-lv3',         nativeScale: 0 },  // any scale
 ];
 
 export function DisplayPane() {
