@@ -600,12 +600,15 @@ export class WebGLRenderer implements IScreenRenderer {
       gl.uniform1i(this.u2CurvatureMode, this.curvatureMode);
       gl.uniform1f(this.u2Brightness, this.brightness);
       gl.uniform1f(this.u2Contrast, this.contrast);
-      gl.uniform1f(this.u2Noise, this.noise);
       gl.uniform1f(this.u2Scale, this.deviceScale);
     }
-    // Frame counter must update every frame for noise variation
+    // u_noise and u_frame must stay in sync every frame when noise is active:
+    // u_frame drives per-frame variation; u_noise must be current when it changes.
     if (this.noise > 0) {
+      gl.uniform1f(this.u2Noise, this.noise);
       gl.uniform1f(this.u2Frame, this.frameCount);
+    } else if (dirty) {
+      gl.uniform1f(this.u2Noise, 0.0);
     }
     this.frameCount = (this.frameCount + 1) & 0x7FFFFFFF;
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
