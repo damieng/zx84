@@ -65,8 +65,7 @@ export class MediaManager {
     spectrum.tape.paused = true;
     spectrum.tape.startPlayback();
 
-    // Reset machine (preserves tape) and restart
-    spectrum.reset();
+    // Resume without resetting — just swap the tape on the deck
     spectrum.start();
 
     // Update UI via callback
