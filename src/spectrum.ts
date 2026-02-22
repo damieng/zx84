@@ -128,9 +128,15 @@ export class Spectrum {
   /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
   turbo = false;
 
-  /** Scanline accuracy: 'high' = per-instruction render (multicolor/rainbow),
-   *  'low' = single bulk render at frame end (faster, no mid-scanline effects) */
-  scanlineAccuracy: 'high' | 'low' = 'high';
+  /** Scanline accuracy:
+   *  'high' = per-instruction partial-scanline render (multicolor/rainbow)
+   *  'mid'  = per-instruction but only completed lines (per-scanline border, no mid-line)
+   *  'low'  = single bulk render at frame end (one border color, fastest) */
+  scanlineAccuracy: 'high' | 'mid' | 'low' = 'high';
+
+  /** Numeric cache of scanlineAccuracy for zero-cost hot-path checks.
+   *  2 = high, 1 = mid, 0 = low.  Updated at frame start. */
+  private _scanAcc = 2;
 
   /** Scanline rendering state */
   private nextRenderLine = 0;
@@ -238,7 +244,9 @@ export class Spectrum {
    *  and from the write8 hook before VRAM writes so completed scanlines
    *  see the old data. */
   flushBeam(): void {
-    if (this.scanlineAccuracy === 'low') return;
+    const sa = this._scanAcc;
+    if (sa === 0) return;
+    if (sa === 1) { this.renderCompletedScanlines(); return; }
     this.renderPendingScanlines();
   }
 
@@ -487,10 +495,14 @@ export class Spectrum {
       this.amxMouse.drainMovement(this.cpu, frameEnd, this.activity);
     }
 
+    // Cache accuracy level as integer for zero-cost hot-path checks
+    const sa = this.scanlineAccuracy;
+    this._scanAcc = sa === 'high' ? 2 : sa === 'mid' ? 1 : 0;
+
     // Init scanline rendering state for this frame
-    // In high-accuracy mode, advance flash here (per-scanline render doesn't
-    // call renderFrame).  In low mode, renderFrame() handles flash internally.
-    if (this.scanlineAccuracy === 'high') this.ula.advanceFlash();
+    // High and mid modes advance flash here (they render scanlines individually).
+    // Low mode skips this — renderFrame() handles flash internally.
+    if (this._scanAcc > 0) this.ula.advanceFlash();
     const borderTop = this.ula['borderTop'] as number;
     const borderLeft = this.ula['borderLeft'] as number;
     this.totalRenderLines = borderTop * 2 + 192;
@@ -580,14 +592,11 @@ export class Spectrum {
       }
 
       // Render display cells up to the current beam position.
-      // Called after every instruction (not just on VRAM writes) so that
-      // cells are rendered promptly — within one instruction of the beam
-      // passing them.  This prevents stale-attribute reads when Bifrost
-      // overwrites an attribute for the next scanline before a deferred
-      // render picks it up.
-      // Skipped in low-accuracy mode — a single renderFrame() at frame end
-      // handles the entire display (no mid-scanline effects).
-      if (this.scanlineAccuracy === 'high') this.renderPendingScanlines();
+      // High (2): partial-scanline render every instruction (multicolor/rainbow).
+      // Mid  (1): whole-scanline render — cheap subtract+compare, ~312 renders/frame.
+      // Low  (0): skipped entirely — single renderFrame() at frame end.
+      if (this._scanAcc === 2) this.renderPendingScanlines();
+      else if (this._scanAcc === 1) this.renderCompletedScanlines();
 
       const elapsed = this.cpu.tStates - tBefore;
 
@@ -634,10 +643,13 @@ export class Spectrum {
     this.loaderDetector.onFrameEnd(this.tStatesPerFrame);
 
     // Flush any remaining scanlines (bottom border / frame-end edge).
-    // In low-accuracy mode, skip the per-scanline flush entirely and
-    // render the whole screen in one pass (no mid-scanline effects).
-    if (this.scanlineAccuracy === 'low') {
+    // Low (0): bulk renderFrame() — one border color, fastest.
+    // Mid (1): flush remaining complete lines (no partial-line state to worry about).
+    // High (2): flush with partial-line awareness (nextPixelX, nextDisplayCol).
+    if (this._scanAcc === 0) {
       this.ula.renderFrame(this.memory.screenBank, 0x4000);
+    } else if (this._scanAcc === 1) {
+      this.flushRemainingLines(borderTop);
     } else {
       const borderLeft2 = this.ula['borderLeft'] as number;
       const dispEnd = borderLeft2 + 256;
@@ -735,6 +747,72 @@ export class Spectrum {
       } else {
         break; // beam is mid-line, wait for more T-states
       }
+    }
+  }
+
+  /**
+   * Mid-accuracy renderer: render only fully completed scanlines.
+   * Called every instruction but extremely cheap — a single subtract+compare
+   * returns immediately most of the time.  Only does real work ~312 times
+   * per frame (once per visible line).  Each line gets the current border
+   * color, giving per-scanline border effects without mid-line tracking.
+   */
+  private renderCompletedScanlines(): void {
+    const ula = this.ula;
+    const borderTop = ula['borderTop'] as number;
+    const borderLeft = ula['borderLeft'] as number;
+    const w = ula.screenWidth;
+    const tpl = this.contention.timing.tStatesPerLine;
+    const t = this.cpu.tStates;
+
+    while (this.nextRenderLine < this.totalRenderLines) {
+      // Only render once the beam has fully passed this line
+      if (t - this.nextRenderT < tpl) break;
+
+      const i = this.nextRenderLine;
+      const isDisplay = i >= borderTop && i < borderTop + 192;
+
+      if (isDisplay) {
+        ula.fillBorder(i, 0, borderLeft, ula.borderColor);
+        const dy = i - borderTop;
+        for (let col = 0; col < 32; col++) {
+          ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
+        }
+        ula.fillBorder(i, borderLeft + 256, w, ula.borderColor);
+      } else {
+        ula.fillBorder(i, 0, w, ula.borderColor);
+      }
+
+      this.nextRenderLine++;
+      this.nextRenderT += tpl;
+    }
+  }
+
+  /**
+   * Flush all remaining unrendered lines at frame end (mid-accuracy mode).
+   * No partial-line state to worry about — lines are always complete or untouched.
+   */
+  private flushRemainingLines(borderTop: number): void {
+    const ula = this.ula;
+    const borderLeft = ula['borderLeft'] as number;
+    const w = ula.screenWidth;
+
+    while (this.nextRenderLine < this.totalRenderLines) {
+      const i = this.nextRenderLine;
+      const isDisplay = i >= borderTop && i < borderTop + 192;
+
+      if (isDisplay) {
+        ula.fillBorder(i, 0, borderLeft, ula.borderColor);
+        const dy = i - borderTop;
+        for (let col = 0; col < 32; col++) {
+          ula.renderDisplayCell(dy, col, this.memory.screenBank, 0x4000);
+        }
+        ula.fillBorder(i, borderLeft + 256, w, ula.borderColor);
+      } else {
+        ula.fillBorder(i, 0, w, ula.borderColor);
+      }
+
+      this.nextRenderLine++;
     }
   }
 

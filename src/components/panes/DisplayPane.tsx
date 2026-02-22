@@ -143,14 +143,15 @@ export function DisplayPane() {
         </select>
       </div>
       <div class="slider-row">
-        <span class="slider-label">Scanline</span>
+        <span class="slider-label">Accuracy</span>
         <select value={scanlineAccuracy()} onChange={(e) => {
-          const v = (e.target as HTMLSelectElement).value as 'high' | 'low';
+          const v = (e.target as HTMLSelectElement).value as 'high' | 'mid' | 'low';
           setScanlineAccuracy(v);
           persistSetting('scanline-accuracy', v);
           if (spectrum) spectrum.scanlineAccuracy = v;
         }}>
           <option value="high">High</option>
+          <option value="mid">Mid</option>
           <option value="low">Low</option>
         </select>
       </div>

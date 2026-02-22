@@ -71,7 +71,7 @@ const _colorMap = /*@once*/ createRoot(() => createSignal(getSaved('color-map', 
 export const colorMap = _colorMap[0];
 export const setColorMap = _colorMap[1];
 
-const _scanlineAccuracy = /*@once*/ createRoot(() => createSignal(getSaved('scanline-accuracy', 'high') as 'high' | 'low'));
+const _scanlineAccuracy = /*@once*/ createRoot(() => createSignal(getSaved('scanline-accuracy', 'high') as 'high' | 'mid' | 'low'));
 export const scanlineAccuracy = _scanlineAccuracy[0];
 export const setScanlineAccuracy = _scanlineAccuracy[1];
 
