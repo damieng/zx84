@@ -158,7 +158,6 @@ export function TapePane() {
         classList={{ 'tape-name-clickable': !tapeLoaded() }}
         onClick={() => !tapeLoaded() && fileInputRef?.click()}
       >
-        <span class="tape-label">T:</span>
         <span class="tape-name-text" title={tapeLoaded() ? tapeName() : ''}>
           {tapeLoaded() ? tapeName() : 'No tape inserted'}
         </span>

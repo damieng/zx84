@@ -920,13 +920,6 @@ input[type="range"]::-moz-range-thumb {
   border-color: #999;
 }
 
-.tape-label {
-  flex: 0 0 auto;
-  font-weight: bold;
-  color: #666;
-  margin-right: 4px;
-}
-
 .tape-name-text {
   flex: 1 1 0;
   min-width: 0;
