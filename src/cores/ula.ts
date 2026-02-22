@@ -10,6 +10,20 @@
 
 import { SpectrumKeyboard } from '@/keyboard.ts';
 
+/**
+ * ZX Spectrum peculiar bitmap row address for display line y (0–191).
+ * The address encodes the character row in bits 11–8, the pixel row within
+ * the character in bits 10–8, and the third of the screen in bits 13–12.
+ */
+export function vramBitmapAddr(y: number): number {
+  return 0x4000 | ((y & 0xC0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2);
+}
+
+/** Attribute byte address for display line y (0–191) and character column col (0–31). */
+export function vramAttrAddr(y: number, col: number): number {
+  return 0x5800 + ((y >> 3) << 5) + col;
+}
+
 // 16-color palettes: normal (0-7) and bright (8-15), ABGR uint32
 
 export type ColorMap = 'basic' | 'measured' | 'vivid';
@@ -150,6 +164,20 @@ export class ULA {
   }
 
   /**
+   * Decode attribute byte into ink/paper RGBA values (with flash applied).
+   * Returns [inkRGBA, paperRGBA] as a two-element tuple.
+   */
+  private decodeAttr(attr: number): [number, number] {
+    const bright = (attr & 0x40) ? 8 : 0;
+    let ink = (attr & 0x07) + bright;
+    let paper = ((attr >> 3) & 0x07) + bright;
+    if ((attr & 0x80) && this.flashState) {
+      const tmp = ink; ink = paper; paper = tmp;
+    }
+    return [this.palette[ink], this.palette[paper]];
+  }
+
+  /**
    * Render the full screen (border + display area) from memory.
    * Called once per frame (non-sub-frame path).
    */
@@ -169,34 +197,12 @@ export class ULA {
     // Render 256x192 display area
     for (let y = 0; y < 192; y++) {
       const screenY = y + this.borderTop;
-
-      // ZX Spectrum peculiar bitmap address decoding (adjusted for vramOffset)
-      const bitmapAddr = (0x4000 |
-        ((y & 0xC0) << 5) |
-        ((y & 0x07) << 8) |
-        ((y & 0x38) << 2)) - vramOffset;
-
-      // Attribute address for this character row
-      const attrRow = y >> 3;
-      const attrBase = 0x5800 + (attrRow << 5) - vramOffset;
+      const bitmapAddr = vramBitmapAddr(y) - vramOffset;
+      const attrBase = vramAttrAddr(y, 0) - vramOffset;
 
       for (let col = 0; col < 32; col++) {
         const byteVal = memory[bitmapAddr + col];
-        const attr = memory[attrBase + col];
-
-        const bright = (attr & 0x40) ? 8 : 0;
-        let ink = (attr & 0x07) + bright;
-        let paper = ((attr >> 3) & 0x07) + bright;
-
-        // Flash: swap ink and paper
-        if ((attr & 0x80) && this.flashState) {
-          const tmp = ink;
-          ink = paper;
-          paper = tmp;
-        }
-
-        const inkRGBA = this.palette[ink];
-        const paperRGBA = this.palette[paper];
+        const [inkRGBA, paperRGBA] = this.decodeAttr(memory[attrBase + col]);
 
         const px = this.borderLeft + (col << 3);
         const baseIdx = screenY * this.screenWidth + px;
@@ -218,12 +224,8 @@ export class ULA {
       for (let col = 0; col < 32; col++) {
         if (!mask[charRow * 32 + col]) continue;
 
-        const attr = memory[0x5800 + charRow * 32 + col - vramOffset];
-        const bright = (attr & 0x40) ? 8 : 0;
-        let paper = ((attr >> 3) & 0x07) + bright;
-        let ink = (attr & 0x07) + bright;
-        if ((attr & 0x80) && this.flashState) { const t = ink; ink = paper; paper = t; }
-        const paperRGBA = this.palette[paper];
+        const attr = memory[vramAttrAddr(charRow << 3, col) - vramOffset];
+        const [, paperRGBA] = this.decodeAttr(attr);
 
         for (let py = 0; py < 8; py++) {
           const y = charRow * 8 + py;
@@ -267,30 +269,12 @@ export class ULA {
       this.pixels32[rowStart + x] = borderRGBA;
     }
 
-    // Bitmap address decoding (adjusted for shadow buffer offset)
-    const bitmapAddr = (0x4000 |
-      ((y & 0xC0) << 5) |
-      ((y & 0x07) << 8) |
-      ((y & 0x38) << 2)) - vramOffset;
-
-    const attrBase = 0x5800 + ((y >> 3) << 5) - vramOffset;
+    const bitmapAddr = vramBitmapAddr(y) - vramOffset;
+    const attrBase = vramAttrAddr(y, 0) - vramOffset;
 
     for (let col = 0; col < 32; col++) {
       const byteVal = memory[bitmapAddr + col];
-      const attr = memory[attrBase + col];
-
-      const bright = (attr & 0x40) ? 8 : 0;
-      let ink = (attr & 0x07) + bright;
-      let paper = ((attr >> 3) & 0x07) + bright;
-
-      if ((attr & 0x80) && this.flashState) {
-        const tmp = ink;
-        ink = paper;
-        paper = tmp;
-      }
-
-      const inkRGBA = this.palette[ink];
-      const paperRGBA = this.palette[paper];
+      const [inkRGBA, paperRGBA] = this.decodeAttr(memory[attrBase + col]);
 
       const px = this.borderLeft + (col << 3);
       const baseIdx = rowStart + px;
@@ -310,27 +294,8 @@ export class ULA {
     const screenY = y + this.borderTop;
     const rowStart = screenY * this.screenWidth;
 
-    const bitmapAddr = (0x4000 |
-      ((y & 0xC0) << 5) |
-      ((y & 0x07) << 8) |
-      ((y & 0x38) << 2)) - vramOffset + col;
-
-    const attr = memory[0x5800 + ((y >> 3) << 5) + col - vramOffset];
-
-    const bright = (attr & 0x40) ? 8 : 0;
-    let ink = (attr & 0x07) + bright;
-    let paper = ((attr >> 3) & 0x07) + bright;
-
-    if ((attr & 0x80) && this.flashState) {
-      const tmp = ink;
-      ink = paper;
-      paper = tmp;
-    }
-
-    const inkRGBA = this.palette[ink];
-    const paperRGBA = this.palette[paper];
-
-    const byteVal = memory[bitmapAddr];
+    const byteVal = memory[vramBitmapAddr(y) - vramOffset + col];
+    const [inkRGBA, paperRGBA] = this.decodeAttr(memory[vramAttrAddr(y, col) - vramOffset]);
     const baseIdx = rowStart + this.borderLeft + (col << 3);
 
     for (let bit = 7; bit >= 0; bit--) {

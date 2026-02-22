@@ -33,6 +33,7 @@ import { KempstonMouse } from '@/peripherals/kempston-mouse.ts';
 import { AmxMouse } from '@/peripherals/amx-mouse.ts';
 import { AudioMixer } from '@/peripherals/audio-mixer.ts';
 import { Multiface } from '@/peripherals/multiface.ts';
+import { hex8, hex16 } from '@/utils/hex.ts';
 
 const AY_CLOCK = 1773400;        // ~1.77 MHz
 
@@ -58,25 +59,37 @@ export function isPlus2AClass(m: SpectrumModel): boolean { return m === '+2a' ||
 /** Returns true for +3 (has uPD765A FDC). */
 export function isPlus3(m: SpectrumModel): boolean { return m === '+3'; }
 
-export interface IOActivity {
+export class IOActivity {
   /** Number of ULA port reads this frame (keyboard / tape) */
-  ulaReads: number;
+  ulaReads = 0;
   /** Number of Kempston joystick port reads this frame */
-  kempstonReads: number;
+  kempstonReads = 0;
   /** Whether the beeper bit toggled this frame */
-  beeperToggled: boolean;
+  beeperToggled = false;
   /** Number of AY register writes this frame */
-  ayWrites: number;
+  ayWrites = 0;
   /** Number of LD-BYTES (0x0556) calls this frame */
-  tapeLoads: number;
+  tapeLoads = 0;
   /** Number of FDC data port accesses this frame */
-  fdcAccesses: number;
+  fdcAccesses = 0;
   /** Number of ULA reads while tape is active (EAR sampling) */
-  earReads: number;
+  earReads = 0;
   /** Number of attribute-area (5800-5AFF) writes this frame */
-  attrWrites: number;
+  attrWrites = 0;
   /** Number of Kempston mouse port reads this frame */
-  mouseReads: number;
+  mouseReads = 0;
+
+  reset(): void {
+    this.ulaReads = 0;
+    this.kempstonReads = 0;
+    this.beeperToggled = false;
+    this.ayWrites = 0;
+    this.tapeLoads = 0;
+    this.fdcAccesses = 0;
+    this.earReads = 0;
+    this.attrWrites = 0;
+    this.mouseReads = 0;
+  }
 }
 
 export class Spectrum {
@@ -94,7 +107,7 @@ export class Spectrum {
   screenText = new ScreenText();
 
   /** Per-frame I/O activity counters */
-  activity: IOActivity = { ulaReads: 0, kempstonReads: 0, beeperToggled: false, ayWrites: 0, tapeLoads: 0, fdcAccesses: 0, earReads: 0, attrWrites: 0, mouseReads: 0 };
+  activity = new IOActivity();
 
   /** Kempston joystick peripheral */
   joystick = new KempstonJoystick();
@@ -271,8 +284,6 @@ export class Spectrum {
 
   /** Log a port access for trace modes (called from io-ports.ts). */
   logPortAccess(dir: string, port: number, val: number): void {
-    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
-    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
     const pc = this.cpu.pc;
 
     if (this._traceMode === 'portio') {
@@ -298,7 +309,7 @@ export class Spectrum {
         const tag = isULA && contended ? ' (contention probe)' :
                     !label ? ` (floating bus? ${val === 0xFF ? 'idle' : 'VRAM'})` : '';
         this._traceBuffer.push(
-          `${h16(pc)}  IN port=${h16(port)} val=${h8(val)} fT=${frameTStates} line=${line}${tag}`
+          `${hex16(pc)}  IN port=${hex16(port)} val=${hex8(val)} fT=${frameTStates} line=${line}${tag}`
         );
       }
     }
@@ -453,15 +464,7 @@ export class Spectrum {
 
   private runFrame(): void {
     // Reset activity counters for this frame
-    this.activity.ulaReads = 0;
-    this.activity.kempstonReads = 0;
-    this.activity.beeperToggled = false;
-    this.activity.ayWrites = 0;
-    this.activity.tapeLoads = 0;
-    this.activity.fdcAccesses = 0;
-    this.activity.earReads = 0;
-    this.activity.attrWrites = 0;
-    this.activity.mouseReads = 0;
+    this.activity.reset();
     // The ULA's frame boundary occurs at exact tStatesPerFrame intervals,
     // regardless of CPU instruction overshoot from the previous frame.
     // On real hardware the beam resets at fixed intervals; the CPU may still
@@ -861,8 +864,7 @@ export class Spectrum {
     this._tracing = false;
     if (this._traceMode === 'portio') return this.formatPortTally();
     if (this._traceLoopCount > 0) {
-      const h = this._traceLoopAddr.toString(16).toUpperCase().padStart(4, '0');
-      this._traceBuffer.push(`      ... loops back to ${h} x${this._traceLoopCount}`);
+      this._traceBuffer.push(`      ... loops back to ${hex16(this._traceLoopAddr)} x${this._traceLoopCount}`);
     }
     return this._traceBuffer.join('\n');
   }
@@ -884,8 +886,7 @@ export class Spectrum {
 
     // Flush any accumulated loop marker
     if (this._traceLoopCount > 0) {
-      const h = this._traceLoopAddr.toString(16).toUpperCase().padStart(4, '0');
-      this._traceBuffer.push(`      ... loops back to ${h} x${this._traceLoopCount}`);
+      this._traceBuffer.push(`      ... loops back to ${hex16(this._traceLoopAddr)} x${this._traceLoopCount}`);
       this._traceLoopCount = 0;
     }
 
@@ -898,7 +899,7 @@ export class Spectrum {
     const line = disasmOne(mem, pc);
     const mnem = stripMarkers(line.text);
     const ctx = this.traceCtx(pc);
-    const addr = pc.toString(16).toUpperCase().padStart(4, '0');
+    const addr = hex16(pc);
     this._traceBuffer.push(ctx
       ? `${addr}  ${mnem.padEnd(24)} ${ctx}`
       : `${addr}  ${mnem}`);
@@ -908,9 +909,6 @@ export class Spectrum {
   private traceCtx(pc: number): string {
     const cpu = this.cpu;
     const mem = cpu.memory;
-    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
-    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
-
     let op = mem[pc];
 
     // DD/FD prefix → IX/IY memory access
@@ -920,7 +918,7 @@ export class Spectrum {
       if (op2 === 0xCB) {
         const d = mem[(pc + 2) & 0xFFFF];
         const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
-        return `(${h16(addr)})=${h8(mem[addr])}`;
+        return `(${hex16(addr)})=${hex8(mem[addr])}`;
       }
       if (op2 === 0xED || op2 === 0xDD || op2 === 0xFD) return '';
       const x = (op2 >> 6) & 3, y = (op2 >> 3) & 7, z = op2 & 7;
@@ -930,15 +928,15 @@ export class Spectrum {
           op2 === 0x36) {
         const d = mem[(pc + 2) & 0xFFFF];
         const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
-        if (x === 2) return `A=${h8(cpu.a)} (${h16(addr)})=${h8(mem[addr])}`;
-        return `(${h16(addr)})=${h8(mem[addr])}`;
+        if (x === 2) return `A=${hex8(cpu.a)} (${hex16(addr)})=${hex8(mem[addr])}`;
+        return `(${hex16(addr)})=${hex8(mem[addr])}`;
       }
       return '';
     }
 
     // CB: bit ops on (HL)
     if (op === 0xCB) {
-      if ((mem[(pc + 1) & 0xFFFF] & 7) === 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl])}`;
+      if ((mem[(pc + 1) & 0xFFFF] & 7) === 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl])}`;
       return '';
     }
 
@@ -946,8 +944,8 @@ export class Spectrum {
     if (op === 0xED) {
       const ed = mem[(pc + 1) & 0xFFFF];
       const x = (ed >> 6) & 3, y = (ed >> 3) & 7, z = ed & 7;
-      if (x === 1 && (z === 0 || z === 1)) return `port=${h16(cpu.bc)}`;
-      if (x === 2 && y >= 4 && z < 4) return `HL=${h16(cpu.hl)} DE=${h16(cpu.de)} BC=${h16(cpu.bc)}`;
+      if (x === 1 && (z === 0 || z === 1)) return `port=${hex16(cpu.bc)}`;
+      if (x === 2 && y >= 4 && z < 4) return `HL=${hex16(cpu.hl)} DE=${hex16(cpu.de)} BC=${hex16(cpu.bc)}`;
       return '';
     }
 
@@ -956,32 +954,32 @@ export class Spectrum {
     const p = (y >> 1) & 3, q = y & 1;
 
     if (x === 0) {
-      if (z === 0 && y === 2) return `B=${h8((cpu.bc >> 8) & 0xFF)}`; // DJNZ
+      if (z === 0 && y === 2) return `B=${hex8((cpu.bc >> 8) & 0xFF)}`; // DJNZ
       if (z === 0 && y >= 4) return cpu.checkCondition(y - 4) ? 'taken' : '--'; // JR cc
       if (z === 2) {
-        if (q === 0 && p <= 1) return `A=${h8(cpu.a)}→(${h16(p === 0 ? cpu.bc : cpu.de)})`;
-        if (q === 1 && p === 0) return `(${h16(cpu.bc)})=${h8(mem[cpu.bc & 0xFFFF])}`;
-        if (q === 1 && p === 1) return `(${h16(cpu.de)})=${h8(mem[cpu.de & 0xFFFF])}`;
+        if (q === 0 && p <= 1) return `A=${hex8(cpu.a)}→(${hex16(p === 0 ? cpu.bc : cpu.de)})`;
+        if (q === 1 && p === 0) return `(${hex16(cpu.bc)})=${hex8(mem[cpu.bc & 0xFFFF])}`;
+        if (q === 1 && p === 1) return `(${hex16(cpu.de)})=${hex8(mem[cpu.de & 0xFFFF])}`;
       }
-      if ((z === 4 || z === 5) && y === 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
+      if ((z === 4 || z === 5) && y === 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
     }
 
     if (x === 1) {
-      if (y === 6 && z !== 6) return `${h8(cpu.getReg8(z))}→(${h16(cpu.hl)})`;
-      if (z === 6 && y !== 6) return `(${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
+      if (y === 6 && z !== 6) return `${hex8(cpu.getReg8(z))}→(${hex16(cpu.hl)})`;
+      if (z === 6 && y !== 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
     }
 
     if (x === 2) {
-      if (z === 6) return `A=${h8(cpu.a)} (${h16(cpu.hl)})=${h8(mem[cpu.hl & 0xFFFF])}`;
-      return `A=${h8(cpu.a)}`;
+      if (z === 6) return `A=${hex8(cpu.a)} (${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
+      return `A=${hex8(cpu.a)}`;
     }
 
     if (x === 3) {
       if (z === 0) return cpu.checkCondition(y) ? 'taken' : '--'; // RET cc
       if (z === 2) return cpu.checkCondition(y) ? 'taken' : '--'; // JP cc
       if (z === 4) return cpu.checkCondition(y) ? 'taken' : '--'; // CALL cc
-      if (z === 6) return `A=${h8(cpu.a)}`; // ALU A,n
-      if (z === 3 && y === 2) return `A=${h8(cpu.a)}`; // OUT (n),A
+      if (z === 6) return `A=${hex8(cpu.a)}`; // ALU A,n
+      if (z === 3 && y === 2) return `A=${hex8(cpu.a)}`; // OUT (n),A
     }
 
     return '';
@@ -1006,18 +1004,15 @@ export class Spectrum {
   }
 
   private formatPortTally(): string {
-    const h8 = (v: number) => v.toString(16).toUpperCase().padStart(2, '0');
-    const h16 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
-
     const formatSection = (title: string, tally: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }>) => {
       if (!tally.size) return '';
       const entries = [...tally.entries()].sort((a, b) => b[1].count - a[1].count);
       const lines = [`${title}:`];
       for (const [port, info] of entries) {
         const label = (this.portLabel(port) || '').padEnd(6);
-        const pcs = [...info.pcs].map(h16).join(',');
-        const vals = [...info.vals].map(h8).join(',');
-        lines.push(`  ${h16(port)}  ${String(info.count).padStart(8)}x  ${label} from ${pcs}  vals ${vals}`);
+        const pcs = [...info.pcs].map(hex16).join(',');
+        const vals = [...info.vals].map(hex8).join(',');
+        lines.push(`  ${hex16(port)}  ${String(info.count).padStart(8)}x  ${label} from ${pcs}  vals ${vals}`);
       }
       return lines.join('\n');
     };

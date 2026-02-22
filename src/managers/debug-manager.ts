@@ -11,6 +11,7 @@
 import type { Spectrum } from '@/spectrum.ts';
 import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne } from '@/debug/z80-disasm.ts';
+import { hex8, hex16 } from '@/utils/hex.ts';
 
 export type TraceMode = 'full' | 'contention' | 'portio';
 
@@ -118,10 +119,10 @@ export class DebugManager {
   ): void {
     if (spectrum.breakpoints.has(addr)) {
       spectrum.breakpoints.delete(addr);
-      onStatus(`Breakpoint removed at ${this.hex16(addr)}`);
+      onStatus(`Breakpoint removed at ${hex16(addr)}`);
     } else {
       spectrum.breakpoints.add(addr);
-      onStatus(`Breakpoint set at ${this.hex16(addr)}`);
+      onStatus(`Breakpoint set at ${hex16(addr)}`);
     }
     onUpdate();
   }
@@ -184,13 +185,13 @@ export class DebugManager {
     const halt = cpu.halted ? ' HALT' : '';
 
     const lines = [
-      `AF  ${this.hex16(cpu.af)}  AF' ${this.hex16((cpu.a_ << 8) | cpu.f_)}`,
-      `BC  ${this.hex16(cpu.bc)}  BC' ${this.hex16((cpu.b_ << 8) | cpu.c_)}`,
-      `DE  ${this.hex16(cpu.de)}  DE' ${this.hex16((cpu.d_ << 8) | cpu.e_)}`,
-      `HL  ${this.hex16(cpu.hl)}  HL' ${this.hex16((cpu.h_ << 8) | cpu.l_)}`,
-      `IX  ${this.hex16(cpu.ix)}  IY  ${this.hex16(cpu.iy)}`,
-      `PC  ${this.hex16(cpu.pc)}  SP  ${this.hex16(cpu.sp)}`,
-      `I   ${this.hex8(cpu.i)}    R   ${this.hex8(cpu.r)}  IM ${cpu.im}  ${iff}${halt}`,
+      `AF  ${hex16(cpu.af)}  AF' ${hex16((cpu.a_ << 8) | cpu.f_)}`,
+      `BC  ${hex16(cpu.bc)}  BC' ${hex16((cpu.b_ << 8) | cpu.c_)}`,
+      `DE  ${hex16(cpu.de)}  DE' ${hex16((cpu.d_ << 8) | cpu.e_)}`,
+      `HL  ${hex16(cpu.hl)}  HL' ${hex16((cpu.h_ << 8) | cpu.l_)}`,
+      `IX  ${hex16(cpu.ix)}  IY  ${hex16(cpu.iy)}`,
+      `PC  ${hex16(cpu.pc)}  SP  ${hex16(cpu.sp)}`,
+      `I   ${hex8(cpu.i)}    R   ${hex8(cpu.r)}  IM ${cpu.im}  ${iff}${halt}`,
       `Flags: ${flags}`,
       '',
       'Disassembly:',
@@ -201,11 +202,11 @@ export class DebugManager {
     for (let i = 0; i < 16; i++) {
       const dl = disasmOne(cpu.memory, addr);
       const bytesStr = Array.from(cpu.memory.slice(dl.addr, dl.addr + dl.length))
-        .map(b => this.hex8(b))
+        .map(b => hex8(b))
         .join(' ')
         .padEnd(12, ' ');
       const mnem = dl.text.padEnd(24, ' ');
-      lines.push(`${dl.addr === cpu.pc ? '>' : ' '} ${this.hex16(addr)}  ${bytesStr}  ${mnem}`);
+      lines.push(`${dl.addr === cpu.pc ? '>' : ' '} ${hex16(addr)}  ${bytesStr}  ${mnem}`);
       addr = (addr + dl.length) & 0xFFFF;
     }
 
@@ -213,11 +214,4 @@ export class DebugManager {
     onStatus('CPU state + disassembly copied to clipboard');
   }
 
-  private hex8(v: number): string {
-    return v.toString(16).toUpperCase().padStart(2, '0');
-  }
-
-  private hex16(v: number): string {
-    return v.toString(16).toUpperCase().padStart(4, '0');
-  }
 }

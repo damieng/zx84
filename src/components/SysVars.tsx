@@ -7,12 +7,7 @@
 import { createEffect, onCleanup } from 'solid-js';
 import { spectrum, sysvarRev, currentModel } from '@/emulator.ts';
 import { is128kClass, isPlus2AClass } from '@/spectrum.ts';
-
-// Pre-built hex lookup tables
-const HEX8: string[] = new Array(256);
-for (let i = 0; i < 256; i++) HEX8[i] = i.toString(16).toUpperCase().padStart(2, '0');
-const HEX16: string[] = new Array(65536);
-for (let i = 0; i < 65536; i++) HEX16[i] = i.toString(16).toUpperCase().padStart(4, '0');
+import { HEX8, HEX16 } from '@/utils/hex.ts';
 
 /** Sysvar row definition */
 interface SysVarDef {

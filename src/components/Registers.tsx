@@ -7,12 +7,7 @@
 import { createEffect, onMount, onCleanup } from 'solid-js';
 import { spectrum, regsRev } from '@/emulator.ts';
 import { Z80 } from '@/cores/Z80.ts';
-
-// Pre-built lookup tables — zero allocation on use
-const HEX8: string[] = new Array(256);
-for (let i = 0; i < 256; i++) HEX8[i] = i.toString(16).toUpperCase().padStart(2, '0');
-const HEX16: string[] = new Array(65536);
-for (let i = 0; i < 65536; i++) HEX16[i] = i.toString(16).toUpperCase().padStart(4, '0');
+import { HEX8, HEX16 } from '@/utils/hex.ts';
 
 /** Update text node only if numeric value changed; returns new prev */
 function set16(node: Text, val: number, prev: number): number {

@@ -25,10 +25,7 @@ import {
   getPendingRunTo, clearPendingRunTo,
 } from '@/emulator.ts';
 
-// ── Hex formatting ──────────────────────────────────────────────────────
-
-function hex8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
-function hex16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
+import { hex8, hex16 } from '@/utils/hex.ts';
 
 // ── Hardware panel rendering ────────────────────────────────────────────
 

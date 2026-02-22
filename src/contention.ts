@@ -10,6 +10,7 @@
 
 import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/spectrum.ts';
 import type { SpectrumMemory } from '@/memory.ts';
+import { vramBitmapAddr, vramAttrAddr } from '@/cores/ula.ts';
 
 /** Model-dependent ULA timing parameters. */
 export interface MachineTiming {
@@ -185,17 +186,9 @@ export class Contention {
     const phase = col & 3;
 
     if (phase < 2) {
-      // Pixel byte — use the Spectrum's peculiar bitmap addressing
-      const y = line;
-      const bitmapAddr = 0x4000 |
-        ((y & 0xC0) << 5) |
-        ((y & 0x07) << 8) |
-        ((y & 0x38) << 2);
-      return mem[bitmapAddr + charCol];
+      return mem[vramBitmapAddr(line) + charCol];  // Pixel byte
     } else {
-      // Attribute byte
-      const attrAddr = 0x5800 + ((line >> 3) << 5) + charCol;
-      return mem[attrAddr];
+      return mem[vramAttrAddr(line, charCol)];      // Attribute byte
     }
   }
 }

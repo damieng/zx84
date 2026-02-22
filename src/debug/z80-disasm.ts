@@ -25,9 +25,7 @@ const CC = ['NZ', 'Z', 'NC', 'C', 'PO', 'PE', 'P', 'M'];
 const ALU = ['ADD A,', 'ADC A,', 'SUB ', 'SBC A,', 'AND ', 'XOR ', 'OR ', 'CP '];
 const ROT = ['RLC', 'RRC', 'RL', 'RR', 'SLA', 'SRA', 'SLL', 'SRL'];
 
-// Plain hex formatters
-function h8(v: number): string { return v.toString(16).toUpperCase().padStart(2, '0'); }
-function h16(v: number): string { return v.toString(16).toUpperCase().padStart(4, '0'); }
+import { hex8 as h8, hex16 as h16 } from '@/utils/hex.ts';
 
 // Tagged formatters — marker bytes delimit operand type for colorization
 function val(s: string): string { return `\x01${s}\x01`; }
