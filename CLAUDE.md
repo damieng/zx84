@@ -41,6 +41,24 @@ line of code.  Step back and ask:
 - `src/contention.ts` — ULA memory/IO contention timing.
 - `test/mcp-server.ts` — MCP server for Claude Code integration.
 
+## Workflow Rules
+
+- **No `cd` in commands.**  Don't prefix commands with `cd /path &&`.  It breaks
+  the permission model.  Instead, qualify file paths on the command itself
+  (e.g. `npx tsc --noEmit` from the project root, or pass absolute/relative
+  paths to the tool).
+
+- **Minimise file edit churn.**  Don't make multiple sequential edits to the
+  same file — each write triggers HMR and can cause cascading reloads.  Plan
+  all edits upfront and apply them in one pass.  If you absolutely must do
+  multiple passes, copy the file to a temp location, make all changes there,
+  then copy it back.
+
+- **Don't default to "minimal change" for new features.**  Consider reuse
+  opportunities, cleaner abstractions, and broader design options.  If there
+  are multiple reasonable approaches, present them to the user and let them
+  choose — don't silently pick the smallest diff.
+
 ## Common Pitfalls
 
 - **Port 0xFE is shared**: keyboard reads and tape EAR reads both hit the ULA
