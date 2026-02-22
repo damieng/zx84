@@ -71,6 +71,10 @@ const _colorMap = /*@once*/ createRoot(() => createSignal(getSaved('color-map', 
 export const colorMap = _colorMap[0];
 export const setColorMap = _colorMap[1];
 
+const _scanlineAccuracy = /*@once*/ createRoot(() => createSignal(getSaved('scanline-accuracy', 'high') as 'high' | 'low'));
+export const scanlineAccuracy = _scanlineAccuracy[0];
+export const setScanlineAccuracy = _scanlineAccuracy[1];
+
 // ── Sound settings ──────────────────────────────────────────────────────
 
 const _volume = /*@once*/ createRoot(() => createSignal(getSavedNumber('volume', '70')));
@@ -262,6 +266,7 @@ const PANE_SETTINGS: Record<string, SettingDef[]> = {
     { key: 'monitor',        default: 'raw',      set: setMonitor,       type: 'string' },
     { key: 'border-size',    default: '2',        set: setBorderSize,    type: 'number' },
     { key: 'color-map',      default: 'measured', set: setColorMap,      type: 'string' },
+    { key: 'scanline-accuracy', default: 'high',  set: setScanlineAccuracy, type: 'string' },
   ],
   sound: [
     { key: 'volume',    default: '70',  set: setVolume,   type: 'number' },

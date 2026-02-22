@@ -7,7 +7,8 @@ import {
   maskType, setMaskType, dotPitch, setDotPitch, curvatureMode, setCurvatureMode,
   noise, setNoise, scalingMode, setScalingMode,
   monitor, setMonitor, borderSize, setBorderSize,
-  renderer, colorMap, setColorMap, persistSetting, resetSettingsGroup,
+  renderer, colorMap, setColorMap, scanlineAccuracy, setScanlineAccuracy,
+  persistSetting, resetSettingsGroup,
 } from '@/store/settings.ts';
 import { spectrum, switchRenderer, applyDisplaySettings } from '@/emulator.ts';
 
@@ -139,6 +140,18 @@ export function DisplayPane() {
           <option value="basic">Basic</option>
           <option value="measured">Measured</option>
           <option value="vivid">Vivid</option>
+        </select>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Scanline</span>
+        <select value={scanlineAccuracy()} onChange={(e) => {
+          const v = (e.target as HTMLSelectElement).value as 'high' | 'low';
+          setScanlineAccuracy(v);
+          persistSetting('scanline-accuracy', v);
+          if (spectrum) spectrum.scanlineAccuracy = v;
+        }}>
+          <option value="high">High</option>
+          <option value="low">Low</option>
         </select>
       </div>
       <div class="slider-row">

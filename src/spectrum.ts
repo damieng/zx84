@@ -128,6 +128,10 @@ export class Spectrum {
   /** Turbo mode: run ~14x frames per rAF for ~50MHz effective speed */
   turbo = false;
 
+  /** Scanline accuracy: 'high' = per-instruction render (multicolor/rainbow),
+   *  'low' = single bulk render at frame end (faster, no mid-scanline effects) */
+  scanlineAccuracy: 'high' | 'low' = 'high';
+
   /** Scanline rendering state */
   private nextRenderLine = 0;
   private nextRenderT = 0;
@@ -234,6 +238,7 @@ export class Spectrum {
    *  and from the write8 hook before VRAM writes so completed scanlines
    *  see the old data. */
   flushBeam(): void {
+    if (this.scanlineAccuracy === 'low') return;
     this.renderPendingScanlines();
   }
 
@@ -483,7 +488,9 @@ export class Spectrum {
     }
 
     // Init scanline rendering state for this frame
-    this.ula.advanceFlash();
+    // In high-accuracy mode, advance flash here (per-scanline render doesn't
+    // call renderFrame).  In low mode, renderFrame() handles flash internally.
+    if (this.scanlineAccuracy === 'high') this.ula.advanceFlash();
     const borderTop = this.ula['borderTop'] as number;
     const borderLeft = this.ula['borderLeft'] as number;
     this.totalRenderLines = borderTop * 2 + 192;
@@ -578,7 +585,9 @@ export class Spectrum {
       // passing them.  This prevents stale-attribute reads when Bifrost
       // overwrites an attribute for the next scanline before a deferred
       // render picks it up.
-      this.renderPendingScanlines();
+      // Skipped in low-accuracy mode — a single renderFrame() at frame end
+      // handles the entire display (no mid-scanline effects).
+      if (this.scanlineAccuracy === 'high') this.renderPendingScanlines();
 
       const elapsed = this.cpu.tStates - tBefore;
 
@@ -624,8 +633,12 @@ export class Spectrum {
     // Adjust loader detector T-state tracking across frame boundary
     this.loaderDetector.onFrameEnd(this.tStatesPerFrame);
 
-    // Flush any remaining scanlines (bottom border / frame-end edge)
-    {
+    // Flush any remaining scanlines (bottom border / frame-end edge).
+    // In low-accuracy mode, skip the per-scanline flush entirely and
+    // render the whole screen in one pass (no mid-scanline effects).
+    if (this.scanlineAccuracy === 'low') {
+      this.ula.renderFrame(this.memory.screenBank, 0x4000);
+    } else {
       const borderLeft2 = this.ula['borderLeft'] as number;
       const dispEnd = borderLeft2 + 256;
       const w = this.ula.screenWidth;

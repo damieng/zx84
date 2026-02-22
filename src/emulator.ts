@@ -188,6 +188,7 @@ export function applyDisplaySettings(): void {
   spectrum.tapeInstantLoad = settings.tapeInstantLoad();
   spectrum.tapeTurbo = settings.tapeTurbo();
   spectrum.tapeSoundEnabled = settings.tapeSoundEnabled();
+  spectrum.scanlineAccuracy = settings.scanlineAccuracy();
 }
 
 export async function createMachine(): Promise<boolean> {
