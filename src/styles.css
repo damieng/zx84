@@ -960,10 +960,51 @@ input[type="range"]::-moz-range-thumb {
 }
 .tape-eject:hover { color: #c00; background: none !important; }
 
-/* Disk name display */
+/* Disk drive pane */
 .disk-section {
   margin-bottom: 8px;
 }
+
+/* Header row: LED + drive letter + track/sector + menu button */
+.drive-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  font-size: 0.7rem;
+}
+.drive-led {
+  display: inline-block;
+  width: 20px;
+  height: 8px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0,0,0,0.35);
+}
+.disk-label {
+  flex: 0 0 auto;
+  font-weight: bold;
+  color: #666;
+}
+.drive-track-info {
+  flex: 1 1 0;
+  color: #ccc;
+  white-space: nowrap;
+}
+.drive-track-info .reg-name { color: #888; }
+.drive-header > .ddmenu-btn,
+.drive-header > button.ddmenu-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+}
+.drive-header > button.ddmenu-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Filename slot */
 .disk-name {
   display: flex;
   align-items: center;
@@ -974,23 +1015,14 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 3px;
   font-size: 0.75rem;
   min-height: 24px;
-  flex-shrink: 0;
   margin-bottom: 4px;
 }
-
 .disk-name-clickable {
   cursor: pointer;
 }
-
 .disk-name-clickable:hover {
   background: #f0f0f8;
   border-color: #999;
-}
-.disk-label {
-  flex: 0 0 auto;
-  font-weight: bold;
-  color: #666;
-  margin-right: 4px;
 }
 .disk-name-text {
   flex: 1 1 0;
@@ -1001,29 +1033,12 @@ input[type="range"]::-moz-range-thumb {
   color: #222;
   font-weight: 500;
 }
-
 .disk-section:not(:has(button.tape-eject)) .disk-name-text {
   color: #999;
   font-style: italic;
   font-weight: 400;
 }
-.disk-name-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-bottom: 4px;
-}
-.disk-name-row > .disk-name {
-  flex: 1 1 0;
-  min-width: 0;
-  margin-bottom: 0;
-}
-.disk-name-row > .ddmenu-btn {
-  flex: 0 0 auto;
-  width: 2em;
-  align-self: stretch;
-  padding: 0;
-}
+
 .disk-info-output {
   padding: 6px;
   margin: 0;
@@ -1031,17 +1046,7 @@ input[type="range"]::-moz-range-thumb {
   line-height: 1.5;
   white-space: pre;
 }
-
 .disk-info-output .reg-name { color: #999; }
-
-.drive-status {
-  margin: 0;
-  padding: 6px;
-  font-size: 0.7rem;
-  white-space: pre;
-}
-
-.drive-status .reg-name { color: #999; }
 
 #tape-blocks {
   max-height: 400px;

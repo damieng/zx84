@@ -2,6 +2,12 @@ import { Pane } from '@/components/Pane.tsx';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.2',
+    items: [
+      'Drive pane UX improvements including LED',
+    ],
+  },
+  {
     version: '0.2.1',
     items: [
       'Fractional scaling prevention',

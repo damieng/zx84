@@ -16,7 +16,7 @@ import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
-  setBanksHtml, setDriveHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
+  setBanksHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
   setClockSpeedText,
   setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText, setTranscribeHtml,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedText,
@@ -92,38 +92,37 @@ function renderBanks(): string {
 
 // Disk info now rendered directly in DrivePane component
 
-function renderDriveStatus(unit: number): string {
-  if (!spectrum) return '';
+function renderDriveStatus(unit: number, activeUnit: number): import('@/state/disk-state.ts').DriveStatus {
+  if (!spectrum) return { led: 'off', track: '00', sector: '--' };
   const fdc = spectrum.fdc;
-  const n = '<span class="reg-name">';
-  const e = '</span>';
-  
-  const isActive = fdc.currentUnit === unit;
+
+  const isActive = unit === activeUnit;
   const track = fdc.getUnitTrack(unit).toString().padStart(2, '0');
   const sector = fdc.isExecuting && isActive ? fdc.currentSector.toString().padStart(2, '0') : '--';
-  
-  let status: string;
+
+  let led: import('@/state/disk-state.ts').DriveLed;
   if (!fdc.motorOn || !isActive) {
-    status = 'Off  ';
-  } else if (fdc.isExecuting) {
-    status = fdc.isWriting ? 'Write' : 'Read ';
+    led = 'off';
+  } else if (!fdc.isExecuting) {
+    led = 'motor';
+  } else if (fdc.isWriting) {
+    led = 'write';
   } else {
-    status = 'Spin ';
+    led = 'read';
   }
-  
-  return `${status} ${n}Track${e} ${track} ${n}Sector${e} ${sector}`;
+
+  return { led, track, sector };
 }
 
 /** Update banks, disk info, drive status, and trap log signals. */
-function updateHardwareSignals(model: SpectrumModel): void {
+function updateHardwareSignals(model: SpectrumModel, activeUnit: number): void {
   if (is128kClass(model)) {
     setBanksHtml(renderBanks());
   }
   if (isPlus3(model)) {
     spectrum!.fdc.tickFrame();
-    setDriveAStatus(renderDriveStatus(0));
-    setDriveBStatus(renderDriveStatus(1));
-    setDriveHtml(renderDriveStatus(0)); // legacy
+    setDriveAStatus(renderDriveStatus(0, activeUnit));
+    setDriveBStatus(renderDriveStatus(1, activeUnit));
     setShowTrapLog(false);
   }
 }
@@ -145,7 +144,8 @@ export function updateRegsOnce(): void {
   batch(() => {
     setRegsRev(v => v + 1);
     updateDebugSignals();
-    updateHardwareSignals(currentModel());
+    const model = currentModel();
+    updateHardwareSignals(model, isPlus3(model) ? spectrum!.fdc.currentUnit : 0);
   });
 }
 
@@ -281,6 +281,7 @@ export function onFrame(): void {
 
   const a = spectrum.activity;
   const model = currentModel();
+  const activeUnit = isPlus3(model) ? spectrum.fdc.currentUnit : 0;
 
   // Check if a breakpoint fired this frame
   if (spectrum.breakpointHit >= 0) {
@@ -367,7 +368,7 @@ export function onFrame(): void {
       }
     }
 
-    updateHardwareSignals(model);
+    updateHardwareSignals(model, activeUnit);
 
     // Transcribe overlay
     if (transcribeMode() !== 'off') {
@@ -398,7 +399,6 @@ export function onFrame(): void {
   });
 
   // Floppy sound (non-signal, side effect) — check active drive's sound setting
-  const activeUnit = spectrum!.fdc.currentUnit;
   const driveSoundOn = activeUnit === 0 ? settings.diskSoundA() : settings.diskSoundB();
   if (floppySound && isPlus3(model) && driveSoundOn) {
     // Attach to audio context if not already attached

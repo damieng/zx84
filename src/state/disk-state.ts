@@ -10,6 +10,14 @@
 import { createSignal } from 'solid-js';
 import type { DskImage } from '@/plus3/dsk.ts';
 
+export type DriveLed = 'off' | 'motor' | 'seek' | 'read' | 'write';
+
+export interface DriveStatus {
+  led: DriveLed;
+  track: string;
+  sector: string;
+}
+
 // Drive A
 const _currentDiskInfo = createSignal<DskImage | null>(null);
 export const currentDiskInfo = _currentDiskInfo[0];
@@ -19,7 +27,7 @@ const _currentDiskName = createSignal('');
 export const currentDiskName = _currentDiskName[0];
 export const setCurrentDiskName = _currentDiskName[1];
 
-const _driveAStatus = createSignal('');
+const _driveAStatus = createSignal<DriveStatus>({ led: 'off', track: '00', sector: '--' });
 export const driveAStatus = _driveAStatus[0];
 export const setDriveAStatus = _driveAStatus[1];
 
@@ -32,7 +40,7 @@ const _currentDiskNameB = createSignal('');
 export const currentDiskNameB = _currentDiskNameB[0];
 export const setCurrentDiskNameB = _currentDiskNameB[1];
 
-const _driveBStatus = createSignal('');
+const _driveBStatus = createSignal<DriveStatus>({ led: 'off', track: '00', sector: '--' });
 export const driveBStatus = _driveBStatus[0];
 export const setDriveBStatus = _driveBStatus[1];
 

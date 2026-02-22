@@ -2,7 +2,7 @@ import { Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { RawHtml } from '@/components/RawHtml.tsx';
 import { DropDownMenuButton } from '@/components/DropDownMenuButton.tsx';
-import { HiOutlineEllipsisVertical } from 'solid-icons/hi';
+import { HiOutlineEllipsisVertical, HiOutlineDocumentPlus, HiOutlineArrowDownTray } from 'solid-icons/hi';
 import {
   driveAStatus, driveBStatus, trapLogHtml, showTrapLog, currentModel,
   currentDiskName, currentDiskNameB, currentDiskInfo, currentDiskInfoB,
@@ -15,6 +15,15 @@ import {
 } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import { DISK_FORMATS, formatLabel, createBlankDisk, type DskImage } from '@/plus3/dsk.ts';
+import type { DriveStatus } from '@/state/disk-state.ts';
+
+const LED_COLORS: Record<DriveStatus['led'], string> = {
+  off:   '#111',
+  motor: '#2266ee',
+  seek:  '#ddaa00',
+  read:  '#22bb44',
+  write: '#dd2222',
+};
 
 function renderDiskInfoStr(img: DskImage): string {
   const n = '<span class="reg-name">';
@@ -34,7 +43,7 @@ function DiskInfo(props: {
   unit: number;
   name: string;
   diskInfo: DskImage | null;
-  status: string;
+  status: DriveStatus;
   soundEnabled: boolean;
   writeProtected: boolean;
   onInsert: () => void;
@@ -42,55 +51,65 @@ function DiskInfo(props: {
   onToggleWriteProtect: () => void;
 }) {
   const label = props.unit === 0 ? 'A:' : 'B:';
-  const newDiskItem = {
-    value: 'new-disk',
-    label: 'New Disk',
-    children: DISK_FORMATS.map((fmt, i) => ({ value: `new-${i}`, label: formatLabel(fmt) })),
-  };
   return (
     <div class="disk-section">
-      <div class="disk-name-row">
-        <div
-          class="disk-name"
-          classList={{ 'disk-name-clickable': !props.name }}
-          onClick={() => !props.name && props.onInsert()}
+      <div class="drive-header">
+        <span class="disk-label">{label}</span>
+        <span class="drive-led" style={{ background: LED_COLORS[props.status.led] }} title={props.status.led} />
+        <span class="drive-track-info">
+          <span class="reg-name">Track</span>{' '}{props.status.track}
+          {'  '}
+          <span class="reg-name">Sector</span>{' '}{props.status.sector}
+        </span>
+        <DropDownMenuButton
+          icon={<HiOutlineDocumentPlus />}
+          title={`New disk in drive ${label}`}
+          items={DISK_FORMATS.map((fmt, i) => ({ value: `new-${i}`, label: formatLabel(fmt) }))}
+          onSelect={(value) => {
+            const fmt = DISK_FORMATS[parseInt(value.slice(4))];
+            if (fmt) insertBlankDisk(createBlankDisk(fmt), formatLabel(fmt), props.unit);
+          }}
+        />
+        <button
+          class="ddmenu-btn"
+          title={`Save drive ${label} as DSK`}
+          disabled={!props.diskInfo}
+          onClick={() => saveDisk(props.unit)}
         >
-          <span class="disk-label">{label}</span>
-          <span class="disk-name-text" title={props.name || ''}>
-            {props.name || 'No disk inserted'}
-          </span>
-          <Show when={props.name}>
-            <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
-              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
-              </svg>
-            </button>
-          </Show>
-        </div>
+          <HiOutlineArrowDownTray />
+        </button>
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
           title={`Drive ${label} options`}
           items={[
-            newDiskItem,
-            { value: 'save', label: 'Save as DSK' },
             { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
             { value: 'wp', label: 'Write protect', checked: props.writeProtected },
           ]}
           onSelect={(value) => {
-            if (value === 'save') saveDisk(props.unit);
-            else if (value === 'sound') props.onToggleSound();
+            if (value === 'sound') props.onToggleSound();
             else if (value === 'wp') props.onToggleWriteProtect();
-            else if (value.startsWith('new-')) {
-              const fmt = DISK_FORMATS[parseInt(value.slice(4))];
-              if (fmt) insertBlankDisk(createBlankDisk(fmt), formatLabel(fmt), props.unit);
-            }
           }}
         />
+      </div>
+      <div
+        class="disk-name"
+        classList={{ 'disk-name-clickable': !props.name }}
+        onClick={() => !props.name && props.onInsert()}
+      >
+        <span class="disk-name-text" title={props.name || ''}>
+          {props.name || 'No disk inserted'}
+        </span>
+        <Show when={props.name}>
+          <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
+            </svg>
+          </button>
+        </Show>
       </div>
       <Show when={props.diskInfo}>
         <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />
       </Show>
-      <pre class="drive-status" innerHTML={props.status} />
     </div>
   );
 }
