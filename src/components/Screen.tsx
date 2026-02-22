@@ -3,8 +3,8 @@
  */
 
 import { createEffect } from 'solid-js';
-import { setCanvas, spectrum, transcribeMode, transcribeHtml, setDrawOverlayCanvas } from '@/emulator.ts';
-import { renderer, scale, drawOverlay as drawOverlaySetting, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeHtml } from '@/emulator.ts';
+import { renderer, scale, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
 
 export function Screen() {
   let canvasRef!: HTMLCanvasElement;
@@ -24,19 +24,6 @@ export function Screen() {
     setCanvas(fresh);
   });
 
-  // Attach + resize the draw overlay canvas
-  createEffect(() => {
-    const scl = scale();
-    const enabled = drawOverlaySetting();
-    if (!drawOverlayRef || !spectrum) return;
-    const borderPx = (spectrum.ula.screenWidth - 256) / 2;
-    drawOverlayRef.style.left = (borderPx * scl) + 'px';
-    drawOverlayRef.style.top = (borderPx * scl) + 'px';
-    drawOverlayRef.width = 256 * scl;
-    drawOverlayRef.height = 192 * scl;
-    drawOverlayRef.style.display = enabled ? 'block' : 'none';
-    setDrawOverlayCanvas(drawOverlayRef);
-  });
 
   // When font settings change, force re-measure (after fonts load)
   createEffect(() => {
@@ -97,7 +84,6 @@ export function Screen() {
   return (
     <div id="screen-wrap">
       <canvas id="screen" ref={canvasRef} />
-      <canvas id="draw-overlay" ref={drawOverlayRef} />
       <pre
         id="transcribe-overlay"
         ref={overlayRef}

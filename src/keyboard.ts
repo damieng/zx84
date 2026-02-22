@@ -84,6 +84,7 @@ const KEY_MAP: Record<string, KeyMapping | ComboMapping> = {
   'ArrowUp':      [{ row: 0, bit: 0 }, { row: 4, bit: 3 }],  // SHIFT + 7
   'ArrowRight':   [{ row: 0, bit: 0 }, { row: 4, bit: 2 }],  // SHIFT + 8
   'CapsLock':     [{ row: 0, bit: 0 }, { row: 3, bit: 1 }],  // SHIFT + 2 (CAPS LOCK)
+  'Tab':          [{ row: 0, bit: 0 }, { row: 3, bit: 0 }],  // SHIFT + 1 (EDIT)
   'Escape':       [{ row: 0, bit: 0 }, { row: 7, bit: 0 }],  // SHIFT + SPACE (BREAK)
 };
 
@@ -187,7 +188,11 @@ export class SpectrumKeyboard {
     }
 
     // Check character map for symbol keys (';', '-', ',', etc.)
-    const charMapping = key ? CHAR_MAP[key] : undefined;
+    // Skip CHAR_MAP for digit keys — Shift+number has Spectrum meanings
+    // (EDIT, CAPS LOCK, TRUE VIDEO, etc.) that must not be intercepted by
+    // the symbol characters those PC keys produce (!@#$%^&*()).
+    const isDigitKey = code.startsWith('Digit');
+    const charMapping = (key && !isDigitKey) ? CHAR_MAP[key] : undefined;
     if (charMapping) {
       if (pressed) {
         // If CAPS SHIFT is pressed (from physical Shift) but this combo
