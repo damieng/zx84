@@ -5,10 +5,10 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     version: '0.2.2',
     items: [
       'Drive pane UX improvements including LED',
-      'Fix CPC DSK format detection',
-      'Detect B: when empty option',
+      'CPC disk format detection fix',
+      '+3 Force B: presence when empty option',
       '+3 FORMAT command support',
-      'Fix shift/ctrl keys getting stuck'
+      'Keyboard shift/ctrl keys stuck/failing fixed'
     ],
   },
   {
