@@ -8,7 +8,6 @@ import { renderer, scale, borderSize, ocrFont, ocrFontSize, ocrLineHeight, ocrTr
 
 export function Screen() {
   let canvasRef!: HTMLCanvasElement;
-  let drawOverlayRef!: HTMLCanvasElement;
   let overlayRef!: HTMLPreElement;
   let natSize = { w: 0, h: 0 };
 
