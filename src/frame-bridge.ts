@@ -12,11 +12,13 @@ import type { FontSource } from '@/debug/screen-text.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
 import { isCollapsed } from '@/ui/panes.ts';
 import * as settings from '@/store/settings.ts';
+import { refreshDiskMetadata } from '@/plus3/dsk.ts';
 import {
   spectrum, floppySound,
   currentModel, emulationPaused, tracing,
   setRegsRev, setSysvarRev, setBasicHtml, setBasicVarsHtml,
   setBanksHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
+  setCurrentDiskInfo, setCurrentDiskInfoB,
   setClockSpeedText,
   setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText, setTranscribeHtml,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedText,
@@ -124,6 +126,19 @@ function updateHardwareSignals(model: SpectrumModel, activeUnit: number): void {
     setDriveAStatus(renderDriveStatus(0, activeUnit));
     setDriveBStatus(renderDriveStatus(1, activeUnit));
     setShowTrapLog(false);
+
+    // If a format just completed, re-detect disk metadata and refresh the signal
+    const fu = spectrum!.fdc.formattedUnit;
+    if (fu >= 0) {
+      spectrum!.fdc.formattedUnit = -1;
+      const image = spectrum!.fdc.getDiskImage(fu);
+      if (image) {
+        refreshDiskMetadata(image);
+        // Spread to new reference so Solid.js reactive graph sees the change
+        if (fu === 0) setCurrentDiskInfo({ ...image });
+        else          setCurrentDiskInfoB({ ...image });
+      }
+    }
   }
 }
 

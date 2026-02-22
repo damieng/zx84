@@ -961,6 +961,9 @@ input[type="range"]::-moz-range-thumb {
 .tape-eject:hover { color: #c00; background: none !important; }
 
 /* Disk drive pane */
+#drive-panel .pane-content-inner {
+  gap: 20px;
+}
 .disk-section {
   margin-bottom: 8px;
 }
@@ -1046,7 +1049,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .disk-info-output {
-  padding: 6px;
+  padding: 0 4px;
   margin: 0; 
   font-size: 0.7rem;
   line-height: 1.5;

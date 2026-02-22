@@ -115,6 +115,12 @@ export class UPD765A {
    */
   forceReady = [false, false, false, false];
 
+  /**
+   * Set to the unit number (0/1) when FORMAT_TRACK finishes; cleared by the
+   * UI layer after it refreshes disk metadata.  -1 = no pending refresh.
+   */
+  formattedUnit = -1;
+
   /** Per-drive Read ID cycling index */
   private idIndex = [0, 0, 0, 0];
 
@@ -149,6 +155,17 @@ export class UPD765A {
   /** Status registers from sector (for CRC error reporting) */
   private exST1 = 0;
   private exST2 = 0;
+
+  // ── Format-track execution state ────────────────────────────────────
+
+  /** True when executing FORMAT_TRACK (CPU feeds sector IDs, not data) */
+  private exFormatting = false;
+  /** Sectors per cylinder received in FORMAT_TRACK command */
+  private exSC = 0;
+  /** Gap 3 length from FORMAT_TRACK command */
+  private exGPL = 0;
+  /** Filler byte from FORMAT_TRACK command */
+  private exFiller = 0;
 
   // ── Public API ─────────────────────────────────────────────────────
 
@@ -299,10 +316,14 @@ export class UPD765A {
     if (this.exPos >= this.exBuf.length) return;
     this.exBuf[this.exPos++] = val;
     if (this.exPos >= this.exBuf.length) {
-      // Write buffer back to disk image
-      this.writeBackSector();
-      if (!this.advanceSector()) {
-        this.finishExecution();
+      if (this.exFormatting) {
+        this.finishFormat();
+      } else {
+        // Write buffer back to disk image
+        this.writeBackSector();
+        if (!this.advanceSector()) {
+          this.finishExecution();
+        }
       }
     }
   }
@@ -842,18 +863,109 @@ export class UPD765A {
     this.result([st0, 0x00, 0x00, sector.c, sector.h, sector.r, sector.n]);
   }
 
-  /** Format Track — no disk or write-protected → error. */
+  /**
+   * Format Track.
+   * cmdBuf: [cmd, HDS, N, SC, GPL, D]
+   *   N   = sector size code (128 << N bytes per sector)
+   *   SC  = sectors per cylinder
+   *   GPL = gap 3 length
+   *   D   = filler byte
+   *
+   * Execution phase: CPU writes SC×4 bytes (C, H, R, N per sector).
+   * On completion the track in the disk image is rebuilt from those IDs,
+   * each sector filled with D, then normal termination is returned.
+   */
   private cmdFormat(): void {
     const unit = this.cmdBuf[1] & 0x03;
     const head = (this.cmdBuf[1] >> 2) & 1;
-    const n = this.cmdBuf[2];
-    if (this.writeProtect[unit]) {
-      const st0 = ST0_ABNORMAL | (head << 2) | unit;
-      this.result([st0, 0x02, 0x00, 0, 0, 0, n]); // ST1=NW
+    const n   = this.cmdBuf[2];
+    const sc  = this.cmdBuf[3];
+    const gpl = this.cmdBuf[4];
+    const d   = this.cmdBuf[5];
+
+    if (!this.disks[unit]) {
+      this.log(`  ✗ No disk in unit ${unit}`);
+      const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
+      this.result([st0, 0x01, 0x00, 0, head, 0, n]);
       return;
     }
-    const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
-    this.result([st0, 0x01, 0x00, 0, 0, 0, n]);
+    if (this.writeProtect[unit]) {
+      this.log(`  ✗ Drive ${unit} write-protected`);
+      const st0 = ST0_ABNORMAL | (head << 2) | unit;
+      this.result([st0, 0x02, 0x00, 0, head, 0, n]); // ST1 bit 1 = NW
+      return;
+    }
+
+    this.log(`  → Unit=${unit} Head=${head} N=${n} SC=${sc} GPL=${gpl} Fill=0x${d.toString(16).padStart(2, '0')}`);
+
+    this.exUnit      = unit;
+    this.exHead      = head;
+    this.exN         = n;
+    this.exSC        = sc;
+    this.exGPL       = gpl;
+    this.exFiller    = d;
+    this.exFormatting = true;
+    this.exWriting   = true;
+    this.exHitEOT    = false;
+    this.exST1       = 0;
+    this.exST2       = 0;
+    // Receive SC×4 bytes from CPU: one (C, H, R, N) tuple per sector
+    this.exBuf = new Uint8Array(sc * 4);
+    this.exPos = 0;
+
+    this.latchWriting = true;
+    this.latchFrames  = 25;
+
+    this.phase = Phase.Execution;
+  }
+
+  /** Rebuild the current track from received sector IDs, then finish. */
+  private finishFormat(): void {
+    const disk = this.disks[this.exUnit];
+    if (!disk) { this.finishExecution(); return; }
+
+    const cyl    = this.pcn[this.exUnit];
+    const head   = this.exHead;
+    const sc     = this.exSC;
+    const filler = this.exFiller;
+    const gpl    = this.exGPL;
+    const buf    = this.exBuf;
+
+    // Build sector list from the CPU-supplied (C, H, R, N) tuples
+    const sectors: DskSector[] = [];
+    const sectorMap = new Map<number, number>();
+    let lastR = 0;
+    for (let i = 0; i < sc; i++) {
+      const c = buf[i * 4];
+      const h = buf[i * 4 + 1];
+      const r = buf[i * 4 + 2];
+      const n = buf[i * 4 + 3];
+      const data = new Uint8Array(128 << n).fill(filler);
+      sectors.push({ c, h, r, n, st1: 0, st2: 0, data });
+      sectorMap.set(r, i);
+      lastR = r;
+    }
+
+    // Extend tracks array if this cylinder is beyond what the image has
+    while (disk.tracks.length <= cyl) {
+      disk.tracks.push(Array.from({ length: disk.numSides }, () => null));
+    }
+    disk.tracks[cyl][head] = { sectors, sectorMap, gap3: gpl, filler };
+
+    this.log(`  ✓ Formatted cyl=${cyl} head=${head}: ${sc} sectors, last R=${lastR}`);
+
+    // Signal to the UI layer that metadata needs refreshing
+    this.formattedUnit = this.exUnit;
+
+    // Set result fields for finishExecution()
+    this.exC   = cyl;
+    this.exH   = head;
+    this.exR   = lastR;
+    this.exST1 = 0;
+    this.exST2 = 0;
+    this.exFormatting = false;
+
+    this.finishExecution();
   }
 
   /** Version — 0x80 = enhanced controller (uPD765A compatible). */

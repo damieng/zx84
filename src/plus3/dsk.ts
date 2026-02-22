@@ -358,6 +358,12 @@ export function createBlankDisk(fmt: DiskFormat): DskImage {
   return image;
 }
 
+/** Re-detect diskFormat and protection after in-place modification (e.g. format). */
+export function refreshDiskMetadata(image: DskImage): void {
+  image.diskFormat = detectDiskFormat(image);
+  image.protection = detectProtection(image);
+}
+
 // ── Format detection ────────────────────────────────────────────────────────
 
 function detectDiskFormat(image: DskImage): string {
