@@ -702,7 +702,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 4px;
   background: #eee;
   color: #000;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   cursor: pointer;
 }
 
@@ -760,8 +760,8 @@ input[type="range"]::-moz-range-thumb {
 
 #cpu-mhz {
   flex: 2;
-  font-size: 0.7rem !important;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 
 #regs-output {

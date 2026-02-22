@@ -161,11 +161,13 @@ let _lastSlowUpdate = 0;
 let speedLastTime = 0;
 let speedLastTStates = 0;
 let speedFrameCount = 0;
+let smoothedMhz = 0;
 
 export function resetSpeedTracking(): void {
   speedLastTime = performance.now();
-  speedLastTStates = 0;
+  speedLastTStates = spectrum ? spectrum.cpu.tStates : 0;
   speedFrameCount = 0;
+  smoothedMhz = 0;
   setClockSpeedText('MHz');
 }
 
@@ -180,14 +182,20 @@ function updateClockSpeed(): void {
   speedLastTime = now;
   speedLastTStates = spectrum.cpu.tStates;
   if (elapsed > 0) {
-    const mhz = (tStates / elapsed) / 1_000_000;
-    setClockSpeedText(`${mhz.toFixed(2)} MHz`);
+    const rawMhz = (tStates / elapsed) / 1_000_000;
+    // Exponential moving average for a stable readout
+    smoothedMhz = smoothedMhz === 0 ? rawMhz : smoothedMhz * 0.7 + rawMhz * 0.3;
+    setClockSpeedText(`${smoothedMhz.toFixed(2)} MHz`);
   }
 }
 
 /** Force immediate MHz update on next frame (e.g. after turbo toggle). */
 export function forceSpeedUpdate(): void {
-  speedFrameCount = 49;
+  // Reset the baseline so the next sample measures only post-toggle speed
+  speedLastTime = performance.now();
+  speedLastTStates = spectrum ? spectrum.cpu.tStates : 0;
+  speedFrameCount = 0;
+  smoothedMhz = 0;
 }
 
 // ── Font preview ────────────────────────────────────────────────────────

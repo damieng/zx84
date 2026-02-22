@@ -6,7 +6,9 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     items: [
       'HQx and XBR upscalers added',
       'Keyboard mapping improvements',
+      'Hardware Pane reworked',
       'Noise display pattern for that retro vibe',
+      'Reset per pane option'
     ]
   },
   {

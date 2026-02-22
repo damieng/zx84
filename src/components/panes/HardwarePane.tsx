@@ -1,5 +1,5 @@
 import { Pane } from '@/components/Pane.tsx';
-import { HiOutlineCpuChip, HiOutlinePower } from 'solid-icons/hi';
+import { HiOutlinePower } from 'solid-icons/hi';
 import {
   currentModel, romStatusText, switchModel, loadRomFiles,
   turboMode, clockSpeedText, resetMachine, toggleTurbo,
@@ -34,9 +34,7 @@ export function HardwarePane() {
           <option value="+2a">ZX Spectrum +2A (Black)</option>
           <option value="+3">ZX Spectrum +3</option>
         </select>
-        <button id="rom-btn" title="Load ROM" onClick={() => romInputRef?.click()}>
-          <HiOutlineCpuChip />
-        </button>
+        <button id="cpu-reset" title="Reset machine" onClick={resetMachine}><HiOutlinePower /></button>
         <input
           type="file"
           ref={romInputRef}
@@ -51,7 +49,7 @@ export function HardwarePane() {
         />
       </div>
       <div id="cpu-controls">
-        <button id="cpu-reset" title="Reset machine" onClick={resetMachine}><HiOutlinePower /></button>
+        <button id="rom-btn" title="Load ROM" onClick={() => romInputRef?.click()}>ROM Select</button>
         <button
           id="cpu-mhz"
           title={turboMode() ? 'Switch to normal speed' : 'Toggle turbo speed'}
