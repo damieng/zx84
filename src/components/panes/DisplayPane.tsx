@@ -165,13 +165,13 @@ export function DisplayPane() {
           <option value="philips-cm8833">Philips CM8833</option>
           <option value="commodore-1080">Commodore 1080</option>
           <option value="amstrad-cm14">Amstrad CM14</option>
-          <option value="sony-trinitron">Sony Trinitron</option>
+          <option value="sony-trinitron">Sony PVM/Trinitron</option>
           <option value="atari-sc1224">Atari SC1224</option>
           <option value="cheap-tv">Cheap TV</option>
         </select>
       </div>
       <div class="slider-row">
-        <span class="slider-label">Scaling</span>
+        <span class="slider-label">Upscaler</span>
         <select id="scaling-mode-select" value={scalingMode()} onChange={(e) => {
           const v = Number((e.target as HTMLSelectElement).value);
           setScalingMode(v);
