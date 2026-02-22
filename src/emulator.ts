@@ -3,7 +3,8 @@
  */
 
 import { batch } from 'solid-js';
-import { Spectrum, type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
+import { Spectrum } from '@/spectrum.ts';
+import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/models.ts';
 import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import { FloppySound } from '@/plus3/floppy-sound.ts';
@@ -235,7 +236,7 @@ export async function createMachine(): Promise<boolean> {
   spectrum.ay.setStereoMode(savedAyStereo);
 
   // Apply saved disk mode for +3
-  if (isPlus3(model)) {
+  if (spectrum.variant.hasFDC) {
     spectrum.fdc.writeProtect[0] = settings.writeProtectA();
     spectrum.fdc.writeProtect[1] = settings.writeProtectB();
     spectrum.fdc.forceReady[1] = settings.driveBForceReady();
@@ -246,7 +247,7 @@ export async function createMachine(): Promise<boolean> {
   setCurrentDiskName('');
   setCurrentDiskInfoB(null);
   setCurrentDiskNameB('');
-  if (isPlus3(model)) {
+  if (spectrum.variant.hasFDC) {
     if (!floppySound) floppySound = new FloppySound();
     floppySound.reset();
   } else {
@@ -599,7 +600,7 @@ export async function saveSnapshot(format: 'z80' | 'szx' = 'szx'): Promise<void>
     data = await saveSZX(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, model, spectrum.contention.frameStartTStates, ayRegs, spectrum.ay.selectedReg);
   } else {
     // .z80 format
-    data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, is128kClass(currentModel()));
+    data = saveZ80(spectrum.cpu, spectrum.memory, spectrum.ula.borderColor, spectrum.variant.hasBanking);
   }
 
   const filename = `zx84-${model.replace('+', 'plus')}.${format}`;
@@ -1032,7 +1033,7 @@ export async function restoreHMRState(): Promise<boolean> {
       spectrum.memory.currentBank = result.port7FFD & 0x07;
       spectrum.memory.currentROM = (result.port7FFD >> 4) & 1;
       spectrum.memory.pagingLocked = (result.port7FFD & 0x20) !== 0;
-      if (isPlus2AClass(currentModel())) {
+      if (spectrum.variant.hasSpecialPaging) {
         spectrum.memory.port1FFD = result.port1FFD;
         spectrum.memory.specialPaging = (result.port1FFD & 1) !== 0;
       }

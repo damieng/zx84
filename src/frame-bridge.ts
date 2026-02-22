@@ -6,7 +6,7 @@
  */
 
 import { batch } from 'solid-js';
-import { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
+import { isPlus2AClass } from '@/models.ts';
 import { disassembleAroundPC, formatDisasmHtml } from '@/debug/z80-disasm.ts';
 import type { FontSource } from '@/debug/screen-text.ts';
 import { parseBasicProgram, parseBasicVariables } from '@/debug/basic-parser.ts';
@@ -117,21 +117,23 @@ function renderDriveStatus(unit: number, activeUnit: number): import('@/state/di
 }
 
 /** Update banks, disk info, drive status, and trap log signals. */
-function updateHardwareSignals(model: SpectrumModel, activeUnit: number): void {
-  if (is128kClass(model)) {
+function updateHardwareSignals(activeUnit: number): void {
+  if (!spectrum) return;
+  const v = spectrum.variant;
+  if (v.hasBanking) {
     setBanksHtml(renderBanks());
   }
-  if (isPlus3(model)) {
-    spectrum!.fdc.tickFrame();
+  if (v.hasFDC) {
+    spectrum.fdc.tickFrame();
     setDriveAStatus(renderDriveStatus(0, activeUnit));
     setDriveBStatus(renderDriveStatus(1, activeUnit));
     setShowTrapLog(false);
 
     // If a format just completed, re-detect disk metadata and refresh the signal
-    const fu = spectrum!.fdc.formattedUnit;
+    const fu = spectrum.fdc.formattedUnit;
     if (fu >= 0) {
-      spectrum!.fdc.formattedUnit = -1;
-      const image = spectrum!.fdc.getDiskImage(fu);
+      spectrum.fdc.formattedUnit = -1;
+      const image = spectrum.fdc.getDiskImage(fu);
       if (image) {
         refreshDiskMetadata(image);
         // Spread to new reference so Solid.js reactive graph sees the change
@@ -159,8 +161,8 @@ export function updateRegsOnce(): void {
   batch(() => {
     setRegsRev(v => v + 1);
     updateDebugSignals();
-    const model = currentModel();
-    updateHardwareSignals(model, isPlus3(model) ? spectrum!.fdc.currentUnit : 0);
+    const activeUnit = spectrum!.variant.hasFDC ? spectrum!.fdc.currentUnit : 0;
+    updateHardwareSignals(activeUnit);
   });
 }
 
@@ -295,8 +297,8 @@ export function onFrame(): void {
   updateClockSpeed();
 
   const a = spectrum.activity;
-  const model = currentModel();
-  const activeUnit = isPlus3(model) ? spectrum.fdc.currentUnit : 0;
+  const v = spectrum.variant;
+  const activeUnit = v.hasFDC ? spectrum.fdc.currentUnit : 0;
 
   // Check if a breakpoint fired this frame
   if (spectrum.breakpointHit >= 0) {
@@ -383,7 +385,7 @@ export function onFrame(): void {
       }
     }
 
-    updateHardwareSignals(model, activeUnit);
+    updateHardwareSignals(activeUnit);
 
     // Transcribe overlay
     if (transcribeMode() !== 'off') {
@@ -415,7 +417,7 @@ export function onFrame(): void {
 
   // Floppy sound (non-signal, side effect) — check active drive's sound setting
   const driveSoundOn = activeUnit === 0 ? settings.diskSoundA() : settings.diskSoundB();
-  if (floppySound && isPlus3(model) && driveSoundOn) {
+  if (floppySound && v.hasFDC && driveSoundOn) {
     // Attach to audio context if not already attached
     if (!floppySound['ctx'] && spectrum!['audio'].ctx) {
       floppySound.attach(spectrum!['audio'].ctx);

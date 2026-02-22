@@ -8,8 +8,8 @@
  * - Coordinate with Spectrum instance for media operations
  */
 
-import type { Spectrum, SpectrumModel } from '@/spectrum.ts';
-import { is128kClass, isPlus2AClass } from '@/spectrum.ts';
+import type { Spectrum } from '@/spectrum.ts';
+import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/models.ts';
 import type { TapeBlock } from '@/tape/tap.ts';
 import { parseTZX } from '@/tape/tzx.ts';
 import { parseDSK, type DskImage } from '@/plus3/dsk.ts';

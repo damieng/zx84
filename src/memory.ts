@@ -7,8 +7,7 @@
  * On a bank switch only the affected slot(s) are copied in/out.
  */
 
-import type { SpectrumModel } from '@/spectrum.ts';
-import { isPlus2AClass } from '@/spectrum.ts';
+import type { SpectrumModel } from '@/models.ts';
 
 /** Special paging all-RAM bank configurations (indexed by mode 0-3). */
 const SPECIAL_MODES: ReadonlyArray<readonly [number, number, number, number]> = [
@@ -49,8 +48,8 @@ export class SpectrumMemory {
   /** True when +2A special all-RAM paging is active */
   specialPaging = false;
 
-  constructor(model: SpectrumModel) {
-    this.is128K = model !== '48k';
+  constructor(model: SpectrumModel, opts?: { hasBanking?: boolean; romPageCount?: number }) {
+    this.is128K = opts?.hasBanking ?? (model !== '48k');
     this.flat = new Uint8Array(65536);
 
     // Create 8 RAM banks
@@ -59,10 +58,12 @@ export class SpectrumMemory {
       this.ramBanks.push(new Uint8Array(16384));
     }
 
-    // Create ROM pages: 4 for +2A, 2 otherwise
-    const romCount = isPlus2AClass(model) ? 4 : 2;
+    // Create ROM pages: count determined by variant (1 for 48K, 2 for 128K/+2, 4 for +2A/+3)
+    const romCount = opts?.romPageCount ?? (this.is128K ? 2 : 1);
+    // Internally always allocate at least 2 pages for consistent indexing
+    const allocCount = Math.max(2, romCount);
     this.romPages = [];
-    for (let i = 0; i < romCount; i++) {
+    for (let i = 0; i < allocCount; i++) {
       this.romPages.push(new Uint8Array(16384));
     }
   }

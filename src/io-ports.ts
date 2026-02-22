@@ -7,7 +7,6 @@
  */
 
 import type { Spectrum } from '@/spectrum.ts';
-import { is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 
 /**
  * Override Z80 read8/write8 to apply per-access ULA contention and
@@ -16,6 +15,7 @@ import { is128kClass, isPlus2AClass, isPlus3 } from '@/spectrum.ts';
 export function installMemoryHooks(s: Spectrum): void {
   const memory = s.memory;
   const contention = s.contention;
+  const v = s.variant;
 
   s.cpu.read8 = (addr: number): number => {
     addr &= 0xFFFF;
@@ -38,15 +38,15 @@ export function installMemoryHooks(s: Spectrum): void {
   // trigger it. This matches observed behaviour: programs using I=0xFE
   // with an odd bank at 0xC000 (very common IM 2 setup) work correctly
   // without the extra 6T-per-M1 penalty that full isContended() would add.
-  s.cpu.contend = isPlus2AClass(s.model) ? () => {} : (addr: number): void => {
+  s.cpu.contend = v.hasIOContention ? (addr: number): void => {
     if (addr >= 0x4000 && addr < 0x8000) {
       s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
     }
-  };
+  } : () => {};
 
   // 48K: flush beam on all VRAM writes (bitmap + attr) for correct multicolor.
   // Non-48K: flush only on bitmap writes; attr writes handled by per-instruction render.
-  const vramFlushEnd = s.model === '48k' ? 0x5B00 : 0x5800;
+  const vramFlushEnd = v.vramFlushEnd;
 
   s.cpu.write8 = (addr: number, val: number): void => {
     addr &= 0xFFFF;
@@ -91,6 +91,8 @@ export function installMemoryHooks(s: Spectrum): void {
 }
 
 export function wirePortIO(s: Spectrum): void {
+  const v = s.variant;
+
   s.cpu.portOutHandler = (port: number, val: number) => {
     // ULA port: any port with bit 0 = 0
     if ((port & 0x01) === 0) {
@@ -104,13 +106,8 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // 128K bank switching: port 0x7FFD
-    if (is128kClass(s.model)) {
-      // +2A: strict decode (port & 0xC002) === 0x4000 to avoid 0x1FFD collision
-      // 128K/+2: loose decode (port & 0x8002) === 0
-      const match7FFD = isPlus2AClass(s.model)
-        ? (port & 0xC002) === 0x4000
-        : (port & 0x8002) === 0;
-      if (match7FFD) {
+    if (v.hasBanking) {
+      if (v.decodes7FFD(port)) {
         if (s.multiface.pagedIn) {
           // Sync live MF RAM before bank switch — bankSwitch() may
           // overwrite slot 0 (ROM change), clobbering flat[0x2000-0x3FFF]
@@ -124,13 +121,13 @@ export function wirePortIO(s: Spectrum): void {
         }
       }
 
-      // +2A: port 0x1FFD (port & 0xF002) === 0x1000
-      if (isPlus2AClass(s.model) && (port & 0xF002) === 0x1000) {
+      // +2A: port 0x1FFD
+      if (v.decodes1FFD(port)) {
         if (s.multiface.pagedIn) {
           s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
         }
         s.memory.bankSwitch1FFD(val, s.multiface.pagedIn);
-        if (isPlus3(s.model)) s.fdc.motorOn = (val & 0x08) !== 0;
+        if (v.hasFDC) s.fdc.motorOn = (val & 0x08) !== 0;
         s.cpu.memory = s.memory.flat;
         if (s.multiface.pagedIn) {
           s.cpu.memory.set(s.multiface.mfRom, 0);
@@ -138,8 +135,8 @@ export function wirePortIO(s: Spectrum): void {
         }
       }
 
-      // +3 FDC data write: port 0x3FFD (A13=1, A12=1, A1=0)
-      if (isPlus3(s.model) && (port & 0xF002) === 0x3000) {
+      // FDC data write: port 0x3FFD
+      if (v.decodesFDCData(port)) {
         s.fdc.writeData(val);
         s.activity.fdcAccesses++;
       }
@@ -153,7 +150,7 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // AY ports — 128K only (48K has no AY chip)
-    if (is128kClass(s.model)) {
+    if (v.hasAY) {
       // AY register select: port 0xFFFD (A15=1, A14=1, A1=0)
       if ((port & 0xC002) === 0xC000) {
         s.ay.selectedReg = val & 0x0F;
@@ -200,7 +197,7 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // AY register read: port 0xFFFD — 128K only
-    if (is128kClass(s.model) && (port & 0xC002) === 0xC000) {
+    if (v.hasAY && (port & 0xC002) === 0xC000) {
       return s.ay.readRegister(s.ay.selectedReg);
     }
 
@@ -209,13 +206,13 @@ export function wirePortIO(s: Spectrum): void {
     // FDC operates normally in both FDC and BIOS modes — un-trapped ROM
     // code (DD_LOGIN, DD_INIT, etc.) needs valid FDC responses. The BIOS
     // traps intercept DD_ routines before they reach the FDC hardware.
-    if (isPlus2AClass(s.model)) {
-      if ((port & 0xF002) === 0x2000) {
-        if (!isPlus3(s.model)) return 0xFF;
+    if (v.hasSpecialPaging) {
+      if (v.decodesFDCStatus(port)) {
+        if (!v.hasFDC) return 0xFF;
         return s.fdc.readStatus();
       }
-      if ((port & 0xF002) === 0x3000) {
-        if (!isPlus3(s.model)) return 0xFF;
+      if (v.decodesFDCData(port)) {
+        if (!v.hasFDC) return 0xFF;
         s.activity.fdcAccesses++;
         return s.fdc.readData();
       }

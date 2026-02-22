@@ -8,7 +8,7 @@
  * falls on.
  */
 
-import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/spectrum.ts';
+import type { MachineVariant } from '@/variants/machine-variant.ts';
 import type { SpectrumMemory } from '@/memory.ts';
 import { vramBitmapAddr, vramAttrAddr } from '@/cores/ula.ts';
 
@@ -60,46 +60,23 @@ export const TIMING_PLUS2A: MachineTiming = {
   floatingBusAdjust: 1,
 };
 
-/** Ferranti ULA contention pattern (48K/128K/+2) — indexed by (T-state mod 8).
- *  Max delay 6.  Phase: 6,5,4,3,2,1,0,0 aligned to contentionStart. */
-const CONTENTION_FERRANTI = new Uint8Array([6, 5, 4, 3, 2, 1, 0, 0]);
-
-/** Amstrad gate array contention pattern (+2A/+3) — indexed by (T-state mod 8).
- *  Max delay 7.  The 8-cycle [7,6,5,4,3,2,1,0] starts 2T after contentionStart
- *  so at contentionStart the phase is already 6 → delays 1,0,7,6,5,4,3,2. */
-const CONTENTION_AMSTRAD = new Uint8Array([1, 0, 7, 6, 5, 4, 3, 2]);
-
 export class Contention {
   readonly timing: MachineTiming;
-  private model: SpectrumModel;
+  private variant: MachineVariant;
   private memory: SpectrumMemory;
-  private contentionPattern: Uint8Array;
 
   /** T-state counter at start of current frame (set by Spectrum each frame). */
   frameStartTStates = 0;
 
-  constructor(model: SpectrumModel, memory: SpectrumMemory) {
-    this.model = model;
+  constructor(variant: MachineVariant, memory: SpectrumMemory) {
+    this.variant = variant;
     this.memory = memory;
-    this.timing = isPlus2AClass(model) ? TIMING_PLUS2A
-               : is128kClass(model)  ? TIMING_128K
-               :                       TIMING_48K;
-    this.contentionPattern = isPlus2AClass(model) ? CONTENTION_AMSTRAD : CONTENTION_FERRANTI;
+    this.timing = variant.timing;
   }
 
   /** True if the given address is in ULA-contended memory. */
   isContended(addr: number): boolean {
-    // 0x4000-0x7FFF is always contended (bank 5, the screen RAM)
-    if (addr >= 0x4000 && addr < 0x8000) return true;
-    // 128K-class: check paged bank at 0xC000
-    if (is128kClass(this.model) && addr >= 0xC000) {
-      // +2A/+3 (Amstrad gate array): banks 4,5,6,7 are contended
-      // 128K/+2 (Ferranti ULA): odd banks 1,3,5,7 are contended
-      return isPlus2AClass(this.model)
-        ? this.memory.currentBank >= 4
-        : (this.memory.currentBank & 1) === 1;
-    }
-    return false;
+    return this.variant.isContended(addr, this.memory.currentBank);
   }
 
   /** Returns the contention delay (extra T-states) for the current beam position. */
@@ -112,7 +89,7 @@ export class Contention {
     if (line >= 192) return 0;
     const col = offset - line * t.tStatesPerLine;
     if (col >= 128) return 0;
-    return this.contentionPattern[col & 7];
+    return this.variant.contentionPattern[col & 7];
   }
 
   /**
@@ -130,16 +107,15 @@ export class Contention {
    * without adding extra time (sub-cycle T-states are in the base instruction timing).
    */
   applyIOContention(port: number, cpu: { tStates: number }): void {
-    const isULA = (port & 1) === 0;
-
-    if (isPlus2AClass(this.model)) {
-      // +2A/+3 (Amstrad gate array): no I/O contention.
+    if (!this.variant.hasIOContention) {
+      // Amstrad gate array (+2A/+3): no I/O contention.
       // The gate array only applies contention when MREQ is active,
       // and MREQ is not asserted during I/O operations (IORQ instead).
       return;
     }
 
     // 48K / 128K / +2 (Ferranti ULA): four-case I/O contention
+    const isULA = (port & 1) === 0;
     const highContended = this.isContended(port);
 
     if (highContended && isULA) {

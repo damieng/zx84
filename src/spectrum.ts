@@ -34,6 +34,12 @@ import { AmxMouse } from '@/peripherals/amx-mouse.ts';
 import { AudioMixer } from '@/peripherals/audio-mixer.ts';
 import { Multiface } from '@/peripherals/multiface.ts';
 import { hex8, hex16 } from '@/utils/hex.ts';
+import { createVariant, type MachineVariant } from '@/variants/index.ts';
+
+// Re-export model type and helpers from their canonical home (models.ts)
+// so existing imports from '@/spectrum.ts' continue to work.
+export { type SpectrumModel, is128kClass, isPlus2AClass, isPlus3 } from '@/models.ts';
+export type { MachineVariant } from '@/variants/index.ts';
 
 const AY_CLOCK = 1773400;        // ~1.77 MHz
 
@@ -48,16 +54,7 @@ const TARGET_BUFFER_FRAMES = 3;
 /** Wall-clock frame period: 50 Hz = 20ms */
 const FRAME_PERIOD = 1000 / 50;
 
-export type SpectrumModel = '48k' | '128k' | '+2' | '+2a' | '+3';
-
-/** Returns true for any 128K-class model (128K, +2, +2A, +3). */
-export function is128kClass(m: SpectrumModel): boolean { return m !== '48k'; }
-
-/** Returns true for +2A/+3 class (Amstrad gate array with 0x1FFD port, 4 ROM pages). */
-export function isPlus2AClass(m: SpectrumModel): boolean { return m === '+2a' || m === '+3'; }
-
-/** Returns true for +3 (has uPD765A FDC). */
-export function isPlus3(m: SpectrumModel): boolean { return m === '+3'; }
+import type { SpectrumModel } from '@/models.ts';
 
 export class IOActivity {
   /** Number of ULA port reads this frame (keyboard / tape) */
@@ -94,6 +91,7 @@ export class IOActivity {
 
 export class Spectrum {
   model: SpectrumModel;
+  variant: MachineVariant;
   memory: SpectrumMemory;
   cpu: Z80;
   ay: AY3891x;
@@ -213,8 +211,12 @@ export class Spectrum {
 
   constructor(model: SpectrumModel, canvas?: HTMLCanvasElement | null, renderer?: 'webgl' | 'canvas') {
     this.model = model;
+    this.variant = createVariant(model);
 
-    this.memory = new SpectrumMemory(model);
+    this.memory = new SpectrumMemory(model, {
+      hasBanking: this.variant.hasBanking,
+      romPageCount: this.variant.romPageCount,
+    });
     this.cpu = new Z80(this.memory.flat);
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
@@ -225,11 +227,11 @@ export class Spectrum {
         : new WebGLRenderer(canvas, SCREEN_WIDTH, SCREEN_HEIGHT))
       : null;
     this.audio = new Audio();
-    this.contention = new Contention(model, this.memory);
+    this.contention = new Contention(this.variant, this.memory);
     this.mixer = new AudioMixer(this.contention.timing.cpuClock);
     this.tape = new TapeDeck();
-    this.tape.is48K = model === '48k';
-    this.tape.cpuClock = this.contention.timing.cpuClock;
+    this.tape.is48K = this.variant.is48K;
+    this.tape.cpuClock = this.variant.timing.cpuClock;
     this.fdc = new UPD765A();
     // 48K: render as the beam enters each cell (+1) for tightest accuracy.
     // 128K/+2/+2A/+3: render after the beam fully passes (+0) to avoid a race
@@ -238,7 +240,7 @@ export class Spectrum {
     // the beam.  The 228T/line timing on 128K shifts the phase relationship so
     // that +1 intermittently renders a cell one instruction before the engine
     // writes its new attribute.
-    this._cellRenderOffset = model === '48k' ? 1 : 0;
+    this._cellRenderOffset = this.variant.cellRenderOffset;
     installMemoryHooks(this);
     wirePortIO(this);
   }
@@ -608,7 +610,7 @@ export class Spectrum {
       // noise is unwanted and audio pacing would throttle our speed.
       this.mixer.accumulate(this.ula.getAudioEarBit(this.tapeSoundEnabled), elapsed);
       if (!this._tapeTurboActive) {
-        this.mixer.generateSamples(this.audio, this.ay, is128kClass(this.model));
+        this.mixer.generateSamples(this.audio, this.ay, this.variant.hasAY);
       } else {
         // Drain the accumulator without producing samples so it stays in sync
         this.mixer.beeperTStatesAccum = 0;
@@ -982,20 +984,17 @@ export class Spectrum {
   }
 
   private portLabel(port: number): string {
+    const v = this.variant;
     if ((port & 1) === 0) return 'ULA';
     if ((port & 0x00E0) === 0) return 'Kemp';
-    if (is128kClass(this.model)) {
+    if (v.hasAY) {
       if ((port & 0xC002) === 0xC000) return 'AY';
       if ((port & 0xC002) === 0x8000) return 'AY';
-      if (isPlus2AClass(this.model)) {
-        if ((port & 0xC002) === 0x4000) return '7FFD';
-        if ((port & 0xF002) === 0x1000) return '1FFD';
-        if ((port & 0xF002) === 0x2000) return 'FDC';
-        if ((port & 0xF002) === 0x3000) return 'FDC';
-      } else {
-        if ((port & 0x8002) === 0) return '7FFD';
-      }
     }
+    if (v.decodes7FFD(port)) return '7FFD';
+    if (v.decodes1FFD(port)) return '1FFD';
+    if (v.decodesFDCStatus(port)) return 'FDC';
+    if (v.decodesFDCData(port)) return 'FDC';
     return '';
   }
 
