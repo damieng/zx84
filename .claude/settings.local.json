@@ -9,7 +9,6 @@
       "Bash(timeout 10 npx vite:*)",
       "Bash(done)",
       "Bash(npm run dev:*)",
-      "Bash(git -C /f/src/zx84 log --oneline --all --grep=\"Speedlock\\\\|disk\\\\|protection\\\\|dsk\\\\|+3\" -i)",
       "Bash(npm run:*)",
       "Bash(npx tsx:*)",
       "Bash(printf:*)",
