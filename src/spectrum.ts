@@ -13,10 +13,8 @@ import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne, stripMarkers } from '@/debug/z80-disasm.ts';
 import { AY3891x } from '@/cores/ay-3-8910.ts';
 import { SpectrumMemory } from '@/memory.ts';
-import { ULA, SCREEN_WIDTH, SCREEN_HEIGHT, type BorderMode } from '@/cores/ula.ts';
+import { ULA, type BorderMode } from '@/cores/ula.ts';
 import { SpectrumKeyboard } from '@/keyboard.ts';
-import { WebGLRenderer } from '@/display/webgl-renderer.ts';
-import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import type { IScreenRenderer } from '@/display/display.ts';
 import { Audio } from '@/audio.ts';
 import { TapeDeck } from '@/tape/tap.ts';
@@ -192,10 +190,10 @@ export class Spectrum {
   private _tapeTurboCooldown = 0;
 
 
-  /** Per-cell render threshold: +1 on 48K (render when beam enters cell for
-   *  tightest accuracy), 0 on all other models (render after beam fully passes
-   *  cell, avoiding the race between per-instruction rendering and multicolor
-   *  engines writing attributes ahead of the beam).  Set once in constructor. */
+  /** Per-cell render threshold: +1 on Ferranti ULA models (48K/128K/+2) to
+   *  render when the beam enters each cell for tightest accuracy.  +0 on
+   *  Amstrad gate array models (+2A/+3) where deterministic timing makes the
+   *  slightly later capture safe.  Set once in constructor from the variant. */
   private _cellRenderOffset: 0 | 1 = 1;
 
   /** Breakpoints (checked every instruction in runFrame) */
@@ -209,7 +207,7 @@ export class Spectrum {
   /** Frame callback (fires each rAF after rendering) */
   onFrame: (() => void) | null = null;
 
-  constructor(model: SpectrumModel, canvas?: HTMLCanvasElement | null, renderer?: 'webgl' | 'canvas') {
+  constructor(model: SpectrumModel, display?: IScreenRenderer | null) {
     this.model = model;
     this.variant = createVariant(model);
 
@@ -221,11 +219,7 @@ export class Spectrum {
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
     this.ula = new ULA(this.keyboard);
-    this.display = canvas
-      ? (renderer === 'canvas'
-        ? new CanvasRenderer(canvas, SCREEN_WIDTH, SCREEN_HEIGHT)
-        : new WebGLRenderer(canvas, SCREEN_WIDTH, SCREEN_HEIGHT))
-      : null;
+    this.display = display ?? null;
     this.audio = new Audio();
     this.contention = new Contention(this.variant, this.memory);
     this.mixer = new AudioMixer(this.contention.timing.cpuClock);
@@ -233,13 +227,13 @@ export class Spectrum {
     this.tape.is48K = this.variant.is48K;
     this.tape.cpuClock = this.variant.timing.cpuClock;
     this.fdc = new UPD765A();
-    // 48K: render as the beam enters each cell (+1) for tightest accuracy.
-    // 128K/+2/+2A/+3: render after the beam fully passes (+0) to avoid a race
-    // where the per-instruction renderPendingScanlines() captures a cell with
-    // stale attributes before Bifrost (or similar engines) can write ahead of
-    // the beam.  The 228T/line timing on 128K shifts the phase relationship so
-    // that +1 intermittently renders a cell one instruction before the engine
-    // writes its new attribute.
+    // Ferranti ULA (48K/128K/+2): render as the beam enters each cell (+1)
+    // for tightest accuracy.  The beam flush (vramFlushEnd=0x5B00) ensures
+    // cells are captured with the correct attribute before multicolor engines
+    // overwrite them for the next scanline.
+    // Amstrad gate array (+2A/+3): render after the beam fully passes (+0).
+    // No beam flush on attr writes — deterministic timing (no IO contention)
+    // keeps the renderer in sync without it.
     this._cellRenderOffset = this.variant.cellRenderOffset;
     installMemoryHooks(this);
     wirePortIO(this);
@@ -716,12 +710,10 @@ export class Spectrum {
           ula.fillBorder(i, this.nextPixelX, Math.min(beamX, borderLeft), ula.borderColor);
         }
         // Display data — render individual cells as the beam passes them.
-        // 48K uses +1 (render as beam enters cell) for tightest accuracy.
-        // All other models use +0 (render after beam fully passes cell) to
-        // prevent the per-instruction renderPendingScanlines() from capturing
-        // a cell before multicolor engines (Bifrost etc.) write ahead of the
-        // beam.  On 128K/+2 the 228T/line timing shifts the phase so +1
-        // intermittently races with attribute writes.
+        // Ferranti ULA (48K/128K/+2): +1 renders as beam enters cell; the
+        // write8 attr flush ensures correct per-scanline multicolor.
+        // Amstrad gate array (+2A/+3): +0 renders after beam fully passes;
+        // deterministic timing makes this safe without attr flushes.
         if (beamX > borderLeft && this.nextDisplayCol < 32) {
           const endCol = Math.min(32, ((Math.min(beamX, dispEnd) - borderLeft) >> 3) + this._cellRenderOffset);
           const dy = i - borderTop;

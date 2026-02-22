@@ -8,7 +8,7 @@ import { type SpectrumModel, is128kClass, isPlus2AClass } from '@/models.ts';
 import { WebGLRenderer } from '@/display/webgl-renderer.ts';
 import { CanvasRenderer } from '@/display/canvas-renderer.ts';
 import { FloppySound } from '@/plus3/floppy-sound.ts';
-import { PALETTES } from '@/cores/ula.ts';
+import { PALETTES, SCREEN_WIDTH, SCREEN_HEIGHT } from '@/cores/ula.ts';
 import { saveSZX } from '@/snapshot/szx.ts';
 import { saveZ80 } from '@/snapshot/z80format.ts';
 import { parseTZX } from '@/tape/tzx.ts';
@@ -206,7 +206,12 @@ export async function createMachine(): Promise<boolean> {
   }
 
   const model = currentModel();
-  spectrum = new Spectrum(model, canvasEl, settings.renderer());
+  const display = canvasEl
+    ? (settings.renderer() === 'canvas'
+      ? new CanvasRenderer(canvasEl, SCREEN_WIDTH, SCREEN_HEIGHT)
+      : new WebGLRenderer(canvasEl, SCREEN_WIDTH, SCREEN_HEIGHT))
+    : null;
+  spectrum = new Spectrum(model, display);
   spectrum.onStatus = (msg: string) => setStatus(msg);
   spectrum.onFrame = onFrame;
   applyDisplaySettings();
