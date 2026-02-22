@@ -5,6 +5,8 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     version: '0.2.2',
     items: [
       'Drive pane UX improvements including LED',
+      'Fix CPC DSK format detection',
+      'Detect B: when empty option'
     ],
   },
   {

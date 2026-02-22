@@ -11,6 +11,7 @@ import {
 import {
   diskSoundA, setDiskSoundA, diskSoundB, setDiskSoundB,
   writeProtectA, setWriteProtectA, writeProtectB, setWriteProtectB,
+  driveBForceReady, setDriveBForceReady,
   persistSetting, resetSettingsGroup,
 } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
@@ -46,9 +47,11 @@ function DiskInfo(props: {
   status: DriveStatus;
   soundEnabled: boolean;
   writeProtected: boolean;
+  forceReady?: boolean;
   onInsert: () => void;
   onToggleSound: () => void;
   onToggleWriteProtect: () => void;
+  onToggleForceReady?: () => void;
 }) {
   const label = props.unit === 0 ? 'A:' : 'B:';
   return (
@@ -83,10 +86,14 @@ function DiskInfo(props: {
           items={[
             { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
             { value: 'wp', label: 'Write protect', checked: props.writeProtected },
+            ...(props.onToggleForceReady
+              ? [{ value: 'force-ready', label: 'Present when empty', checked: props.forceReady }]
+              : []),
           ]}
           onSelect={(value) => {
             if (value === 'sound') props.onToggleSound();
             else if (value === 'wp') props.onToggleWriteProtect();
+            else if (value === 'force-ready') props.onToggleForceReady?.();
           }}
         />
       </div>
@@ -120,6 +127,10 @@ function syncWriteProtect(unit: number, value: boolean): void {
   if (spectrum) spectrum.fdc.writeProtect[unit] = value;
 }
 
+function syncForceReady(unit: number, value: boolean): void {
+  if (spectrum) spectrum.fdc.forceReady[unit] = value;
+}
+
 export function DrivePane() {
   let fileInputRefA!: HTMLInputElement;
   let fileInputRefB!: HTMLInputElement;
@@ -127,7 +138,10 @@ export function DrivePane() {
   return (
     <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())} onResetSettings={() => {
       resetSettingsGroup('drive');
-      if (spectrum) { spectrum.fdc.writeProtect[0] = false; spectrum.fdc.writeProtect[1] = false; }
+      if (spectrum) {
+        spectrum.fdc.writeProtect[0] = false; spectrum.fdc.writeProtect[1] = false;
+        spectrum.fdc.forceReady[1] = false;
+      }
     }}>
       <input
         type="file"
@@ -180,6 +194,7 @@ export function DrivePane() {
         status={driveBStatus()}
         soundEnabled={diskSoundB()}
         writeProtected={writeProtectB()}
+        forceReady={driveBForceReady()}
         onInsert={() => fileInputRefB?.click()}
         onToggleSound={() => {
           setDiskSoundB(!diskSoundB());
@@ -189,6 +204,11 @@ export function DrivePane() {
           setWriteProtectB(!writeProtectB());
           persistSetting('write-protect-b', writeProtectB() ? 'on' : 'off');
           syncWriteProtect(1, writeProtectB());
+        }}
+        onToggleForceReady={() => {
+          setDriveBForceReady(!driveBForceReady());
+          persistSetting('drive-b-force-ready', driveBForceReady() ? 'on' : 'off');
+          syncForceReady(1, driveBForceReady());
         }}
       />
       <Show when={showTrapLog()}>

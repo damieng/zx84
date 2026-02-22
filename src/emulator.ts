@@ -238,6 +238,7 @@ export async function createMachine(): Promise<boolean> {
   if (isPlus3(model)) {
     spectrum.fdc.writeProtect[0] = settings.writeProtectA();
     spectrum.fdc.writeProtect[1] = settings.writeProtectB();
+    spectrum.fdc.forceReady[1] = settings.driveBForceReady();
   }
 
   // Floppy sound

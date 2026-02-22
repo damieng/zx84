@@ -206,6 +206,10 @@ const _writeProtectB = /*@once*/ createRoot(() => createSignal(getSaved('write-p
 export const writeProtectB = _writeProtectB[0];
 export const setWriteProtectB = _writeProtectB[1];
 
+const _driveBForceReady = /*@once*/ createRoot(() => createSignal(getSaved('drive-b-force-ready', 'off') === 'on'));
+export const driveBForceReady = _driveBForceReady[0];
+export const setDriveBForceReady = _driveBForceReady[1];
+
 // ── Tape settings ───────────────────────────────────────────────────────
 
 const _tapeAutoRewind = /*@once*/ createRoot(() => createSignal(getSaved('tape-auto-rewind', 'on') === 'on'));
@@ -292,8 +296,9 @@ const PANE_SETTINGS: Record<string, SettingDef[]> = {
   drive: [
     { key: 'disk-sound-a',    default: 'on',  set: setDiskSoundA,    type: 'bool' },
     { key: 'disk-sound-b',    default: 'on',  set: setDiskSoundB,    type: 'bool' },
-    { key: 'write-protect-a', default: 'off', set: setWriteProtectA, type: 'bool' },
-    { key: 'write-protect-b', default: 'off', set: setWriteProtectB, type: 'bool' },
+    { key: 'write-protect-a',    default: 'off', set: setWriteProtectA,    type: 'bool' },
+    { key: 'write-protect-b',    default: 'off', set: setWriteProtectB,    type: 'bool' },
+    { key: 'drive-b-force-ready', default: 'off', set: setDriveBForceReady, type: 'bool' },
   ],
   tape: [
     { key: 'tape-auto-rewind',    default: 'on', set: setTapeAutoRewind,    type: 'bool' },

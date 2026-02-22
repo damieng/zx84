@@ -108,6 +108,13 @@ export class UPD765A {
   /** Per-drive write-protect flag (software-controlled, like a physical tab) */
   writeProtect = [false, false, false, false];
 
+  /**
+   * Per-drive "force ready" flag.  When set, Sense Drive Status always
+   * reports the drive as ready (ST3 bit 5 = 1) even with no disk inserted.
+   * Used to keep the +3 ROM from remapping B: to a swap-A on boot.
+   */
+  forceReady = [false, false, false, false];
+
   /** Per-drive Read ID cycling index */
   private idIndex = [0, 0, 0, 0];
 
@@ -460,7 +467,7 @@ export class UPD765A {
     // ST3: track 0 if pcn==0, two-side=1
     let st3 = unit | (head << 2) | 0x08; // bit 3 = two-side
     if (this.pcn[unit] === 0) st3 |= 0x10; // Track 0
-    if (this.disks[unit]) st3 |= 0x20; // bit 5 = ready
+    if (this.disks[unit] || this.forceReady[unit]) st3 |= 0x20; // bit 5 = ready
     if (this.writeProtect[unit]) st3 |= 0x40; // bit 6 = write protected
     this.result([st3]);
   }

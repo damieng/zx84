@@ -371,8 +371,8 @@ function detectDiskFormat(image: DskImage): string {
 
   if (count === 9 && n === 2) {
     if (minR === 0x01) return '+3DOS' + ds;
-    if (minR === 0xC1) return 'CPC System' + ds;
-    if (minR === 0x41) return 'CPC Data' + ds;
+    if (minR === 0xC1) return 'CPC Data' + ds;
+    if (minR === 0x41) return 'CPC System' + ds;
   }
 
   const bytes = n <= 8 ? 128 << n : 0;
