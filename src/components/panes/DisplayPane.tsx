@@ -1,4 +1,4 @@
-import { Show } from 'solid-js';
+import { Show, For } from 'solid-js';
 import type { Accessor, Setter } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import {
@@ -67,7 +67,30 @@ function SliderRow(props: {
   );
 }
 
+// Scaling algorithms and their native scale factors.
+// The algorithm IS the scaler — it takes 1x source pixels and produces
+// NxN output blocks directly.  Only algorithms matching the current
+// display scale are shown in the dropdown.
+const SCALING_ALGOS: { mode: number; label: string; nativeScale: number }[] = [
+  { mode: 0,  label: 'None',            nativeScale: 0 },  // 0 = any scale
+  { mode: 1,  label: 'HQ2x',            nativeScale: 2 },
+  { mode: 2,  label: 'HQ3x',            nativeScale: 3 },
+  { mode: 3,  label: 'Scale3x',         nativeScale: 3 },
+  { mode: 4,  label: 'HQ4x',            nativeScale: 4 },
+  { mode: 5,  label: 'xBR-lv2',         nativeScale: 0 },  // any scale
+  { mode: 6,  label: 'AdvMAME2x',       nativeScale: 2 },
+  { mode: 7,  label: '2xSaI',           nativeScale: 2 },
+  { mode: 8,  label: 'SAA5050',         nativeScale: 2 },
+  { mode: 9,  label: 'ScaleFX',         nativeScale: 3 },
+  { mode: 10, label: 'xBR-lv3',         nativeScale: 0 },  // any scale
+];
+
 export function DisplayPane() {
+  // Filter algorithms to those compatible with the current display scale
+  const availableAlgos = () => SCALING_ALGOS.filter(
+    a => a.nativeScale === 0 || a.nativeScale === scale()
+  );
+
   return (
     <Pane id="display-pane" label="Display">
       <div id="display-controls">
@@ -78,6 +101,14 @@ export function DisplayPane() {
             setScale(v);
             if (spectrum) spectrum.display!.setScale(v);
             persistSetting('scale', v);
+            // Reset scaling algorithm if it doesn't match the new scale
+            const cur = scalingMode();
+            const algo = SCALING_ALGOS.find(a => a.mode === cur);
+            if (algo && algo.nativeScale !== 0 && algo.nativeScale !== v) {
+              setScalingMode(0);
+              if (spectrum) spectrum.display!.setScalingMode(0);
+              persistSetting('scaling-mode', 0);
+            }
           }}>
             <option value="1">1x</option>
             <option value="2">2x</option>
@@ -152,16 +183,9 @@ export function DisplayPane() {
           if (spectrum) spectrum.display!.setScalingMode(v);
           persistSetting('scaling-mode', v);
         }}>
-          <option value="0">None</option>
-          <option value="1">HQ2x</option>
-          <option value="2">HQ3x</option>
-          <option value="3">Scale3x</option>
-          <option value="4">HQ4x</option>
-          <option value="5">xBR</option>
-          <option value="6">AdvMAME2x</option>
-          <option value="7">2xSaI</option>
-          <option value="8">SAA5050</option>
-          <option value="9">ScaleFX</option>
+          <For each={availableAlgos()}>
+            {(a) => <option value={a.mode}>{a.label}</option>}
+          </For>
         </select>
       </div>
       <SliderRow label="Brightness" id="brightness" min={-50} max={50} sig={brightness} setSig={setBrightness}
