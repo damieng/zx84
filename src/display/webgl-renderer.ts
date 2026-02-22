@@ -612,6 +612,7 @@ const FRAG_CRT = `
   uniform float u_contrast;      // 0 to 2, default 1
   uniform float u_noise;         // 0 = off, up to 1 = heavy noise
   uniform float u_frame;         // frame counter for varying noise
+  uniform float u_scale;         // integer device-pixel scale (passed from CPU)
 
   // Hash-based pseudo-random noise (returns 0..1)
   float hash(vec3 p) {
@@ -655,7 +656,7 @@ const FRAG_CRT = `
     // -- Scanlines: darken every Nth physical pixel row (pure counting) --
     float scanFactor = 0.0;
     if (u_scanlines > 0.0) {
-      float scale = floor(u_resolution.y / u_texSize.y + 0.5);
+      float scale = u_scale;
       if (scale > 1.0) {
         float row = mod(floor(gl_FragCoord.y), scale);
         float isGap = step(scale - 1.0, row);
@@ -724,14 +725,14 @@ const FRAG_CRT = `
         col *= mask;
       } else if (u_maskType == 4) {
         // LCD grid: darken 1px gap at cell boundaries in both axes
-        float sc = floor(u_resolution.y / u_texSize.y + 0.5);
+        float sc = u_scale;
         float gapX = step(sc - 1.0, mod(fpx, sc));
         float gapY = step(sc - 1.0, mod(fpy, sc));
         float grid = max(gapX, gapY);
         col *= 1.0 - grid * 0.55;
       } else if (u_maskType == 5) {
         // Attr mask: LCD pixel grid + checkerboard tint on 8x8 attribute cells
-        float sc = floor(u_resolution.y / u_texSize.y + 0.5);
+        float sc = u_scale;
         // Per-pixel LCD grid lines
         float gapX = step(sc - 1.0, mod(fpx, sc));
         float gapY = step(sc - 1.0, mod(fpy, sc));
@@ -823,6 +824,8 @@ export class WebGLRenderer implements IScreenRenderer {
   private u2Contrast: WebGLUniformLocation | null = null;
   private u2Noise: WebGLUniformLocation | null = null;
   private u2Frame: WebGLUniformLocation | null = null;
+  private u2Scale: WebGLUniformLocation | null = null;
+  private deviceScale = 2;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number) {
     this.canvas = canvas;
@@ -884,6 +887,7 @@ export class WebGLRenderer implements IScreenRenderer {
     this.u2Contrast = gl.getUniformLocation(this.progCRT, 'u_contrast');
     this.u2Noise = gl.getUniformLocation(this.progCRT, 'u_noise');
     this.u2Frame = gl.getUniformLocation(this.progCRT, 'u_frame');
+    this.u2Scale = gl.getUniformLocation(this.progCRT, 'u_scale');
 
     // ── Source texture (emulator pixels, NEAREST) ──
     this.texture = gl.createTexture()!;
@@ -985,13 +989,15 @@ export class WebGLRenderer implements IScreenRenderer {
 
   private applyScale(): void {
     const gl = this.gl;
-    const w = this.width * this.scale;
-    const h = this.height * this.scale;
+    const dpr = window.devicePixelRatio || 1;
+    this.deviceScale = Math.round(this.scale * dpr);
+    const w = this.width * this.deviceScale;
+    const h = this.height * this.deviceScale;
 
     this.canvas.width = w;
     this.canvas.height = h;
-    this.canvas.style.width = '';
-    this.canvas.style.height = '';
+    this.canvas.style.width = (w / dpr) + 'px';
+    this.canvas.style.height = (h / dpr) + 'px';
 
     // Resize FBO texture to match display resolution
     gl.bindTexture(gl.TEXTURE_2D, this.fboTex);
@@ -1124,6 +1130,7 @@ export class WebGLRenderer implements IScreenRenderer {
       gl.uniform1f(this.u2Brightness, this.brightness);
       gl.uniform1f(this.u2Contrast, this.contrast);
       gl.uniform1f(this.u2Noise, this.noise);
+      gl.uniform1f(this.u2Scale, this.deviceScale);
     }
     // Frame counter must update every frame for noise variation
     if (this.noise > 0) {

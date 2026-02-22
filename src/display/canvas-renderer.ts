@@ -40,12 +40,14 @@ export class CanvasRenderer implements IScreenRenderer {
   }
 
   private applyScale(): void {
-    const w = this.width * this.scale;
-    const h = this.height * this.scale;
+    const dpr = window.devicePixelRatio || 1;
+    const deviceScale = Math.round(this.scale * dpr);
+    const w = this.width * deviceScale;
+    const h = this.height * deviceScale;
     this.canvas.width = w;
     this.canvas.height = h;
-    this.canvas.style.width = '';
-    this.canvas.style.height = '';
+    this.canvas.style.width = (w / dpr) + 'px';
+    this.canvas.style.height = (h / dpr) + 'px';
     this.ctx.imageSmoothingEnabled = false;
   }
 

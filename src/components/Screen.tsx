@@ -2,7 +2,7 @@
  * Canvas wrapper for the emulator display + transcribe overlay.
  */
 
-import { createEffect } from 'solid-js';
+import { createEffect, createSignal, onMount, onCleanup } from 'solid-js';
 import { setCanvas, spectrum, transcribeMode, transcribeHtml } from '@/emulator.ts';
 import { renderer, scale, borderSize, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
 
@@ -11,6 +11,28 @@ export function Screen() {
   let drawOverlayRef!: HTMLCanvasElement;
   let overlayRef!: HTMLPreElement;
   let natSize = { w: 0, h: 0 };
+
+  // Track devicePixelRatio changes (browser zoom, OS scaling)
+  const [dpr, setDpr] = createSignal(window.devicePixelRatio || 1);
+  onMount(() => {
+    let cancel = false;
+    const watchDpr = () => {
+      if (cancel) return;
+      const mql = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mql.addEventListener('change', () => {
+        setDpr(window.devicePixelRatio || 1);
+        watchDpr();
+      }, { once: true });
+    };
+    watchDpr();
+    onCleanup(() => { cancel = true; });
+  });
+
+  // Re-apply scale when DPR changes
+  createEffect(() => {
+    dpr(); // track
+    if (spectrum?.display) spectrum.display.setScale(scale());
+  });
 
   // When renderer changes, create a fresh canvas element.
   createEffect(() => {
@@ -46,11 +68,14 @@ export function Screen() {
 
     const html = transcribeHtml();
     const scl = scale();
+    const curDpr = dpr(); // track DPR changes
     borderSize(); // track border changes
     const ov = overlayRef;
     const borderPx = (spectrum.ula.screenWidth - 256) / 2;
-    const targetW = 256 * scl;
-    const targetH = 192 * scl;
+    // Use effective scale that accounts for DPR integer rounding
+    const effectiveScale = Math.round(scl * curDpr) / curDpr;
+    const targetW = 256 * effectiveScale;
+    const targetH = 192 * effectiveScale;
 
     // Apply font settings
     ov.style.fontFamily = ocrFont();
@@ -59,8 +84,8 @@ export function Screen() {
     ov.style.letterSpacing = (ocrTracking() / 10).toFixed(1) + 'px';
 
     // Position with user-adjustable offset
-    ov.style.left = (borderPx * scl + ocrOffsetX()) + 'px';
-    ov.style.top = (borderPx * scl + ocrOffsetY()) + 'px';
+    ov.style.left = (borderPx * effectiveScale + ocrOffsetX()) + 'px';
+    ov.style.top = (borderPx * effectiveScale + ocrOffsetY()) + 'px';
     ov.innerHTML = html;
 
     // When font changes, force re-measure
