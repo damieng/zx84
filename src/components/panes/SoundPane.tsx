@@ -1,10 +1,17 @@
 import { Pane } from '@/components/Pane.tsx';
-import { volume, setVolume, ayMix, setAyMix, ayStereo, setAyStereo, persistSetting } from '@/store/settings.ts';
+import { volume, setVolume, ayMix, setAyMix, ayStereo, setAyStereo, persistSetting, resetSettingsGroup } from '@/store/settings.ts';
 import { spectrum, applyDisplaySettings } from '@/emulator.ts';
 
 export function SoundPane() {
   return (
-    <Pane id="sound-panel" label="Sound">
+    <Pane id="sound-panel" label="Sound" onResetSettings={() => {
+      resetSettingsGroup('sound');
+      if (spectrum) {
+        spectrum['audio'].setVolume(70 / 100);
+        spectrum.ay.setStereoMode('ABC');
+      }
+      applyDisplaySettings();
+    }}>
       <div class="slider-row">
         <span class="slider-label">Volume</span>
         <input

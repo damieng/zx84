@@ -4,7 +4,7 @@
 
 import { createEffect } from 'solid-js';
 import { setCanvas, spectrum, transcribeMode, transcribeHtml } from '@/emulator.ts';
-import { renderer, scale, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
+import { renderer, scale, borderSize, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
 
 export function Screen() {
   let canvasRef!: HTMLCanvasElement;
@@ -46,6 +46,7 @@ export function Screen() {
 
     const html = transcribeHtml();
     const scl = scale();
+    borderSize(); // track border changes
     const ov = overlayRef;
     const borderPx = (spectrum.ula.screenWidth - 256) / 2;
     const targetW = 256 * scl;

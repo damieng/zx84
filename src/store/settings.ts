@@ -152,7 +152,7 @@ export const setFontName = _fontName[1];
 
 // ── Text/OCR overlay settings ──────────────────────────────────────────
 
-const _ocrFont = /*@once*/ createRoot(() => createSignal(getSaved('ocr-font', "'JetBrains Mono', monospace")));
+const _ocrFont = /*@once*/ createRoot(() => createSignal(getSaved('ocr-font', 'JetBrains Mono')));
 export const ocrFont = _ocrFont[0];
 export const setOcrFont = _ocrFont[1];
 
@@ -240,4 +240,79 @@ export const needsGamepadPolling = /*@once*/ createRoot(() => createMemo(() =>
 
 export function persistSetting(key: string, value: string | number): void {
   setSaved(key, String(value));
+}
+
+// ── Per-pane defaults and reset ─────────────────────────────────────────
+
+type SettingDef = { key: string; default: string; set: (v: any) => void; type: 'number' | 'string' | 'bool' };
+
+const PANE_SETTINGS: Record<string, SettingDef[]> = {
+  display: [
+    { key: 'scale',          default: '2',        set: setScale,         type: 'number' },
+    { key: 'brightness',     default: '0',        set: setBrightness,    type: 'number' },
+    { key: 'contrast',       default: '50',       set: setContrast,      type: 'number' },
+    { key: 'smoothing',      default: '0',        set: setSmoothing,     type: 'number' },
+    { key: 'curvature',      default: '0',        set: setCurvature,     type: 'number' },
+    { key: 'scanlines',      default: '0',        set: setScanlines,     type: 'number' },
+    { key: 'mask-type',      default: '0',        set: setMaskType,      type: 'number' },
+    { key: 'dot-pitch',      default: '10',       set: setDotPitch,      type: 'number' },
+    { key: 'curvature-mode', default: '0',        set: setCurvatureMode, type: 'number' },
+    { key: 'noise',          default: '0',        set: setNoise,         type: 'number' },
+    { key: 'scaling-mode',   default: '0',        set: setScalingMode,   type: 'number' },
+    { key: 'monitor',        default: 'raw',      set: setMonitor,       type: 'string' },
+    { key: 'border-size',    default: '2',        set: setBorderSize,    type: 'number' },
+    { key: 'color-map',      default: 'measured', set: setColorMap,      type: 'string' },
+  ],
+  sound: [
+    { key: 'volume',    default: '70',  set: setVolume,   type: 'number' },
+    { key: 'ay-mix',    default: '50',  set: setAyMix,    type: 'number' },
+    { key: 'ay-stereo', default: 'ABC', set: setAyStereo, type: 'string' },
+  ],
+  joystick: [
+    { key: 'joy-p1',     default: 'kempston', set: setJoyP1,    type: 'string' },
+    { key: 'joy-p2',     default: 'sinclair2', set: setJoyP2,   type: 'string' },
+    { key: 'joy-map-p1', default: 'none',     set: setJoyMapP1, type: 'string' },
+    { key: 'joy-map-p2', default: 'none',     set: setJoyMapP2, type: 'string' },
+  ],
+  text: [
+    { key: 'ocr-font',        default: 'JetBrains Mono', set: setOcrFont,       type: 'string' },
+    { key: 'ocr-font-size',   default: '8',     set: setOcrFontSize,   type: 'number' },
+    { key: 'ocr-line-height', default: '100',   set: setOcrLineHeight, type: 'number' },
+    { key: 'ocr-tracking',    default: '0',     set: setOcrTracking,   type: 'number' },
+    { key: 'ocr-offset-x',   default: '0',     set: setOcrOffsetX,    type: 'number' },
+    { key: 'ocr-offset-y',   default: '0',     set: setOcrOffsetY,    type: 'number' },
+    { key: 'ocr-scale-x',    default: '100',   set: setOcrScaleX,     type: 'number' },
+    { key: 'ocr-scale-y',    default: '100',   set: setOcrScaleY,     type: 'number' },
+  ],
+  drive: [
+    { key: 'disk-sound-a',    default: 'on',  set: setDiskSoundA,    type: 'bool' },
+    { key: 'disk-sound-b',    default: 'on',  set: setDiskSoundB,    type: 'bool' },
+    { key: 'write-protect-a', default: 'off', set: setWriteProtectA, type: 'bool' },
+    { key: 'write-protect-b', default: 'off', set: setWriteProtectB, type: 'bool' },
+  ],
+  tape: [
+    { key: 'tape-auto-rewind',    default: 'on', set: setTapeAutoRewind,    type: 'bool' },
+    { key: 'tape-collapse-blocks', default: 'on', set: setTapeCollapseBlocks, type: 'bool' },
+    { key: 'tape-instant-load',   default: 'on', set: setTapeInstantLoad,   type: 'bool' },
+    { key: 'tape-turbo',          default: 'on', set: setTapeTurbo,         type: 'bool' },
+    { key: 'tape-sound',          default: 'on', set: setTapeSoundEnabled,  type: 'bool' },
+  ],
+  hardware: [
+    { key: 'multiface', default: 'off', set: setMultifaceEnabled, type: 'bool' },
+  ],
+  font: [
+    { key: 'font', default: '', set: setFontName, type: 'string' },
+  ],
+};
+
+/** Reset all settings for a named group back to defaults. */
+export function resetSettingsGroup(group: string): void {
+  const defs = PANE_SETTINGS[group];
+  if (!defs) return;
+  for (const d of defs) {
+    setSaved(d.key, d.default);
+    if (d.type === 'number') d.set(Number(d.default));
+    else if (d.type === 'bool') d.set(d.default === 'on');
+    else d.set(d.default);
+  }
 }

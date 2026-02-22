@@ -8,7 +8,7 @@ import {
   ejectTape, loadFile, tapePrev, tapeNext, applyDisplaySettings,
 } from '@/emulator.ts';
 import { tapeAutoRewind, tapeCollapseBlocks, setTapeCollapseBlocks, tapeInstantLoad, setTapeInstantLoad, tapeTurbo, setTapeTurbo, tapeSoundEnabled, setTapeSoundEnabled } from '@/store/settings.ts';
-import { persistSetting } from '@/store/settings.ts';
+import { persistSetting, resetSettingsGroup } from '@/store/settings.ts';
 import type { TapeBlock, DataBlock } from '@/tape/tap.ts';
 
 const HEADER_TYPES: Record<number, string> = { 0: 'Program', 1: 'Number array', 2: 'Character array', 3: 'Bytes' };
@@ -94,7 +94,7 @@ export function TapePane() {
   });
 
   return (
-    <Pane id="tape-panel" label="Tape" mono>
+    <Pane id="tape-panel" label="Tape" mono onResetSettings={() => { resetSettingsGroup('tape'); applyDisplaySettings(); }}>
       <div id="tape-controls">
         <button title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
         <button title="Previous block" onClick={tapePrev}><HiOutlineChevronLeft /></button>

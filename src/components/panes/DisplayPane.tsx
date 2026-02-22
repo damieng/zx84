@@ -7,7 +7,7 @@ import {
   maskType, setMaskType, dotPitch, setDotPitch, curvatureMode, setCurvatureMode,
   noise, setNoise, scalingMode, setScalingMode,
   monitor, setMonitor, borderSize, setBorderSize,
-  renderer, colorMap, setColorMap, persistSetting,
+  renderer, colorMap, setColorMap, persistSetting, resetSettingsGroup,
 } from '@/store/settings.ts';
 import { spectrum, switchRenderer, applyDisplaySettings } from '@/emulator.ts';
 
@@ -18,20 +18,21 @@ interface MonitorPreset {
   curvatureMode: number;
   scanlines: number;
   smoothing: number;
+  noise: number;
   brightness?: number;
   contrast?: number;
 }
 
 const MONITOR_PRESETS: Record<string, MonitorPreset> = {
-  'raw': { maskType: 0, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0, brightness: 0, contrast: 50 },
-  'lcd': { maskType: 4, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0, brightness: 0, contrast: 50 },
-  'microvitec-cub': { maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 20 },
-  'philips-cm8833': { maskType: 3, dotPitch: 20, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 40 },
-  'commodore-1080': { maskType: 1, dotPitch: 10, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 20 },
-  'amstrad-cm14': { maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60 },
-  'sony-trinitron': { maskType: 2, dotPitch: 10, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20, brightness: -5, contrast: 55 },
-  'atari-sc1224': { maskType: 1, dotPitch: 10, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40 },
-  'cheap-tv': { maskType: 1, dotPitch: 15, curvature: 80, curvatureMode: 0, scanlines: 65, smoothing: 70, brightness: -5, contrast: 55 },
+  'raw': { maskType: 0, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0, noise: 0, brightness: 0, contrast: 50 },
+  'lcd': { maskType: 4, dotPitch: 10, curvature: 0, curvatureMode: 0, scanlines: 0, smoothing: 0, noise: 0, brightness: 0, contrast: 50 },
+  'microvitec-cub': { maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 20, noise: 8 },
+  'philips-cm8833': { maskType: 3, dotPitch: 20, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 40, noise: 10 },
+  'commodore-1080': { maskType: 1, dotPitch: 10, curvature: 50, curvatureMode: 0, scanlines: 45, smoothing: 20, noise: 8 },
+  'amstrad-cm14': { maskType: 1, dotPitch: 20, curvature: 70, curvatureMode: 0, scanlines: 50, smoothing: 60, noise: 15 },
+  'sony-trinitron': { maskType: 2, dotPitch: 10, curvature: 45, curvatureMode: 1, scanlines: 30, smoothing: 20, noise: 5, brightness: -5, contrast: 55 },
+  'atari-sc1224': { maskType: 1, dotPitch: 10, curvature: 40, curvatureMode: 0, scanlines: 45, smoothing: 40, noise: 10 },
+  'cheap-tv': { maskType: 1, dotPitch: 15, curvature: 80, curvatureMode: 0, scanlines: 65, smoothing: 70, noise: 30, brightness: -5, contrast: 55 },
 };
 
 function applyPreset(preset: MonitorPreset) {
@@ -41,6 +42,7 @@ function applyPreset(preset: MonitorPreset) {
   setCurvatureMode(preset.curvatureMode); if (spectrum) spectrum.display!.setCurvatureMode(preset.curvatureMode); persistSetting('curvature-mode', preset.curvatureMode);
   setScanlines(preset.scanlines); if (spectrum) spectrum.display!.setScanlines(preset.scanlines / 100); persistSetting('scanlines', preset.scanlines);
   setSmoothing(preset.smoothing); if (spectrum) spectrum.display!.setSmoothing(preset.smoothing / 100); persistSetting('smoothing', preset.smoothing);
+  setNoise(preset.noise); if (spectrum) spectrum.display!.setNoise(preset.noise / 100); persistSetting('noise', preset.noise);
   if (preset.brightness != null) { setBrightness(preset.brightness); if (spectrum) spectrum.display!.setBrightness(preset.brightness / 50); persistSetting('brightness', preset.brightness); }
   if (preset.contrast != null) { setContrast(preset.contrast); if (spectrum) spectrum.display!.setContrast(preset.contrast / 50); persistSetting('contrast', preset.contrast); }
 }
@@ -87,7 +89,7 @@ export function DisplayPane() {
   );
 
   return (
-    <Pane id="display-pane" label="Display">
+    <Pane id="display-pane" label="Display" onResetSettings={() => { resetSettingsGroup('display'); applyDisplaySettings(); }}>
       <div id="display-controls">
         <label>
           Scale

@@ -1,7 +1,7 @@
 import { createSignal, Show } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { HiOutlineChevronUp, HiOutlineChevronDown, HiOutlineChevronLeft, HiOutlineChevronRight } from 'solid-icons/hi';
-import { joyP1, joyP2, joyMapP1, joyMapP2, setJoyP1, setJoyP2, setJoyMapP1, setJoyMapP2, persistSetting, gamepadConfigP1, gamepadConfigP2, setGamepadConfigP1, setGamepadConfigP2 } from '@/store/settings.ts';
+import { joyP1, joyP2, joyMapP1, joyMapP2, setJoyP1, setJoyP2, setJoyMapP1, setJoyMapP2, persistSetting, gamepadConfigP1, gamepadConfigP2, setGamepadConfigP1, setGamepadConfigP2, resetSettingsGroup } from '@/store/settings.ts';
 import { joyPressForType } from '@/emulator.ts';
 
 // Configuration mode state
@@ -155,7 +155,12 @@ function JoyColumn(props: { playerIdx: number; label: string }) {
 
 export function JoystickPane() {
   return (
-    <Pane id="joystick-panel" label="Joysticks">
+    <Pane id="joystick-panel" label="Joysticks" onResetSettings={() => {
+      cancelConfiguration();
+      resetSettingsGroup('joystick');
+      setGamepadConfigP1(null);
+      setGamepadConfigP2(null);
+    }}>
       <div id="joy-columns">
         <JoyColumn playerIdx={0} label="P1" />
         <JoyColumn playerIdx={1} label="P2" />

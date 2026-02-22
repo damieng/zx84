@@ -1351,6 +1351,16 @@ input[type="range"]::-moz-range-thumb {
   z-index: 1;
 }
 
+/* "⋮" pane-options dot in title bar */
+.pane-dots {
+  margin-left: auto;
+  z-index: 2;
+  color: rgba(255,255,255,0.45);
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+.pane-dots:hover { color: #fff; }
+
 /* Changelog */
 .changelog-version {
   font-weight: 700;

@@ -9,12 +9,16 @@ import type { SpectrumModel } from '@/spectrum.ts';
 import { Show } from 'solid-js';
 import { variantForModel, variantLabel } from '@/peripherals/multiface.ts';
 import * as settings from '@/store/settings.ts';
+import { resetSettingsGroup } from '@/store/settings.ts';
 
 export function HardwarePane() {
   let romInputRef!: HTMLInputElement;
 
   return (
-    <Pane id="hardware-panel" label="Hardware">
+    <Pane id="hardware-panel" label="Hardware" onResetSettings={() => {
+      resetSettingsGroup('hardware');
+      if (spectrum) spectrum.multiface.enabled = false;
+    }}>
       <div id="model-row">
         <select
           id="model"

@@ -6,7 +6,7 @@ import {
   ocrLineHeight, setOcrLineHeight, ocrTracking, setOcrTracking,
   ocrOffsetX, setOcrOffsetX, ocrOffsetY, setOcrOffsetY,
   ocrScaleX, setOcrScaleX, ocrScaleY, setOcrScaleY,
-  persistSetting,
+  persistSetting, resetSettingsGroup,
 } from '@/store/settings.ts';
 
 const MONO_FONTS = [
@@ -52,7 +52,7 @@ function SliderRow(props: {
 
 export function TextPane() {
   return (
-    <Pane id="text-panel" label="Text">
+    <Pane id="text-panel" label="Text" onResetSettings={() => resetSettingsGroup('text')}>
       <div class="slider-row">
         <span class="slider-label">Font</span>
         <select

@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
 import { HiOutlineArrowDownTray, HiOutlineXMark } from 'solid-icons/hi';
-import { fontName, setFontName, persistSetting } from '@/store/settings.ts';
+import { fontName, setFontName, persistSetting, resetSettingsGroup } from '@/store/settings.ts';
 import { setStatus, loadFontStore, saveFontStore, spectrum } from '@/emulator.ts';
 import type { FontEntry } from '@/emulator.ts';
 
@@ -219,7 +219,7 @@ export function FontPane() {
   }
 
   return (
-    <Pane id="font-panel" label="Fonts">
+    <Pane id="font-panel" label="Fonts" onResetSettings={() => { resetSettingsGroup('font'); bump(); }}>
       <div id="font-row">
         <button id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef?.click()}>Load</button>
         <button id="font-search-btn" title="Hunt fonts in RAM" onClick={huntFonts}>Hunt</button>

@@ -4,6 +4,8 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.1',
     items: [
+      'HQx and XBR upscalers added',
+      'Keyboard mapping improvements',
       'Noise display pattern for that retro vibe',
     ]
   },

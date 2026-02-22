@@ -11,7 +11,7 @@ import {
 import {
   diskSoundA, setDiskSoundA, diskSoundB, setDiskSoundB,
   writeProtectA, setWriteProtectA, writeProtectB, setWriteProtectB,
-  persistSetting,
+  persistSetting, resetSettingsGroup,
 } from '@/store/settings.ts';
 import { isPlus3 } from '@/spectrum.ts';
 import { DISK_FORMATS, formatLabel, createBlankDisk, type DskImage } from '@/plus3/dsk.ts';
@@ -104,7 +104,10 @@ export function DrivePane() {
   let fileInputRefB!: HTMLInputElement;
 
   return (
-    <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())}>
+    <Pane id="drive-panel" label="Drives" mono visible={isPlus3(currentModel())} onResetSettings={() => {
+      resetSettingsGroup('drive');
+      if (spectrum) { spectrum.fdc.writeProtect[0] = false; spectrum.fdc.writeProtect[1] = false; }
+    }}>
       <input
         type="file"
         ref={fileInputRefA}
