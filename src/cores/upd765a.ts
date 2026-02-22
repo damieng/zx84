@@ -416,7 +416,7 @@ export class UPD765A {
     // Return actual ST1 and ST2 from the sector (preserves CRC errors!)
     // Speedlock checks for intentional CRC errors - must not "fix" them!
     this.log(`  ← Result: ST0=0x${st0.toString(16).padStart(2, '0')} ST1=0x${st1.toString(16).padStart(2, '0')} ST2=0x${this.exST2.toString(16).padStart(2, '0')} C=${this.exC} H=${this.exH} R=${this.exR} N=${this.exN}`);
-    if (st1 || this.exST2) {
+    if ((st1 & ~0x80) || this.exST2) {
       this.log(`  ⚠ CRC/Error flags present in result!`);
     }
     this.result([st0, st1, this.exST2, this.exC, this.exH, this.exR, this.exN]);
