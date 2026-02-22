@@ -59,6 +59,9 @@ line of code.  Step back and ask:
   are multiple reasonable approaches, present them to the user and let them
   choose — don't silently pick the smallest diff.
 
+- **Never commit.**  Do not run `git add`, `git commit`, or `git push` unless
+  the user explicitly asks you to.  The user manages their own commits.
+
 ## Common Pitfalls
 
 - **Port 0xFE is shared**: keyboard reads and tape EAR reads both hit the ULA
