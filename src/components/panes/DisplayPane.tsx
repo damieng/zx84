@@ -150,9 +150,9 @@ export function DisplayPane() {
           persistSetting('scanline-accuracy', v);
           if (spectrum) spectrum.scanlineAccuracy = v;
         }}>
-          <option value="high">High</option>
-          <option value="mid">Mid</option>
-          <option value="low">Low</option>
+          <option value="high">High (per t-state)</option>
+          <option value="mid">Mid (per scanline)</option>
+          <option value="low">Low (per 8-scanlines/cell)</option>
         </select>
       </div>
       <div class="slider-row">
