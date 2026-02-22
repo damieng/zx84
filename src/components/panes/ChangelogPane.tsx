@@ -7,7 +7,8 @@ const CHANGELOG: { version: string; items: string[] }[] = [
       'Drive pane UX improvements including LED',
       'Fix CPC DSK format detection',
       'Detect B: when empty option',
-      '+3 FORMAT command support'
+      '+3 FORMAT command support',
+      'Fix shift/ctrl keys getting stuck'
     ],
   },
   {

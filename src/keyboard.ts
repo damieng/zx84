@@ -136,6 +136,9 @@ export class SpectrumKeyboard {
   /** Track active CHAR_MAP combos by physical key code for correct release */
   private activeCharCombos = new Map<string, { combo: ComboMapping; suppressedCS: boolean }>();
 
+  /** Count of physical Shift keys currently held (ShiftLeft + ShiftRight) */
+  private physicalShiftCount = 0;
+
   constructor() {
     this.rows = new Uint8Array(8);
     this.rows.fill(0xFF);
@@ -144,6 +147,7 @@ export class SpectrumKeyboard {
   reset(): void {
     this.rows.fill(0xFF);
     this.activeCharCombos.clear();
+    this.physicalShiftCount = 0;
   }
 
   /**
@@ -174,14 +178,21 @@ export class SpectrumKeyboard {
   }
 
   handleKeyEvent(code: string, pressed: boolean, key?: string): boolean {
+    // Track physical Shift state so we know whether to restore CS on combo release.
+    if (code === 'ShiftLeft' || code === 'ShiftRight') {
+      this.physicalShiftCount = Math.max(0, this.physicalShiftCount + (pressed ? 1 : -1));
+    }
+
     // On key release, use the stored combo from keydown so we release the
     // correct keys even if Shift state changed between press and release.
     if (!pressed) {
       const stored = this.activeCharCombos.get(code);
       if (stored) {
         for (const k of stored.combo) this.setKey(k.row, k.bit, false);
-        // Restore CAPS SHIFT if we suppressed it (physical Shift still held)
-        if (stored.suppressedCS) this.setKey(0, 0, true);
+        // Restore CAPS SHIFT only if physical Shift is still held.
+        // If Shift was released before this key, CS was already cleared by the
+        // ShiftLeft/Right keyup event; restoring it here would leave CS stuck.
+        if (stored.suppressedCS && this.physicalShiftCount > 0) this.setKey(0, 0, true);
         this.activeCharCombos.delete(code);
         return true;
       }
