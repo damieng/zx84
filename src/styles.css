@@ -1000,7 +1000,7 @@ input[type="range"]::-moz-range-thumb {
 /* Filename slot + LED indicator */
 .disk-slot {
   position: relative;
-  margin-bottom: 12px;
+  margin-bottom: 2px;
 }
 .disk-name {
   display: flex;
@@ -1047,7 +1047,7 @@ input[type="range"]::-moz-range-thumb {
 
 .disk-info-output {
   padding: 6px;
-  margin: 0;
+  margin: 0; 
   font-size: 0.7rem;
   line-height: 1.5;
   white-space: pre;
