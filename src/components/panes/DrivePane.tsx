@@ -55,7 +55,6 @@ function DiskInfo(props: {
     <div class="disk-section">
       <div class="drive-header">
         <span class="disk-label">{label}</span>
-        <span class="drive-led" style={{ background: LED_COLORS[props.status.led] }} title={props.status.led} />
         <span class="drive-track-info">
           <span class="reg-name">Track</span>{' '}{props.status.track}
           {'  '}
@@ -91,21 +90,24 @@ function DiskInfo(props: {
           }}
         />
       </div>
-      <div
-        class="disk-name"
-        classList={{ 'disk-name-clickable': !props.name }}
-        onClick={() => !props.name && props.onInsert()}
-      >
-        <span class="disk-name-text" title={props.name || ''}>
-          {props.name || 'No disk inserted'}
-        </span>
-        <Show when={props.name}>
-          <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-              <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
-            </svg>
-          </button>
-        </Show>
+      <div class="disk-slot">
+        <div
+          class="disk-name"
+          classList={{ 'disk-name-clickable': !props.name }}
+          onClick={() => !props.name && props.onInsert()}
+        >
+          <span class="disk-name-text" title={props.name || ''}>
+            {props.name || 'No disk inserted'}
+          </span>
+          <Show when={props.name}>
+            <button class="tape-eject" title={`Eject disk ${label}`} onClick={(e) => { e.stopPropagation(); ejectDisk(props.unit); }}>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M8 2L2 10h12L8 2zM2 12v2h12v-2H2z"/>
+              </svg>
+            </button>
+          </Show>
+        </div>
+        <span class="drive-led" style={{ background: LED_COLORS[props.status.led] }} title={props.status.led} />
       </div>
       <Show when={props.diskInfo}>
         <pre class="disk-info-output" innerHTML={renderDiskInfoStr(props.diskInfo!)} />

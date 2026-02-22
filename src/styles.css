@@ -965,21 +965,13 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 8px;
 }
 
-/* Header row: LED + drive letter + track/sector + menu button */
+/* Header row: drive letter + track/sector + menu buttons */
 .drive-header {
   display: flex;
   align-items: center;
   gap: 5px;
   margin-bottom: 4px;
   font-size: 0.7rem;
-}
-.drive-led {
-  display: inline-block;
-  width: 20px;
-  height: 8px;
-  border-radius: 2px;
-  flex: 0 0 auto;
-  border: 1px solid rgba(0,0,0,0.35);
 }
 .disk-label {
   flex: 0 0 auto;
@@ -990,6 +982,7 @@ input[type="range"]::-moz-range-thumb {
   flex: 1 1 0;
   color: #ccc;
   white-space: nowrap;
+  text-align: center;
 }
 .drive-track-info .reg-name { color: #888; }
 .drive-header > .ddmenu-btn,
@@ -1004,7 +997,11 @@ input[type="range"]::-moz-range-thumb {
   cursor: default;
 }
 
-/* Filename slot */
+/* Filename slot + LED indicator */
+.disk-slot {
+  position: relative;
+  margin-bottom: 12px;
+}
 .disk-name {
   display: flex;
   align-items: center;
@@ -1015,7 +1012,16 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 3px;
   font-size: 0.75rem;
   min-height: 24px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
+}
+.drive-led {
+  position: absolute;
+  bottom: -9px;
+  right: 0;
+  width: 22px;
+  height: 8px;
+  border-radius: 1px;
+  border: 1px solid rgba(0,0,0,0.3);
 }
 .disk-name-clickable {
   cursor: pointer;
