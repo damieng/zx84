@@ -271,7 +271,7 @@ export function loadZ80(
       const bank = pageToBank128K(pageId);
       if (bank >= 0 && bank < 8) {
         const decompressed = decompressBlock(data, offset, blockLen);
-        memory.ramBanks[bank].set(decompressed);
+        memory.setBankFromSnapshot(bank, decompressed);
       }
 
       offset += (blockLen === 0xFFFF) ? 16384 : blockLen;
@@ -469,12 +469,13 @@ export function saveZ80(
   // ── Data blocks ────────────────────────────────────────────────────────
 
   const blocks: Uint8Array[] = [];
+  const banks = memory.flushBanks();
 
   if (is128K) {
     // 128K: write all 8 RAM banks (pages 3-10)
     for (let bank = 0; bank < 8; bank++) {
       const pageId = bank + 3;
-      const bankData = memory.ramBanks[bank];
+      const bankData = banks[bank];
       const { data: compressed, compressed: isCompressed } = compressBlock(bankData);
 
       // Block header: 2 bytes length + 1 byte page ID
@@ -502,7 +503,7 @@ export function saveZ80(
     ];
 
     for (const { pageId, bank } of pages) {
-      const bankData = memory.ramBanks[bank];
+      const bankData = banks[bank];
       const { data: compressed, compressed: isCompressed } = compressBlock(bankData);
 
       const blockHeader = new Uint8Array(3);

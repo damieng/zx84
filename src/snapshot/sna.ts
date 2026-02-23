@@ -69,11 +69,11 @@ export function loadSNA(
 
     // Load the three banks from the main 48K region
     // 0x4000-0x7FFF = bank 5
-    memory.ramBanks[5].set(data.subarray(27, 27 + 16384));
+    memory.setBankFromSnapshot(5, data.subarray(27, 27 + 16384));
     // 0x8000-0xBFFF = bank 2
-    memory.ramBanks[2].set(data.subarray(27 + 16384, 27 + 32768));
+    memory.setBankFromSnapshot(2, data.subarray(27 + 16384, 27 + 32768));
     // 0xC000-0xFFFF = current bank
-    memory.ramBanks[currentBank].set(data.subarray(27 + 32768, 27 + 49152));
+    memory.setBankFromSnapshot(currentBank, data.subarray(27 + 32768, 27 + 49152));
 
     // Load remaining banks from the extra data
     // The order is 0,1,2,3,4,5,6,7 but skipping banks 5, 2, and currentBank
@@ -81,7 +81,7 @@ export function loadSNA(
     for (let bank = 0; bank < 8; bank++) {
       if (bank === 5 || bank === 2 || bank === currentBank) continue;
       if (offset + 16384 <= data.length) {
-        memory.ramBanks[bank].set(data.subarray(offset, offset + 16384));
+        memory.setBankFromSnapshot(bank, data.subarray(offset, offset + 16384));
         offset += 16384;
       }
     }
@@ -118,8 +118,7 @@ export function saveSNA(
   memory: SpectrumMemory,
   borderColor: number
 ): Uint8Array {
-  // Flush flat memory back to RAM bank stores
-  memory.saveToRAMBanks();
+  const banks = memory.flushBanks();
 
   if (memory.is128K) {
     // 128K SNA: header(27) + banks 5,2,current(49152) + PC(2) + 7FFD(1) + TRDOS(1) + remaining banks(5*16384)
@@ -127,9 +126,9 @@ export function saveSNA(
     writeHeader(data, cpu, borderColor);
 
     // Main 48K region: banks 5, 2, currentBank
-    data.set(memory.ramBanks[5], 27);
-    data.set(memory.ramBanks[2], 27 + 16384);
-    data.set(memory.ramBanks[memory.currentBank], 27 + 32768);
+    data.set(banks[5], 27);
+    data.set(banks[2], 27 + 16384);
+    data.set(banks[memory.currentBank], 27 + 32768);
 
     // Extended header
     data[49179] = cpu.pc & 0xFF;
@@ -141,7 +140,7 @@ export function saveSNA(
     let offset = 49183;
     for (let bank = 0; bank < 8; bank++) {
       if (bank === 5 || bank === 2 || bank === memory.currentBank) continue;
-      data.set(memory.ramBanks[bank], offset);
+      data.set(banks[bank], offset);
       offset += 16384;
     }
 

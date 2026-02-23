@@ -82,20 +82,20 @@ export function loadSP(data: Uint8Array, cpu: Z80, memory: SpectrumMemory): SPRe
   if (is128K) {
     // 128K: First 49152 bytes are banks 5, 2, and current bank at 0xC000
     const ramData = data.slice(38, 38 + 49152);
-    memory.ramBanks[5].set(ramData.slice(0, 16384));
-    memory.ramBanks[2].set(ramData.slice(16384, 32768));
+    memory.setBankFromSnapshot(5, ramData.slice(0, 16384));
+    memory.setBankFromSnapshot(2, ramData.slice(16384, 32768));
 
     // Port 0x7FFD is at offset 38 + 49152 + 2 (after PC)
     const port7FFD = data[38 + 49152 + 2];
     const currentBank = port7FFD & 0x07;
-    memory.ramBanks[currentBank].set(ramData.slice(32768, 49152));
+    memory.setBankFromSnapshot(currentBank, ramData.slice(32768, 49152));
 
     // Load remaining banks (skip 2, 5, and current)
     let offset = 38 + 49152 + 3; // After port byte
     for (let bank = 0; bank < 8; bank++) {
       if (bank === 2 || bank === 5 || bank === currentBank) continue;
       if (offset + 16384 > data.length) break;
-      memory.ramBanks[bank].set(data.slice(offset, offset + 16384));
+      memory.setBankFromSnapshot(bank, data.slice(offset, offset + 16384));
       offset += 16384;
     }
 
@@ -118,9 +118,9 @@ export function loadSP(data: Uint8Array, cpu: Z80, memory: SpectrumMemory): SPRe
 
     if (ramStart === 0x4000 && progLen === 49152) {
       // Standard 48K layout
-      memory.ramBanks[5].set(ramData.slice(0, 16384));  // 0x4000-0x7FFF
-      memory.ramBanks[2].set(ramData.slice(16384, 32768)); // 0x8000-0xBFFF
-      memory.ramBanks[0].set(ramData.slice(32768, 49152)); // 0xC000-0xFFFF
+      memory.setBankFromSnapshot(5, ramData.slice(0, 16384));  // 0x4000-0x7FFF
+      memory.setBankFromSnapshot(2, ramData.slice(16384, 32768)); // 0x8000-0xBFFF
+      memory.setBankFromSnapshot(0, ramData.slice(32768, 49152)); // 0xC000-0xFFFF
       memory.applyBanking();
     } else {
       // Non-standard layout - copy directly to flat memory

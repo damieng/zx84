@@ -271,8 +271,7 @@ export function wirePortIO(s: Spectrum): void {
         if (saved0Bank >= 0 && saved0Bank === currentSlot0) {
           // savedSlot0 is valid RAM bank data for current banking —
           // sync it to ramBanks so future bank switches see it.
-          s.memory.ramBanks[saved0Bank].set(
-            s.cpu.memory.subarray(0, 0x4000));
+          s.memory.syncFlatToBank(saved0Bank, 0);
         }
         // Fix slot 0 for the current banking state
         if (currentSlot0 < 0) {
@@ -280,7 +279,7 @@ export function wirePortIO(s: Spectrum): void {
           s.cpu.memory.set(s.memory.romPages[s.memory.currentROM], 0);
         } else if (saved0Bank !== currentSlot0) {
           // Special paging with different bank — load correct one
-          s.cpu.memory.set(s.memory.ramBanks[currentSlot0], 0);
+          s.cpu.memory.set(s.memory.getRamBank(currentSlot0), 0);
         }
         // (else: savedSlot0 data is already correct for this bank)
         s.cpu.memory = s.memory.flat;

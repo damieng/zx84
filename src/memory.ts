@@ -21,8 +21,10 @@ export class SpectrumMemory {
   /** Flat 64KB address space shared with Z80 */
   flat: Uint8Array;
 
-  /** 8 x 16KB RAM banks (128K total) */
-  ramBanks: Uint8Array[];
+  /** 8 × 16KB RAM banks. Single source of truth for all RAM.
+   * Access via flushBanks() for serialisation, setBankFromSnapshot() for loads,
+   * getRamBank() for live reads, or syncFlatToBank() to write flat data back. */
+  private _ramBanks: Uint8Array[];
 
   /** ROM pages: 2 for 48K/128K/+2, 4 for +2A */
   romPages: Uint8Array[];
@@ -53,9 +55,9 @@ export class SpectrumMemory {
     this.flat = new Uint8Array(65536);
 
     // Create 8 RAM banks
-    this.ramBanks = [];
+    this._ramBanks = [];
     for (let i = 0; i < 8; i++) {
-      this.ramBanks.push(new Uint8Array(16384));
+      this._ramBanks.push(new Uint8Array(16384));
     }
 
     // Create ROM pages: count determined by variant (1 for 48K, 2 for 128K/+2, 4 for +2A/+3)
@@ -83,7 +85,7 @@ export class SpectrumMemory {
       // Shadow screen (bank 7): at 0xC000 only if it's the switched bank
       if (this.currentBank === bank) return this.flat.subarray(0xC000, 0x10000);
       // Bank 7 not mapped — ramBanks[7] was saved when it was last switched out
-      return this.ramBanks[bank];
+      return this._ramBanks[bank];
     }
 
     // Special paging: find which slot (if any) holds the screen bank
@@ -97,12 +99,12 @@ export class SpectrumMemory {
     }
 
     // Screen bank not currently mapped — ramBanks has the last-saved copy
-    return this.ramBanks[bank];
+    return this._ramBanks[bank];
   }
 
   reset(): void {
     this.flat.fill(0);
-    for (const bank of this.ramBanks) bank.fill(0);
+    for (const bank of this._ramBanks) bank.fill(0);
     this.port7FFD = 0;
     this.port1FFD = 0;
     this.pagingLocked = false;
@@ -139,12 +141,12 @@ export class SpectrumMemory {
 
   /** Copy flat[base..base+16K] → ramBanks[bank]. */
   private saveSlot(base: number, bank: number): void {
-    this.ramBanks[bank].set(this.flat.subarray(base, base + 0x4000));
+    this._ramBanks[bank].set(this.flat.subarray(base, base + 0x4000));
   }
 
   /** Copy ramBanks[bank] → flat[base..base+16K]. */
   private loadSlot(base: number, bank: number): void {
-    this.flat.set(this.ramBanks[bank], base);
+    this.flat.set(this._ramBanks[bank], base);
   }
 
   /** Return the 4 RAM bank numbers currently mapped into flat[]. */
@@ -272,25 +274,25 @@ export class SpectrumMemory {
     if (this.specialPaging) {
       const mode = (this.port1FFD >> 1) & 3;
       const banks = SPECIAL_MODES[mode];
-      this.flat.set(this.ramBanks[banks[0]], 0x0000);
-      this.flat.set(this.ramBanks[banks[1]], 0x4000);
-      this.flat.set(this.ramBanks[banks[2]], 0x8000);
-      this.flat.set(this.ramBanks[banks[3]], 0xC000);
+      this.flat.set(this._ramBanks[banks[0]], 0x0000);
+      this.flat.set(this._ramBanks[banks[1]], 0x4000);
+      this.flat.set(this._ramBanks[banks[2]], 0x8000);
+      this.flat.set(this._ramBanks[banks[3]], 0xC000);
       return;
     }
 
     const romPage = this.is128K ? this.romPages[this.currentROM] : this.romPages[1];
     this.flat.set(romPage, 0);
-    this.flat.set(this.ramBanks[5], 0x4000);
-    this.flat.set(this.ramBanks[2], 0x8000);
-    this.flat.set(this.ramBanks[this.currentBank], 0xC000);
+    this.flat.set(this._ramBanks[5], 0x4000);
+    this.flat.set(this._ramBanks[2], 0x8000);
+    this.flat.set(this._ramBanks[this.currentBank], 0xC000);
   }
 
   /**
    * Flush all mapped RAM slots from flat[] back to ramBanks[].
    * Used before serialising state (e.g. SNA save).
    */
-  saveToRAMBanks(skipSlot0 = false): void {
+  private saveToRAMBanks(skipSlot0 = false): void {
     if (this.specialPaging) {
       const mode = (this.port1FFD >> 1) & 3;
       const banks = SPECIAL_MODES[mode];
@@ -306,17 +308,55 @@ export class SpectrumMemory {
     this.saveSlot(0xC000, this.currentBank);
   }
 
+  // ── Public bank accessors ─────────────────────────────────────────────
+
+  /**
+   * Flush live flat[] to RAM banks and return the bank array for serialisation.
+   * This is the only public path for reading bank data in snapshot savers —
+   * the flush is built in so it cannot be forgotten.
+   */
+  flushBanks(): readonly Uint8Array[] {
+    this.saveToRAMBanks();
+    return this._ramBanks;
+  }
+
+  /**
+   * Write 16KB of snapshot data into a RAM bank.
+   * Use in snapshot loaders; call applyBanking() once all banks are populated.
+   * Not for live emulation use — does not update flat[].
+   */
+  setBankFromSnapshot(n: number, data: Uint8Array): void {
+    this._ramBanks[n].set(data.subarray(0, 16384));
+  }
+
+  /**
+   * Return a RAM bank for live (non-serialisation) access.
+   * Does NOT flush flat[] first — do not use in snapshot save paths.
+   */
+  getRamBank(n: number): Uint8Array {
+    return this._ramBanks[n];
+  }
+
+  /**
+   * Copy flat[flatBase..flatBase+16K] back into ramBanks[bank].
+   * Used when live flat data must be reflected in a specific bank (e.g. after
+   * Multiface page-out when slot 0 held a RAM bank).
+   */
+  syncFlatToBank(bank: number, flatBase: number): void {
+    this._ramBanks[bank].set(this.flat.subarray(flatBase, flatBase + 0x4000));
+  }
+
   /**
    * Load raw 48K RAM (49152 bytes) into banks 5, 2, 0 and the flat array.
    * Used by SNA loader.
    */
   load48KRAM(data: Uint8Array): void {
     // 0x4000-0x7FFF -> bank 5
-    this.ramBanks[5].set(data.subarray(0, 16384));
+    this._ramBanks[5].set(data.subarray(0, 16384));
     // 0x8000-0xBFFF -> bank 2
-    this.ramBanks[2].set(data.subarray(16384, 32768));
+    this._ramBanks[2].set(data.subarray(16384, 32768));
     // 0xC000-0xFFFF -> bank 0
-    this.ramBanks[0].set(data.subarray(32768, 49152));
+    this._ramBanks[0].set(data.subarray(32768, 49152));
     this.currentBank = 0;
     this.applyBanking();
   }

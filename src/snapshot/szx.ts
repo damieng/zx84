@@ -271,10 +271,10 @@ async function parseRAMP(
     // Compressed (zlib/deflate)
     const compressed = data.subarray(pageDataStart, pageDataStart + pageDataLen);
     const decompressed = await inflate(compressed);
-    memory.ramBanks[chPageNo].set(decompressed.subarray(0, 16384));
+    memory.setBankFromSnapshot(chPageNo, decompressed);
   } else {
     // Uncompressed — 16384 bytes
-    memory.ramBanks[chPageNo].set(
+    memory.setBankFromSnapshot(chPageNo,
       data.subarray(pageDataStart, pageDataStart + Math.min(pageDataLen, 16384))
     );
   }
@@ -289,9 +289,9 @@ function parseAY(data: Uint8Array, o: number, result: SZXResult): void {
 /** Build a contiguous 48K RAM image from banks 5, 2, 0. */
 function build48KRAM(memory: SpectrumMemory): Uint8Array {
   const ram = new Uint8Array(49152);
-  ram.set(memory.ramBanks[5], 0);       // 0x4000
-  ram.set(memory.ramBanks[2], 16384);   // 0x8000
-  ram.set(memory.ramBanks[0], 32768);   // 0xC000
+  ram.set(memory.getRamBank(5), 0);       // 0x4000
+  ram.set(memory.getRamBank(2), 16384);   // 0x8000
+  ram.set(memory.getRamBank(0), 32768);   // 0xC000
   return ram;
 }
 
@@ -320,18 +320,18 @@ function writeBlockHeader(data: Uint8Array, offset: number, id: string, size: nu
 }
 
 export async function saveSZX(cpu: Z80, memory: SpectrumMemory, borderColor: number, model: SpectrumModel, frameStartTStates: number, ayRegs?: Uint8Array, ayCurrentReg?: number): Promise<Uint8Array> {
-  // Flush live flat[] data back to ramBanks[] before serialising
-  memory.saveToRAMBanks();
-
   // For 48K, only pages 0, 2, 5 are used. For 128K, all 8.
   const pages = memory.is128K
     ? [0, 1, 2, 3, 4, 5, 6, 7]
     : [0, 2, 5];
 
+  // Flush live flat[] to banks (built into flushBanks — cannot be forgotten).
+  const banks = memory.flushBanks();
+
   // Compress each page
   const compressedPages: { page: number; data: Uint8Array; compressed: boolean }[] = [];
   for (const page of pages) {
-    const raw = memory.ramBanks[page];
+    const raw = banks[page];
     const zipped = await deflate(raw);
     // Only use compressed version if it's actually smaller
     if (zipped.length < raw.length) {

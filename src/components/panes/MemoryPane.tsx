@@ -112,7 +112,7 @@ function getBankData(mem: SpectrumMemory, bank: number): Uint8Array {
     if (bank === 2)               return mem.flat.subarray(0x8000, 0xC000);
     if (bank === mem.currentBank) return mem.flat.subarray(0xC000, 0x10000);
   }
-  return mem.ramBanks[bank]; // not currently mapped — last saved snapshot
+  return mem.getRamBank(bank); // not currently mapped — last saved snapshot
 }
 
 // ── Row renderer ─────────────────────────────────────────────────────────
