@@ -161,6 +161,15 @@ export class UPD765A {
    * reading R because disk rotation timing prevents it. Limit to one sector/command.
    */
   private exSingleSector = false;
+  /**
+   * Consecutive MSR reads while in execution phase without a data read.
+   * The real uPD765A triggers OVERRUN (ST1 bit 4) when the CPU doesn't read
+   * data fast enough. Protection code deliberately breaks the INI loop mid-sector
+   * then polls MSR waiting for execution phase to end — overrun makes it end.
+   * ~32 consecutive status polls without a data read is a safe threshold.
+   */
+  private exOverrunPolls = 0;
+  private static readonly OVERRUN_THRESHOLD = 32;
 
   // ── Format-track execution state ────────────────────────────────────
 
@@ -264,9 +273,20 @@ export class UPD765A {
     switch (this.phase) {
       case Phase.Idle:      return 0x80; // RQM
       case Phase.Command:   return 0x90; // RQM + CB
-      case Phase.Execution:
+      case Phase.Execution: {
+        // Overrun detection: real uPD765A terminates execution phase (ST1.OR)
+        // when the CPU stops reading data and only polls status instead.
+        // Protection code intentionally breaks its INI loop mid-sector, then
+        // polls MSR waiting for execution phase to end — overrun ends it.
+        if (++this.exOverrunPolls >= UPD765A.OVERRUN_THRESHOLD) {
+          this.exOverrunPolls = 0;
+          this.exST1 |= 0x10; // ST1 bit 4 = OR (Over Run)
+          this.finishExecution();
+          return 0xD0; // now in result phase
+        }
         // RQM + EXM + CB, DIO depends on read vs write
         return this.exWriting ? 0xB0 : 0xF0; // write: RQM+EXM+CB, read: RQM+DIO+EXM+CB
+      }
       case Phase.Result:    return 0xD0; // RQM + DIO + CB
     }
   }
@@ -276,6 +296,7 @@ export class UPD765A {
   /** Read data register — returns next result byte or execution data. */
   readData(): number {
     if (this.phase === Phase.Execution && !this.exWriting) {
+      this.exOverrunPolls = 0; // CPU is still reading — reset overrun counter
       return this.readExecution();
     }
     if (this.phase !== Phase.Result) return 0xFF;
@@ -623,6 +644,7 @@ export class UPD765A {
     this.exTrack = track;
     this.exWriting = isWrite;
     this.exReadTrack = false; // Reading individual sectors, not raw track
+    this.exOverrunPolls = 0;
 
     // Latch for UI display (execution completes within one frame)
     this.latchR = r;
