@@ -33,9 +33,9 @@ function renderDiskInfoStr(img: DskImage): string {
   const spt = t0 ? t0.sectors.length : 0;
   const sectorSize = t0?.sectors[0] ? (128 << t0.sectors[0].n) : 0;
   const capacityKB = (img.numSides * img.numTracks * spt * sectorSize) / 1024;
+  const tooltip = `${img.numSides} side${img.numSides > 1 ? 's' : ''}, ${img.numTracks} tracks, ${spt} sectors/track`;
   return [
-    `${n}Sides${e} ${img.numSides}  ${n}Tracks${e} ${img.numTracks}  ${n}Sectors${e} ${spt}`,
-    `${n}Format${e}   ${img.diskFormat}   ${n}Capacity${e} ${capacityKB} KB`,
+    `${n}Format${e}   <span title="${tooltip}">${img.diskFormat} (${capacityKB} KB)</span>`,
     `${n}Protect${e}  ${img.protection || 'None'}`,
   ].join('\n');
 }
