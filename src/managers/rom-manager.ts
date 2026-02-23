@@ -16,12 +16,15 @@ export interface ROMEntry {
   label: string;
 }
 
-const DEFAULT_ROM_URLS: Record<SpectrumModel, string> = {
-  '48k':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum16-48/spec48.rom',
-  '128k': 'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/128/spec128uk.rom',
-  '+2':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum128-plus2/plus2/plus2uk.rom',
-  '+2a':  'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus2a/plus2a.rom',
-  '+3':   'https://raw.githubusercontent.com/spectrumforeveryone/zx-roms/main/spectrum-plus3/plus3/plus3.rom',
+const ROM_BASE = 'https://zx84files.bitsparse.com/roms/';
+
+// Each model lists its ROM pages in order; they are fetched and concatenated.
+const DEFAULT_ROM_URLS: Record<SpectrumModel, string[]> = {
+  '48k':  [`${ROM_BASE}48.rom`],
+  '128k': [`${ROM_BASE}128-0.rom`, `${ROM_BASE}128-1.rom`],
+  '+2':   [`${ROM_BASE}plus2-0.rom`, `${ROM_BASE}plus2-1.rom`],
+  '+2a':  [`${ROM_BASE}plus3-41-0.rom`, `${ROM_BASE}plus3-41-1.rom`, `${ROM_BASE}plus3-41-2.rom`, `${ROM_BASE}plus3-41-3.rom`],
+  '+3':   [`${ROM_BASE}plus3-0.rom`, `${ROM_BASE}plus3-1.rom`, `${ROM_BASE}plus3-2.rom`, `${ROM_BASE}plus3-3.rom`],
 };
 
 export class ROMManager {
@@ -61,22 +64,29 @@ export class ROMManager {
     model: SpectrumModel,
     onStatus?: (msg: string) => void
   ): Promise<ROMEntry | null> {
-    const url = DEFAULT_ROM_URLS[model];
-    if (!url) return null;
+    const urls = DEFAULT_ROM_URLS[model];
+    if (!urls?.length) return null;
 
     onStatus?.(`Downloading ${model.toUpperCase()} ROM…`);
 
     try {
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const pages = await Promise.all(urls.map(async url => {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url.split('/').pop()}`);
+        return new Uint8Array(await resp.arrayBuffer());
+      }));
 
-      const data = new Uint8Array(await resp.arrayBuffer());
-      const name = url.split('/').pop()!;
+      // Concatenate pages into a single ROM image
+      const totalLength = pages.reduce((n, p) => n + p.length, 0);
+      const data = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const page of pages) { data.set(page, offset); offset += page.length; }
 
-      await this.persistROM(model, data, name);
+      const label = urls[0].split('/').pop()!;
+      await this.persistROM(model, data, label);
       onStatus?.(`${model.toUpperCase()} ROM loaded`);
 
-      return { data, label: name };
+      return { data, label };
     } catch (err) {
       onStatus?.(`Failed to download ROM: ${(err as Error).message}`);
       return null;

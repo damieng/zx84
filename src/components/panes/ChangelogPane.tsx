@@ -2,6 +2,12 @@ import { Pane } from '@/components/Pane.tsx';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.3',
+    items: [
+      'ROMs loaded from own domain',
+      '+3 v4.1 option added'
+    ]
+  }, {
     version: '0.2.2',
     items: [
       '128K/+3 memory bank paging fixed',
