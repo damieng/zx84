@@ -8,7 +8,8 @@ const CHANGELOG: { version: string; items: string[] }[] = [
       'CPC disk format detection fix',
       '+3 Force B: presence when empty option',
       '+3 FORMAT command support',
-      'Keyboard shift/ctrl keys stuck/failing fixed'
+      'Keyboard shift/ctrl keys stuck/failing fixed',
+      '48K timings fixed for Shock, Bifrost and Nirvana+'
     ],
   },
   {
