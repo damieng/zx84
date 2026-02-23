@@ -4,10 +4,11 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.2',
     items: [
+      '128K/+3 memory bank paging fixed',
       'Memory viewer pane added',
       'Drive pane UX improvements including LED',
       'CPC disk format detection fix',
-      '+3 Force B: presence when empty option',
+      '+3 B: force-presence when empty option',
       '+3 FORMAT command support',
       'Keyboard shift/ctrl keys stuck/failing fixed',
       '48K timings fixed for Shock, Bifrost and Nirvana+'
@@ -29,14 +30,14 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     version: '0.2.0',
     items: [
       'Multiface 1 / 128 / 3 support',
-      'Rewritten display engine for border effects',
+      'Border effects improved',
       'ULA contention accuracy improvements',
       'SZX saving implemented/fixed',
       'Frame stepping in debugger added',
       'Text overlay with native fonts rewritten',
       'Tape auto-start/pause improvements',
       'Per-drive menus with New disk, save',
-      'New 3.5" drive sounds & write-protect',
+      '3.5" drive sounds & write-protect',
     ],
   },
 ];

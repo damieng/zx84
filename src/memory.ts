@@ -197,6 +197,13 @@ export class SpectrumMemory {
     // Normal paging: only slot 3 bank and ROM can change
     if (oldBank !== newBank) {
       this.saveSlot(0xC000, oldBank);
+      // Banks 5 and 2 are fixed at slots 1/2 in normal paging — their ramBanks[]
+      // entries are stale until explicitly synced.  Propagate slot-3 writes back
+      // to the fixed alias, and sync ramBanks from the live slot before loading.
+      if (oldBank === 5) this.loadSlot(0x4000, 5);
+      else if (oldBank === 2) this.loadSlot(0x8000, 2);
+      if (newBank === 5) this.saveSlot(0x4000, 5);
+      else if (newBank === 2) this.saveSlot(0x8000, 2);
       this.loadSlot(0xC000, newBank);
     }
     if (newROM !== this.currentROM) {
