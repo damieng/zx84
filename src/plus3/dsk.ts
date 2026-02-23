@@ -292,14 +292,14 @@ function formatCapacityKB(fmt: DiskFormat): number {
 
 export const DISK_FORMATS: DiskFormat[] = [
   {
-    label: '+3DOS / PCW CF2',
+    label: 'PCW/+3 Single',
     diskType: 0,
     sides: 1, tracks: 40, sectors: 9, sectorSize: 512,
     gapRW: 42, gap3: 82, filler: 0xE5, firstSector: 1,
     resTracks: 1, blockShift: 3, dirBlocks: 2,
   },
   {
-    label: 'PCW CF2DD',
+    label: 'PCW Double',
     diskType: 3,
     sides: 2, tracks: 80, sectors: 9, sectorSize: 512,
     gapRW: 42, gap3: 82, filler: 0xE5, firstSector: 1,
@@ -376,7 +376,7 @@ function detectDiskFormat(image: DskImage): string {
   const ds = image.numSides === 2 ? ' DS' : '';
 
   if (count === 9 && n === 2) {
-    if (minR === 0x01) return '+3DOS' + ds;
+    if (minR === 0x01) return image.numSides === 2 ? 'PCW Double' : 'PCW/+3 Single';
     if (minR === 0xC1) return 'CPC Data' + ds;
     if (minR === 0x41) return 'CPC System' + ds;
   }
@@ -671,7 +671,7 @@ function detectProtection(image: DskImage): string {
 
   const uniform = isUniform(image);
   const errors = hasFdcErrors(image);
-  if (uniform && !errors) return '';
+  if (uniform && !errors) return 'None';
 
   for (const detect of DETECTORS) {
     const result = detect(image);
@@ -685,6 +685,6 @@ function detectProtection(image: DskImage): string {
   if (kbi) return kbi;
   if (herbulot) return herbulot;
 
-  if (!uniform && errors) return 'Unknown';
+  if (errors) return 'Unknown';
   return '';
 }
