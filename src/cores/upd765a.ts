@@ -70,12 +70,11 @@ function paramCount(cmdByte: number): number {
 export class UPD765A {
   // ── Debug logging ───────────────────────────────────────────────────
 
-  private enableLogging = true; // Set to false to disable FDC logging
+  /** Inject a log sink. Defaults to console.log; set to null to silence; override in MCP. */
+  logFn: ((...args: any[]) => void) | null = console.log;
 
   private log(...args: any[]): void {
-    if (this.enableLogging) {
-      console.log('[FDC]', ...args);
-    }
+    this.logFn?.('[FDC]', ...args);
   }
 
   // ── Phase & buffers ─────────────────────────────────────────────────
@@ -412,9 +411,20 @@ export class UPD765A {
    * uniform-fill sectors (Alkatraz protection), return randomized data.
    */
   private prepareReadBuffer(sector: DskSector): Uint8Array {
-    // Method 1: Explicit weak flag (ST2 bit 5 = Data CRC error).
-    // Used by Speedlock disks. Note: ST2 bit 6 (0x40) is Control Mark
-    // (deleted data), NOT a weak sector!
+    const expectedSize = 128 << sector.n;
+
+    // Short sector: actual data is smaller than N specifies.
+    // On real hardware the FDC delivers the real bytes then reads garbage
+    // past the sector's CRC until it fills the full N-sized window.
+    if (sector.data.length < expectedSize) {
+      const buf = new Uint8Array(expectedSize);
+      buf.set(sector.data);
+      for (let i = sector.data.length; i < expectedSize; i++) buf[i] = Math.random() * 256;
+      return buf;
+    }
+
+    // Explicit weak flag (ST2 bit 5 = Data CRC error). Used by Speedlock disks.
+    // Note: ST2 bit 6 (0x40) is Control Mark (deleted data), NOT a weak sector!
     if (sector.st2 & 0x20) {
       return this.randomizeSector(sector.data);
     }
