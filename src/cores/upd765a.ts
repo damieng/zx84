@@ -155,6 +155,12 @@ export class UPD765A {
   /** Status registers from sector (for CRC error reporting) */
   private exST1 = 0;
   private exST2 = 0;
+  /**
+   * True when the starting sector's C field doesn't match the physical cylinder.
+   * These are copy-protection tracks — real hardware can't find sector R+1 after
+   * reading R because disk rotation timing prevents it. Limit to one sector/command.
+   */
+  private exSingleSector = false;
 
   // ── Format-track execution state ────────────────────────────────────
 
@@ -341,6 +347,13 @@ export class UPD765A {
    * can report the correct ST0/ST1 flags.
    */
   private advanceSector(): boolean {
+    // Copy-protection tracks: sector.c ≠ physical cylinder. Real hardware can't
+    // find the next sector due to rotation timing — stop after one sector.
+    if (this.exSingleSector) {
+      this.exHitEOT = true;
+      return false;
+    }
+
     this.exR++;
     if (this.exR > this.exEOT) {
       this.exHitEOT = true;
@@ -364,7 +377,9 @@ export class UPD765A {
       this.exPos = 0;
     }
 
-    // Update status registers for the new sector (preserve CRC errors!)
+    // Update CHRN and status registers from the new sector's ID field
+    this.exC = sector.c;
+    this.exH = sector.h;
     this.exST1 = sector.st1;
     this.exST2 = sector.st2;
 
@@ -593,12 +608,15 @@ export class UPD765A {
       return;
     }
 
-    // Save execution state
+    // Save execution state — C, H, N come from the sector's own ID field,
+    // not the command parameters. The real uPD765A reports the last sector's
+    // actual CHRN in its result bytes, which may differ from the command's
+    // CHRN (e.g. copy-protection sectors with mismatched cylinder fields).
     this.exUnit = unit;
     this.exHead = head;
-    this.exC = c;
-    this.exH = h;
-    this.exN = n;  // Expected size from command (may differ from actual!)
+    this.exC = sector.c;
+    this.exH = sector.h;
+    this.exN = sector.n;  // From sector ID (may differ from command N)
     this.exR = r;
     this.exEOT = eot;
     this.exHitEOT = false;
@@ -631,6 +649,15 @@ export class UPD765A {
     // proper error status. If we "fix" errors or return ST1/ST2=0, it fails.
     this.exST1 = sector.st1;
     this.exST2 = sector.st2;
+
+    // COPY-PROTECTION SINGLE-SECTOR MODE:
+    // If the sector's C field doesn't match the physical cylinder, this is a
+    // copy-protection track. On real hardware, disk rotation timing prevents the
+    // FDC from finding sector R+1 after reading R on such tracks — the head is
+    // positioned at the wrong cylinder. We simulate this by stopping after one
+    // sector, matching the single-sector-per-command behaviour real hardware gives.
+    const physCyl = this.pcn[this.physUnit(unit)];
+    this.exSingleSector = (sector.c !== physCyl);
 
     // DELETED DATA ADDRESS MARK (DDAM) SUPPORT:
     // ST2 bit 6 (CM) in the DSK means the sector has a Deleted Data Address Mark.
