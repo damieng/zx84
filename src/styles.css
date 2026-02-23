@@ -522,6 +522,7 @@ input[type="range"]::-moz-range-thumb {
   overflow-y: auto;
   margin-top: 4px;
 }
+#font-list:empty { display: none; }
 
 .font-entry {
   display: flex;
