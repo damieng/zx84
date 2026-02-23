@@ -163,6 +163,11 @@ export function wirePortIO(s: Spectrum): void {
       }
     }
 
+    // General port watchpoint (covers all ports: 7FFD, 1FFD, 3FFD, etc.)
+    if (s.portWatchpoints.size > 0 && s.portWatchpoints.has(port & 0xFFFF) && s.portWatchHit === null) {
+      s.portWatchHit = { port: port & 0xFFFF, value: val, dir: 'out' };
+    }
+
   };
 
   s.cpu.portInHandler = (port: number): number => {
@@ -214,7 +219,11 @@ export function wirePortIO(s: Spectrum): void {
       if (v.decodesFDCData(port)) {
         if (!v.hasFDC) return 0xFF;
         s.activity.fdcAccesses++;
-        return s.fdc.readData();
+        const fdcByte = s.fdc.readData();
+        if (s.portWatchpoints.size > 0 && s.portWatchpoints.has(port & 0xFFFF) && s.portWatchHit === null) {
+          s.portWatchHit = { port: port & 0xFFFF, value: fdcByte, dir: 'in' };
+        }
+        return fdcByte;  // early return — watchpoint already handled above
       }
     }
 
@@ -296,6 +305,11 @@ export function wirePortIO(s: Spectrum): void {
     }
 
     // Unattached port — return floating bus value (ULA VRAM data or 0xFF)
-    return s.contention.floatingBusRead(s.cpu.tStates, s.memory.flat);
+    const floatVal = s.contention.floatingBusRead(s.cpu.tStates, s.memory.flat);
+    // General port watchpoint for IN (FDC data port handled above with early return)
+    if (s.portWatchpoints.size > 0 && s.portWatchpoints.has(port & 0xFFFF) && s.portWatchHit === null) {
+      s.portWatchHit = { port: port & 0xFFFF, value: floatVal, dir: 'in' };
+    }
+    return floatVal;
   };
 }

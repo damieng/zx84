@@ -31,9 +31,10 @@ Defaults to `48k`. ROMs are fetched from GitHub and cached in `test/.cache/`.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `run` | `frames` (default 1) | Run N frames. Reports breakpoint if hit. |
+| `run` | `frames` (default 1) | Run N frames. Reports breakpoint or port watchpoint if hit. |
+| `step_frame` | — | Run exactly one frame. Equivalent to `run frames=1`. |
 | `step` | `count` (default 1) | Single-step N instructions. Returns disassembly + registers for each. |
-| `continue` | `max_frames` (default 5000) | Run until a breakpoint hits. Requires at least one breakpoint set. |
+| `continue` | `max_frames` (default 5000) | Run until a breakpoint or port watchpoint fires. Requires at least one set. |
 
 ### Registers & CPU State
 
@@ -59,12 +60,14 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 |------|-----------|-------------|
 | `disassemble` | `address` (default PC), `lines` (default 16) | Z80 disassembly with byte display. Current PC marked with `>`. |
 
-### Breakpoints
+### Breakpoints & Watchpoints
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `breakpoint` | `address` (optional) | Set a breakpoint, or list all if no address given. |
+| `breakpoint` | `address` (optional) | Set a PC breakpoint, or list all if no address given. |
 | `delete_breakpoint` | `address` (optional) | Remove one breakpoint, or clear all. |
+| `port_watchpoint` | `port` (optional) | Set a port watchpoint (breaks on IN **or** OUT to that port), or list all. |
+| `delete_port_watchpoint` | `port` (optional) | Remove one port watchpoint, or clear all. |
 
 ### I/O Ports
 
@@ -77,15 +80,18 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `load` | `file`, `drive` (default `"0"`) | Load TAP, TZX, SNA, Z80, or DSK. TAP/TZX reset and start playback. DSK inserts into FDC. |
+| `load` | `file`, `drive` (default `"0"`) | Load TAP, TZX, SNA, Z80, SZX, or DSK. TAP/TZX reset and start playback. DSK inserts into FDC. SZX restores a full snapshot. |
+| `save` | `file` | Save current machine state to a SZX snapshot file. `.szx` extension added automatically. |
 | `disk_boot` | — | +3 only. Runs 500 frames to reach the startup menu, presses Enter on "Loader". |
+| `disk_trace` | `file` | All-in-one: switch to +3, mount DSK, boot to Loader, arm FE10h breakpoint + 3FFDh port watchpoint. |
 | `eject` | `target` (`tape`/`disk`), `drive` | Eject tape or disk from drive A/B. |
 
 ### Input
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `key` | `name`, `frames` (default 5) | Press and hold a key for N frames. |
+| `key` | `name`, `frames` (default 5) | Press and hold a key for N frames. Supports combos like `"shift+2"` or `"sym+p"`. |
+| `type` | `text` | Type a string of characters. Handles letters, digits, symbols, and `\n` for Enter. |
 
 Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, `left`, `right`, `up`, `down`, `capslock`, `escape`
 
@@ -95,6 +101,7 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 |------|-----------|-------------|
 | `trace` | `mode` (`full`/`contention`/`portio`) | Start a trace. |
 | `stop_trace` | — | Stop and return results. Traces over 200 lines are written to a file. |
+| `frame_trace` | — | Run one frame logging every instruction: T-state, beam position, contention delays, border changes, and VRAM writes. Always writes to file. |
 
 - **full** — every instruction executed
 - **contention** — contended cycle info
@@ -118,15 +125,38 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 |------|-----------|-------------|
 | `weak` | `track`, `sector` (optional) | Mark sector(s) as weak (randomised on each read). Omit sector to mark entire track. |
 
-### Display
+### Peripherals
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `subframe` | — | Toggle sub-frame rendering on/off. |
+| `multiface` | `action` (`on`/`off`/`nmi`/`status`) | Enable/disable the Multiface peripheral, press its NMI button, or show status. Supports MF1, MF128, MF3. |
 
 ## Workflows
 
-### Boot a +3 disk and break at entry
+### Trace a +3 copy-protection scheme (one step)
+
+```
+disk_trace   → file: "path/to/game.dsk"
+continue     → runs to FE10h bootstrap entry
+registers
+disassemble
+continue     → runs to next FDC command byte (port 3FFDh watchpoint)
+...
+```
+
+`disk_trace` does everything in one call: switch to +3, mount the DSK, boot to Loader, set FE10h breakpoint + 3FFDh port watchpoint. No manual setup needed.
+
+### Save and restore a checkpoint
+
+```
+save         → file: "C:/tmp/checkpoint.szx"
+... (investigation continues) ...
+load         → file: "C:/tmp/checkpoint.szx"   (restores full machine state)
+```
+
+Checkpoints let you rewind to a known state without re-running hundreds of frames.
+
+### Boot a +3 disk and break at entry (manual)
 
 ```
 model        → switch to +3
@@ -184,6 +214,15 @@ port_out     → port: "0x7FFD", value: "0x03"   (select RAM bank 3 at C000)
 ```
 
 The response includes the new banking state.
+
+### Watch for bank/paging changes
+
+```
+port_watchpoint  → port: "7FFD"
+continue
+```
+
+Fires on any `OUT (7FFD), *` — catches ROM switches, RAM bank changes, paging locks. Check `registers` at each hit to see the new banking state.
 
 ### Test weak-sector protection
 

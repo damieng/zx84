@@ -201,6 +201,11 @@ export class Spectrum {
   /** Set to the hit address when a breakpoint fires mid-frame */
   breakpointHit = -1;
 
+  /** Port watchpoints: break when any watched port is accessed by IN or OUT */
+  portWatchpoints = new Set<number>();
+  /** Set when a port watchpoint fires; null means no hit this frame */
+  portWatchHit: { port: number; value: number; dir: 'in' | 'out' } | null = null;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
@@ -384,17 +389,18 @@ export class Spectrum {
   }
 
   /** Run one frame (for headless / test harness use). */
-  tick(): void { this.breakpointHit = -1; this.runFrame(); }
+  tick(): void { this.breakpointHit = -1; this.portWatchHit = null; this.runFrame(); }
 
   /**
-   * Run up to `maxFrames` frames, stopping early if a breakpoint is hit.
-   * Returns the number of frames actually executed.
+   * Run up to `maxFrames` frames, stopping early if a breakpoint or port
+   * watchpoint is hit.  Returns the number of frames actually executed.
    */
   runUntil(maxFrames: number): number {
     this.breakpointHit = -1;
+    this.portWatchHit = null;
     for (let i = 0; i < maxFrames; i++) {
       this.runFrame();
-      if (this.breakpointHit >= 0) return i + 1;
+      if (this.breakpointHit >= 0 || this.portWatchHit !== null) return i + 1;
     }
     return maxFrames;
   }
@@ -456,6 +462,7 @@ export class Spectrum {
   private runFrame(): void {
     // Reset activity counters for this frame
     this.activity.reset();
+    this.portWatchHit = null;
     // The ULA's frame boundary occurs at exact tStatesPerFrame intervals,
     // regardless of CPU instruction overshoot from the previous frame.
     // On real hardware the beam resets at fixed intervals; the CPU may still
@@ -549,10 +556,10 @@ export class Spectrum {
           this.cpu.r = (this.cpu.r & 0x80) | ((this.cpu.r + nops) & 0x7F);
         }
 
-        if (!this.cpu.iff1) {
-          this.cpu.iff1 = true;
-          this.cpu.iff2 = true;
-        }
+        // if (!this.cpu.iff1) {
+        //   this.cpu.iff1 = true;
+        //   this.cpu.iff2 = true;
+        // }
       } else {
         // Breakpoint check (skipped when set is empty for zero overhead)
         if (this.breakpoints.size > 0 && this.breakpoints.has(this.cpu.pc)) {
@@ -561,6 +568,8 @@ export class Spectrum {
         }
         if (this._tracing && this._traceMode === 'full' && this.cpu.pc >= 0x4000) this.captureTraceLine();
         this.cpu.step();
+        // Break mid-frame if a port watchpoint fired during this instruction
+        if (this.portWatchHit !== null) break;
       }
 
       // Clear EI delay after each instruction (see timings.md § EI Delay).
