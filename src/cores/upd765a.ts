@@ -207,7 +207,7 @@ export class UPD765A {
     this.disks[unit & 3] = image;
     this.idIndex[unit & 3] = 0;
     this.log(`🎮 Disk inserted in unit ${unit}: ${image.numTracks} tracks, ${image.numSides} sides, ${image.format} format`);
-    if (image.protection) {
+    if (image.protection && image.protection !== 'None') {
       this.log(`   🔒 Copy protection detected: ${image.protection}`);
     }
     if (image.diskFormat) {
