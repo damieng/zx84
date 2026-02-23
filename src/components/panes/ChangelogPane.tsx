@@ -5,7 +5,9 @@ const CHANGELOG: { version: string; items: string[] }[] = [
     version: '0.2.3',
     items: [
       'ROMs loaded from own domain',
-      '+3 v4.1 option added'
+      '+3 v4.1 option added',
+      'Turn off minification',
+      'CORS improvements for Cloudflare'
     ]
   }, {
     version: '0.2.2',

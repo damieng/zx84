@@ -424,12 +424,21 @@ export function stopTrace(): void {
 
 // ── Model switching ─────────────────────────────────────────────────────
 
+/**
+ * Returns the ROM model key to use when loading ROMs for a given machine model.
+ * When "+3 V4.1 ROMs" is enabled the +3 machine uses the +2A ROM set.
+ */
+function effectiveROMModel(model: SpectrumModel): SpectrumModel {
+  return model === '+3' && settings.plus3V41Roms() ? '+2a' : model;
+}
+
 export async function switchModel(model: SpectrumModel): Promise<void> {
   setCurrentModel(model);
   saveModel(model);
 
-  let entry = await restoreROM(model);
-  if (!entry) entry = await fetchDefaultROM(model);
+  const romModel = effectiveROMModel(model);
+  let entry = await restoreROM(romModel);
+  if (!entry) entry = await fetchDefaultROM(romModel);
 
   if (entry) {
     romData = entry.data;
@@ -920,8 +929,9 @@ async function restoreMedia(): Promise<void> {
 export async function init(): Promise<void> {
   const model = currentModel();
 
-  let entry = await restoreROM(model);
-  if (!entry) entry = await fetchDefaultROM(model);
+  const romModel = effectiveROMModel(model);
+  let entry = await restoreROM(romModel);
+  if (!entry) entry = await fetchDefaultROM(romModel);
 
   if (entry) {
     romData = entry.data;

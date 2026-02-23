@@ -238,6 +238,10 @@ const _multifaceEnabled = /*@once*/ createRoot(() => createSignal(getSaved('mult
 export const multifaceEnabled = _multifaceEnabled[0];
 export const setMultifaceEnabled = _multifaceEnabled[1];
 
+const _plus3V41Roms = /*@once*/ createRoot(() => createSignal(getSaved('plus3-v41-roms', 'off') === 'on'));
+export const plus3V41Roms = _plus3V41Roms[0];
+export const setPlus3V41Roms = _plus3V41Roms[1];
+
 // ── Derived ─────────────────────────────────────────────────────────────
 
 export const needsGamepadPolling = /*@once*/ createRoot(() => createMemo(() =>
@@ -308,7 +312,8 @@ const PANE_SETTINGS: Record<string, SettingDef[]> = {
     { key: 'tape-sound',          default: 'on', set: setTapeSoundEnabled,  type: 'bool' },
   ],
   hardware: [
-    { key: 'multiface', default: 'off', set: setMultifaceEnabled, type: 'bool' },
+    { key: 'multiface',      default: 'off', set: setMultifaceEnabled, type: 'bool' },
+    { key: 'plus3-v41-roms', default: 'off', set: setPlus3V41Roms,     type: 'bool' },
   ],
   font: [
     { key: 'font', default: '', set: setFontName, type: 'string' },

@@ -83,6 +83,23 @@ export function HardwarePane() {
           onClick={triggerNMI}
         >NMI</button>
       </div>
+      <Show when={currentModel() === '+3'}>
+        <div class="multiface-row">
+          <label class="mf-check">
+            <input
+              type="checkbox"
+              checked={settings.plus3V41Roms()}
+              onChange={(e) => {
+                const on = (e.target as HTMLInputElement).checked;
+                settings.setPlus3V41Roms(on);
+                settings.persistSetting('plus3-v41-roms', on ? 'on' : 'off');
+                switchModel('+3');
+              }}
+            />
+            V4.1 ROMs
+          </label>
+        </div>
+      </Show>
       <Show when={romStatusText()}>
         <span class="rom-status" id="rom-status">{romStatusText()}</span>
       </Show>
