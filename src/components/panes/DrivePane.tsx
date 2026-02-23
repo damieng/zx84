@@ -66,6 +66,7 @@ function DiskInfo(props: {
         <DropDownMenuButton
           icon={<HiOutlineDocumentPlus />}
           title={`New disk in drive ${label}`}
+          size="sm"
           items={DISK_FORMATS.map((fmt, i) => ({ value: `new-${i}`, label: formatLabel(fmt) }))}
           onSelect={(value) => {
             const fmt = DISK_FORMATS[parseInt(value.slice(4))];
@@ -73,7 +74,7 @@ function DiskInfo(props: {
           }}
         />
         <button
-          class="ddmenu-btn"
+          class="btn btn-sm ddmenu-btn"
           title={`Save drive ${label} as DSK`}
           disabled={!props.diskInfo}
           onClick={() => saveDisk(props.unit)}
@@ -83,6 +84,7 @@ function DiskInfo(props: {
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
           title={`Drive ${label} options`}
+          size="sm"
           items={[
             { value: 'sound', label: 'Drive sounds', checked: props.soundEnabled },
             { value: 'wp', label: 'Write protect', checked: props.writeProtected },

@@ -221,9 +221,9 @@ export function FontPane() {
   return (
     <Pane id="font-panel" label="Fonts" onResetSettings={() => { resetSettingsGroup('font'); bump(); }}>
       <div id="font-row">
-        <button id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef?.click()}>Load</button>
-        <button id="font-search-btn" title="Hunt fonts in RAM" onClick={huntFonts}>Hunt</button>
-        <button id="font-clear-btn" title="Clear all fonts" onClick={() => {
+        <button class="btn btn-lg" id="font-add-btn" title="Load font (.ch8, 768 bytes)" onClick={() => fontInputRef?.click()}>Load</button>
+        <button class="btn btn-lg" id="font-search-btn" title="Hunt fonts in RAM" onClick={huntFonts}>Hunt</button>
+        <button class="btn btn-lg" id="font-clear-btn" title="Clear all fonts" onClick={() => {
           saveFontStore([]); setFontName(''); persistSetting('font', ''); bump();
           setStatus('Font list cleared');
         }}>Clear</button>

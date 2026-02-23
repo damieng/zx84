@@ -15,6 +15,7 @@ interface Props {
   title?: string;
   items: MenuItem[];
   onSelect: (value: string) => void;
+  size?: 'lg' | 'md' | 'sm';
 }
 
 export function DropDownMenuButton(props: Props) {
@@ -90,7 +91,7 @@ export function DropDownMenuButton(props: Props) {
     <>
       <button
         ref={btnRef}
-        class="ddmenu-btn"
+        class={`btn btn-${props.size ?? 'md'} ddmenu-btn`}
         title={props.title}
         onClick={() => setOpen(!open())}
       >

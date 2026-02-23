@@ -48,11 +48,12 @@ export function LoadSavePane() {
   return (
     <Pane id="snapshot-panel" label="Load / Save">
       <div id="snap-row">
-        <button id="snap-load-btn" title="Load file" onClick={() => snapInputRef?.click()}>
+        <button class="btn btn-lg" id="snap-load-btn" title="Load file" onClick={() => snapInputRef?.click()}>
           <HiOutlineFolderOpen /> Load
         </button>
         <button
           ref={saveButtonRef}
+          class="btn btn-lg"
           id="snap-save-btn"
           title="Save..."
           onClick={toggleMenu}

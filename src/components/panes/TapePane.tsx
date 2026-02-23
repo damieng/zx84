@@ -96,19 +96,19 @@ export function TapePane() {
   return (
     <Pane id="tape-panel" label="Tape" mono onResetSettings={() => { resetSettingsGroup('tape'); applyDisplaySettings(); }}>
       <div id="tape-controls">
-        <button title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
-        <button title="Previous block" onClick={tapePrev}><HiOutlineChevronLeft /></button>
+        <button class="btn btn-md" title="Rewind" onClick={tapeRewind}><HiOutlineBackward /></button>
+        <button class="btn btn-md" title="Previous block" onClick={tapePrev}><HiOutlineChevronLeft /></button>
         <button
           title={tapePlaying() ? 'Stop' : 'Play'}
-          class={tapePlaying() ? 'active' : ''}
+          class={`btn btn-md${tapePlaying() ? ' active' : ''}`}
           onClick={tapeTogglePlay}
         >{tapePlaying() ? <HiOutlineStop /> : <HiOutlinePlay />}</button>
         <button
           title="Pause"
-          class={tapePaused() ? 'active' : ''}
+          class={`btn btn-md${tapePaused() ? ' active' : ''}`}
           onClick={tapeTogglePause}
         ><HiOutlinePause /></button>
-        <button title="Next block" onClick={tapeNext}><HiOutlineChevronRight /></button>
+        <button class="btn btn-md" title="Next block" onClick={tapeNext}><HiOutlineChevronRight /></button>
         <DropDownMenuButton
           icon={<HiOutlineEllipsisVertical />}
           title="Tape options"

@@ -315,7 +315,7 @@ export function MemoryPane() {
           <option value="ascii"     selected={mode() === 'ascii'}    >ASCII</option>
         </select>
         <button
-          class="mem-go-btn"
+          class="btn btn-sm"
           classList={{ active: goOpen() }}
           title="Go to address"
           onClick={toggleGo}
@@ -337,7 +337,7 @@ export function MemoryPane() {
               if (e.key === 'Escape') setGoOpen(false);
             }}
           />
-          <button class="mem-go-confirm" onClick={() => scrollToAddr(addrText())}>Go</button>
+          <button class="btn btn-sm mem-go-confirm" onClick={() => scrollToAddr(addrText())}>Go</button>
         </div>
       </Show>
       <div class="mem-scroll" ref={scrollEl} onScroll={onScroll}>

@@ -49,11 +49,11 @@ export function HardwarePane() {
         />
       </div>
       <div id="cpu-controls">
-        <button id="rom-btn" title="Load ROM" onClick={() => romInputRef?.click()}>ROM Select</button>
+        <button class="btn btn-md" id="rom-btn" title="Load ROM" onClick={() => romInputRef?.click()}>ROM Select</button>
         <button
           id="cpu-mhz"
           title={turboMode() ? 'Switch to normal speed' : 'Toggle turbo speed'}
-          class={turboMode() ? 'active' : ''}
+          class={`btn btn-md${turboMode() ? ' active' : ''}`}
           onClick={toggleTurbo}
         >{clockSpeedText()}</button>
       </div>

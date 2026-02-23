@@ -72,13 +72,13 @@ export function DisassemblyPane() {
       <div class="disasm-toolbar">
         <button
           title={emulationPaused() ? 'Resume emulation' : 'Pause emulation'}
-          class={emulationPaused() ? 'active' : ''}
+          class={`btn btn-md${emulationPaused() ? ' active' : ''}`}
           onClick={togglePause}
         >{emulationPaused() ? <HiOutlinePlay /> : <HiOutlinePause />}</button>
-        <button title="Step Into (execute one instruction)" onClick={stepInto} disabled={!emulationPaused()}><HiOutlineArrowDownRight /></button>
-        <button title="Step Over (execute, stepping over CALLs)" onClick={stepOver} disabled={!emulationPaused()}><HiOutlineArrowTrendingDown /></button>
-        <button title="Step Out (run until RET)" onClick={stepOut} disabled={!emulationPaused()}><HiOutlineArrowUpRight /></button>
-        <button title="Step Frame (run to end of frame)" onClick={stepFrame} disabled={!emulationPaused()}><HiOutlineForward /></button>
+        <button class="btn btn-md" title="Step Into (execute one instruction)" onClick={stepInto} disabled={!emulationPaused()}><HiOutlineArrowDownRight /></button>
+        <button class="btn btn-md" title="Step Over (execute, stepping over CALLs)" onClick={stepOver} disabled={!emulationPaused()}><HiOutlineArrowTrendingDown /></button>
+        <button class="btn btn-md" title="Step Out (run until RET)" onClick={stepOut} disabled={!emulationPaused()}><HiOutlineArrowUpRight /></button>
+        <button class="btn btn-md" title="Step Frame (run to end of frame)" onClick={stepFrame} disabled={!emulationPaused()}><HiOutlineForward /></button>
         <Show when={tracing()} fallback={
           <DropDownMenuButton
             icon={<HiOutlinePencilSquare />}
@@ -95,7 +95,7 @@ export function DisassemblyPane() {
             }}
           />
         }>
-          <button class="active" title="Stop tracing and copy to clipboard" onClick={stopTrace}>Stop</button>
+          <button class="btn btn-md active" title="Stop tracing and copy to clipboard" onClick={stopTrace}>Stop</button>
         </Show>
       </div>
       <Show when={emulationPaused()}>

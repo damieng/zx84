@@ -213,6 +213,27 @@ body {
   margin-bottom: 6px;
 }
 
+/* ── Shared button system ─────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: #ddd; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.active { background: #ddf; border-color: #66c; color: #00c; }
+
+/* Compound selectors (specificity 0,2,0) beat .pane button (0,1,1) */
+.btn.btn-lg { padding: 5px 8px; font-size: 0.85rem; }
+.btn.btn-md { padding: 4px 8px; font-size: 0.8rem; }
+.btn.btn-sm { padding: 3px 6px; font-size: 0.75rem; }
+
 .pane select,
 .pane button {
   padding: 5px 8px;
@@ -698,21 +719,6 @@ input[type="range"]::-moz-range-thumb {
 
 #cpu-controls button {
   flex: 1;
-  padding: 4px 0;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.7rem;
-  cursor: pointer;
-}
-
-#cpu-controls button:hover { background: #ddd; }
-
-#cpu-controls button.active {
-  background: #ddf;
-  border-color: #66c;
-  color: #00c;
 }
 
 /* Multiface row */
@@ -879,21 +885,6 @@ input[type="range"]::-moz-range-thumb {
 
 #tape-controls button {
   flex: 1;
-  padding: 4px 0;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-#tape-controls button:hover { background: #ddd; }
-
-#tape-controls button.active {
-  background: #ddf;
-  border-color: #66c;
-  color: #00c;
 }
 
 
@@ -1149,21 +1140,6 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
 }
 
-.dev-controls button {
-  padding: 4px 8px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.dev-controls button:hover { background: #ddd; }
-.dev-controls button.active {
-  background: #ddf;
-  border-color: #66c;
-  color: #00c;
-}
 
 .dev-stats {
   font-family: var(--font-mono);
@@ -1194,37 +1170,15 @@ input[type="range"]::-moz-range-thumb {
 
 .disasm-toolbar button {
   flex: 1;
-  padding: 4px 0;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.disasm-toolbar button:hover { background: #ddd; }
-.disasm-toolbar button.active {
-  background: #ddf;
-  border-color: #66c;
-  color: #00c;
 }
 
 /* DropDownMenuButton */
 .ddmenu-btn {
   flex: 1;
-  padding: 4px 0;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.85rem;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
-.ddmenu-btn:hover { background: #ddd; }
 
 .ddmenu {
   position: fixed;
@@ -1353,23 +1307,6 @@ input[type="range"]::-moz-range-thumb {
 .mem-controls select:hover { background: #ddd; }
 
 /* Go-to button in the controls row: sized to its content by the auto grid column */
-.mem-go-btn {
-  padding: 3px 8px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.mem-go-btn:hover { background: #ddd; }
-
-.mem-go-btn.active {
-  background: #ddf;
-  border-color: #66c;
-  color: #00c;
-}
 
 /* Drop-down jump bar, shown below the controls row when the button is active */
 .mem-go-drop {
@@ -1393,16 +1330,7 @@ input[type="range"]::-moz-range-thumb {
 
 .mem-go-confirm {
   flex: 1;
-  padding: 3px 8px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  background: #eee;
-  color: #000;
-  font-size: 0.8rem;
-  cursor: pointer;
 }
-
-.mem-go-confirm:hover { background: #ddd; }
 
 .mem-scroll {
   height: 280px;
