@@ -1331,6 +1331,98 @@ input[type="range"]::-moz-range-thumb {
   background: #eef;
 }
 
+/* Memory inspector pane */
+.mem-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.mem-controls select {
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.mem-controls select:hover { background: #ddd; }
+
+/* Go-to button in the controls row: sized to its content by the auto grid column */
+.mem-go-btn {
+  padding: 3px 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.mem-go-btn:hover { background: #ddd; }
+
+.mem-go-btn.active {
+  background: #ddf;
+  border-color: #66c;
+  color: #00c;
+}
+
+/* Drop-down jump bar, shown below the controls row when the button is active */
+.mem-go-drop {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.mem-go-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: #000;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.mem-go-confirm {
+  flex: 1;
+  padding: 3px 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #eee;
+  color: #000;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.mem-go-confirm:hover { background: #ddd; }
+
+.mem-scroll {
+  height: 280px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.mem-scroll pre {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 15px;
+  color: #000;
+  margin: 0;
+  padding: 0 2px;
+  white-space: pre;
+}
+
 .save-menu {
   position: fixed;
   background: #fff;

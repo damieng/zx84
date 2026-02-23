@@ -26,6 +26,7 @@ import { DisassemblyPane } from '@/components/panes/DisassemblyPane.tsx';
 import { DevPane } from '@/components/panes/DevPane.tsx';
 import { TextPane } from '@/components/panes/TextPane.tsx';
 import { ChangelogPane } from '@/components/panes/ChangelogPane.tsx';
+import { MemoryPane } from '@/components/panes/MemoryPane.tsx';
 
 import { paneOrder } from '@/ui/panes.ts';
 import { needsGamepadPolling } from '@/store/settings.ts';
@@ -54,6 +55,7 @@ const PANE_COMPONENTS: Record<string, () => JSX.Element> = {
   'disasm-panel': DisassemblyPane,
   'dev-panel': DevPane,
   'changelog-panel': ChangelogPane,
+  'memory-panel': MemoryPane,
 };
 
 function renderPanes(side: 'left' | 'right') {

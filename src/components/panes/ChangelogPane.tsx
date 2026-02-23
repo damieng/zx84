@@ -4,6 +4,7 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.2',
     items: [
+      'Memory viewer pane added',
       'Drive pane UX improvements including LED',
       'CPC disk format detection fix',
       '+3 Force B: presence when empty option',
