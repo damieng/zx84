@@ -2,6 +2,13 @@ import { Pane } from '@/components/Pane.tsx';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.4',
+    items: [
+      'Copy protection detection improved',
+      'Paul Owens protection bypassed',
+      'Drive pane simplification'
+    ]
+  }, {
     version: '0.2.3',
     items: [
       'ROMs loaded from own domain',
