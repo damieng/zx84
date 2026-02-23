@@ -503,8 +503,8 @@ const detectHexagon: Detector = (image) => {
 };
 
 const detectPaulOwens: Detector = (image) => {
-  const t0 = trk(image, 0), t1 = trk(image, 1);
-  if (!t0 || t0.sectors.length !== 9 || !t1 || t1.sectors.length !== 0) return null;
+  const t0 = trk(image, 0);
+  if (!t0 || t0.sectors.length !== 9) return null;
   if (t0.sectors[2] && findPattern(t0.sectors[2].data, 'PAUL OWENS') >= 0) return 'Paul Owens';
   const t2 = trk(image, 2);
   if (t2?.sectors.length === 6 && t2.sectors[0]?.data.length === 256) return 'Paul Owens';
