@@ -216,6 +216,11 @@ Any one of:
 
 - T1 is intentionally unformatted or absent. READ_DATA or READ_ID on T1 should yield no sectors / error.
 - T2 may have non-standard sector count.
+- Final check issues READ_DATA to **unit=2** (HD/US byte=0x02), C=0, H=0, R=2, N=2.
+  On the +3, units 2/3 are aliases for physical drives 0/1 (only 2 drive-select lines
+  are wired). Unit=2 reads from the same disk as unit=0. The command should succeed
+  normally and return the sector data from T0S2.
+  (FUSE: `specplus3_fdc->drive[2] = &specplus3_drives[0]`)
 
 #### FDC Commands Used
 
@@ -223,12 +228,15 @@ Any one of:
 |---|---|
 | READ_ID | Probe T1 for expected empty response |
 | READ_DATA | Load data from T0 and T2+ |
+| READ_DATA to unit=2 | NOT_READY probe — anti-emulator check at loader exit |
 
 #### Emulation Status
 
 | Check | Status |
 |---|---|
 | Empty / unformatted tracks handled | ✅ (null track returns Sector Not Found) |
+| Unit aliasing: units 2/3 → drives 0/1 | ✅ Fixed — physUnit() helper in upd765a.ts |
+| NOT_READY returns ST1=0x00 (not MA) | ✅ Fixed — uPD765A spec: NR terminates before execution |
 | End-to-end tested | 🔲 Not confirmed |
 
 ---

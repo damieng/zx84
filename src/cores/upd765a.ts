@@ -209,9 +209,16 @@ export class UPD765A {
 
   get currentUnit(): number { return this.exUnit; }
 
-  get currentTrack(): number { return this.pcn[this.exUnit]; }
+  get currentTrack(): number { return this.pcn[this.physUnit(this.exUnit)]; }
 
-  getUnitTrack(unit: number): number { return this.pcn[unit & 3]; }
+  getUnitTrack(unit: number): number { return this.pcn[this.physUnit(unit)]; }
+
+  /**
+   * Resolve logical drive unit to physical drive index.
+   * On the +3 only 2 drive-select lines are wired: units 2/3 alias to 0/1.
+   * This matches FUSE's specplus3.c: drive[2]=drive[0], drive[3]=drive[1].
+   */
+  private physUnit(unit: number): number { return unit & 1; }
 
   get currentSector(): number {
     if (this.phase === Phase.Execution) return this.exR;
@@ -486,10 +493,11 @@ export class UPD765A {
     const unit = this.cmdBuf[1] & 0x03;
     const head = (this.cmdBuf[1] >> 2) & 1;
     // ST3: track 0 if pcn==0, two-side=1
-    let st3 = unit | (head << 2) | 0x08; // bit 3 = two-side
-    if (this.pcn[unit] === 0) st3 |= 0x10; // Track 0
-    if (this.disks[unit] || this.forceReady[unit]) st3 |= 0x20; // bit 5 = ready
-    if (this.writeProtect[unit]) st3 |= 0x40; // bit 6 = write protected
+    const phys = this.physUnit(unit);
+    let st3 = unit | (head << 2) | 0x08; // bit 3 = two-side (unit kept for ST3 drive bits)
+    if (this.pcn[phys] === 0) st3 |= 0x10; // Track 0
+    if (this.disks[phys] || this.forceReady[phys]) st3 |= 0x20; // bit 5 = ready
+    if (this.writeProtect[phys]) st3 |= 0x40; // bit 6 = write protected
     this.result([st3]);
   }
 
@@ -507,7 +515,7 @@ export class UPD765A {
   private cmdRecalibrate(): void {
     const unit = this.cmdBuf[1] & 0x03;
     this.log(`  → Unit=${unit} recalibrating to track 0`);
-    this.pcn[unit] = 0;
+    this.pcn[this.physUnit(unit)] = 0;
     this.intPending = true;
     this.intST0 = ST0_SEEK_END | unit;
     this.intPCN = 0;
@@ -519,7 +527,7 @@ export class UPD765A {
     const unit = this.cmdBuf[1] & 0x03;
     const ncn = this.cmdBuf[2];
     this.log(`  → Unit=${unit} seeking to cylinder ${ncn}`);
-    this.pcn[unit] = ncn;
+    this.pcn[this.physUnit(unit)] = ncn;
     this.intPending = true;
     this.intST0 = ST0_SEEK_END | unit;
     this.intPCN = ncn;
@@ -528,9 +536,10 @@ export class UPD765A {
 
   /** Look up the track at the current head position. */
   private getTrack(unit: number, head: number): DskTrack | null {
-    const disk = this.disks[unit];
+    const phys = this.physUnit(unit);
+    const disk = this.disks[phys];
     if (!disk) return null;
-    const cyl = this.pcn[unit];
+    const cyl = this.pcn[phys];
     if (cyl >= disk.numTracks) return null;
     if (head >= disk.numSides) return null;
     return disk.tracks[cyl][head];
@@ -554,10 +563,11 @@ export class UPD765A {
     const track = this.getTrack(unit, head);
 
     if (!track) {
-      // No disk or no track — abnormal termination
+      // No disk or no track — abnormal termination (NR detected before execution,
+      // so ST1/ST2 must be 0x00; MA flag only valid after attempting a read)
       this.log(`  ✗ No disk or track not found (C=${c}, H=${h})`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
-      this.result([st0, 0x01, 0x00, c, h, r, n]); // ST1=MA
+      this.result([st0, 0x00, 0x00, c, h, r, n]);
       return;
     }
 
@@ -576,7 +586,7 @@ export class UPD765A {
     const isWrite = cmd === CMD_WRITE_DATA || cmd === CMD_WRITE_DELETED;
 
     // Write-protected disk — reject with ST1 NW (Not Writeable)
-    if (isWrite && this.writeProtect[unit]) {
+    if (isWrite && this.writeProtect[this.physUnit(unit)]) {
       this.log(`  ✗ Write rejected — drive ${unit} is write-protected`);
       const st0 = ST0_ABNORMAL | (head << 2) | unit;
       this.result([st0, 0x02, 0x00, c, h, r, n]); // ST1=NW (bit 1)
@@ -659,10 +669,10 @@ export class UPD765A {
     const track = this.getTrack(unit, head);
 
     if (!track || track.sectors.length === 0) {
-      // No disk or empty track
+      // No disk or empty track — NR before execution, ST1/ST2=0
       this.log(`  ✗ No disk or empty track`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
-      this.result([st0, 0x01, 0x00, c, h, r, n]);
+      this.result([st0, 0x00, 0x00, c, h, r, n]);
       return;
     }
 
@@ -846,16 +856,17 @@ export class UPD765A {
     const track = this.getTrack(unit, head);
 
     if (!track || track.sectors.length === 0) {
-      // No disk or empty track
+      // No disk or empty track — NR before execution, ST1/ST2=0
       this.log(`  ✗ No disk or empty track for Read ID`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
-      this.result([st0, 0x01, 0x00, 0, 0, 0, 0]);
+      this.result([st0, 0x00, 0x00, 0, 0, 0, 0]);
       return;
     }
 
     // Cycle through sectors on repeated calls (ROM uses this to discover layout)
-    const idx = this.idIndex[unit] % track.sectors.length;
-    this.idIndex[unit] = idx + 1;
+    const physU = this.physUnit(unit);
+    const idx = this.idIndex[physU] % track.sectors.length;
+    this.idIndex[physU] = idx + 1;
     const sector = track.sectors[idx];
 
     this.log(`  → Unit=${unit} Head=${head} returning sector ID: C=${sector.c} H=${sector.h} R=${sector.r} N=${sector.n}`);
@@ -883,13 +894,14 @@ export class UPD765A {
     const gpl = this.cmdBuf[4];
     const d   = this.cmdBuf[5];
 
-    if (!this.disks[unit]) {
+    const physU = this.physUnit(unit);
+    if (!this.disks[physU]) {
       this.log(`  ✗ No disk in unit ${unit}`);
       const st0 = ST0_ABNORMAL | ST0_NOT_READY | (head << 2) | unit;
-      this.result([st0, 0x01, 0x00, 0, head, 0, n]);
+      this.result([st0, 0x00, 0x00, 0, head, 0, n]);
       return;
     }
-    if (this.writeProtect[unit]) {
+    if (this.writeProtect[physU]) {
       this.log(`  ✗ Drive ${unit} write-protected`);
       const st0 = ST0_ABNORMAL | (head << 2) | unit;
       this.result([st0, 0x02, 0x00, 0, head, 0, n]); // ST1 bit 1 = NW
@@ -921,10 +933,11 @@ export class UPD765A {
 
   /** Rebuild the current track from received sector IDs, then finish. */
   private finishFormat(): void {
-    const disk = this.disks[this.exUnit];
+    const physU = this.physUnit(this.exUnit);
+    const disk = this.disks[physU];
     if (!disk) { this.finishExecution(); return; }
 
-    const cyl    = this.pcn[this.exUnit];
+    const cyl    = this.pcn[physU];
     const head   = this.exHead;
     const sc     = this.exSC;
     const filler = this.exFiller;
