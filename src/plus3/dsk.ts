@@ -490,24 +490,35 @@ const detectAlkatraz: Detector = (image) => {
 
 const detectHexagon: Detector = (image) => {
   const t0 = trk(image, 0);
-  if (!t0 || t0.sectors.length !== 10) return null;
+  // Guard: T0 must have 10 sectors, 9th sector (index 8) must be 512 bytes, and disk must have > 2 tracks
+  if (!t0 || t0.sectors.length !== 10 || image.numTracks <= 2) return null;
+  if (t0.sectors[8]?.data.length !== 512) return null;
+  let unsigned: string | null = null;
   for (let t = 0; t < Math.min(4, image.numTracks); t++) {
     const track = trk(image, t);
     if (!track) continue;
-    for (const s of track.sectors) {
-      if (findPattern(s.data, 'HEXAGON DISK PROTECTION') >= 0) return 'Hexagon';
-      if (findPattern(s.data, 'HEXAGON Disk Protection') >= 0) return 'Hexagon';
+    for (let s = 0; s < track.sectors.length; s++) {
+      const sec = track.sectors[s];
+      if (findPattern(sec.data, 'HEXAGON DISK PROTECTION c 1989') >= 0) return `Hexagon (T${t}/S${s})`;
+      if (findPattern(sec.data, 'HEXAGON Disk Protection c 1989') >= 0) return `Hexagon (T${t}/S${s})`;
+    }
+    // Unsigned: single-sector track with N=6, ST1=0x20, ST2=0x60
+    if (track.sectors.length === 1) {
+      const s = track.sectors[0];
+      if (s.n === 6 && s.st1 === 0x20 && s.st2 === 0x60) unsigned = 'Hexagon (unsigned)';
     }
   }
-  return null;
+  return unsigned;
 };
 
 const detectPaulOwens: Detector = (image) => {
   const t0 = trk(image, 0);
-  if (!t0 || t0.sectors.length !== 9) return null;
-  if (t0.sectors[2] && findPattern(t0.sectors[2].data, 'PAUL OWENS') >= 0) return 'Paul Owens';
+  // Guard: T0 must have 9 sectors, disk must have > 10 tracks, T1 must be unformatted
+  if (!t0 || t0.sectors.length !== 9 || image.numTracks <= 10) return null;
+  if (trk(image, 1) !== null) return null;
+  if (t0.sectors[2] && findPattern(t0.sectors[2].data, 'PAUL OWENS\x80PROTECTION SYS') >= 0) return 'Paul Owens';
   const t2 = trk(image, 2);
-  if (t2?.sectors.length === 6 && t2.sectors[0]?.data.length === 256) return 'Paul Owens';
+  if (t2?.sectors.length === 6 && t2.sectors[0]?.data.length === 256) return 'Paul Owens (unsigned)';
   return null;
 };
 
@@ -519,9 +530,14 @@ const detectThreeInch: Detector = (image) => {
 };
 
 const detectFrontier: Detector = (image) => {
+  if (image.numTracks <= 10) return null;
   const t1 = trk(image, 1);
   if (!t1 || t1.sectors.length === 0) return null;
   if (t1.sectors[0] && findPattern(t1.sectors[0].data, 'W DISK PROTECTION SYSTEM. (C) 1990 BY NEW FRONTIER SOFT.') >= 0) return 'Frontier';
+  // Unsigned: T9 has 1 sector, T0S0 is 4096 bytes with no ID errors
+  const t9 = trk(image, 9);
+  const t0s0 = trk(image, 0)?.sectors[0];
+  if (t9?.sectors.length === 1 && t0s0?.data.length === 4096 && t0s0.st1 === 0) return 'Frontier (unsigned)';
   return null;
 };
 
@@ -529,13 +545,16 @@ const detectPms: Detector = (image) => {
   const t0s0 = trk(image, 0)?.sectors[0];
   if (!t0s0) return null;
   const sigs: [string, string][] = [
-    ['P.M.S. 1986', '[C] P.M.S. 1986'],
-    ['P.M.S. Loader 1986', 'P.M.S. LOADER [C]1986'],
-    ['P.M.S. 1987', 'P.M.S.LOADER [C]1987'],
+    ['P.M.S. 1986',          '[C] P.M.S. 1986'],
+    ['P.M.S. Loader 1986 v1', 'P.M.S. LOADER [C]1986'],   // with space
+    ['P.M.S. Loader 1986 v2', 'P.M.S.LOADER [C]1986'],    // no space
+    ['P.M.S. 1987',           'P.M.S.LOADER [C]1987'],
   ];
   for (const [name, pat] of sigs) {
     if (findPattern(t0s0.data, pat) >= 0) return name;
   }
+  // Unsigned: T0 formatted, T1 unformatted, T2 formatted
+  if (image.numTracks > 2 && trk(image, 1) === null && trk(image, 2) !== null) return 'P.M.S. (unsigned)';
   return null;
 };
 
@@ -545,6 +564,25 @@ const detectWrm: Detector = (image) => {
   const s9 = t8.sectors[9];
   if (!s9 || s9.data.length <= 128) return null;
   if (findPattern(s9.data, 'W.R.M Disc') === 0 && findPattern(s9.data, 'Protection') >= 0) return 'W.R.M Disc Protection';
+  return null;
+};
+
+const detectAmsoft: Detector = (image) => {
+  if (image.numTracks <= 3) return null;
+  const t3 = trk(image, 3);
+  if (!t3 || t3.sectors.length === 0 || t3.sectors[0].data.length !== 512) return null;
+  const data = t3.sectors[0].data;
+  if (findPattern(data, 'Amsoft disc protection system') > 1 && findPattern(data, 'EXOPAL') >= 0) return 'Amsoft/EXOPAL';
+  return null;
+};
+
+const detectStudioB: Detector = (image) => {
+  if (image.numTracks <= 3) return null;
+  const t0 = trk(image, 0), t2 = trk(image, 2);
+  // T0 must be formatted, T1 must be unformatted, T2 must be formatted
+  if (!t0 || t0.sectors.length === 0 || trk(image, 1) !== null || !t2) return null;
+  if (t0.sectors[0] && findPattern(t0.sectors[0].data, 'Disc format (c) 1986 Studio B Ltd.') >= 0) return 'Studio B';
+  if (t2.sectors[0] && findPattern(t2.sectors[0].data, 'DISCLOC') >= 0) return 'DiscLoc/Oddball';
   return null;
 };
 
@@ -617,11 +655,13 @@ const detectArmourloc: Detector = (image) => {
   return null;
 };
 
+// Note: detectHerbulot and detectKbi are handled separately in detectProtection
+// because they can combine into a single result string.
 const DETECTORS: Detector[] = [
   detectAlkatraz, detectFrontier, detectHexagon, detectPaulOwens,
   detectSpeedlock, detectThreeInch, detectWrm, detectPms,
-  detectPlayers, detectInfogrames, detectRainbowArts, detectHerbulot,
-  detectKbi, detectDiscsys, detectArmourloc,
+  detectPlayers, detectInfogrames, detectRainbowArts,
+  detectDiscsys, detectAmsoft, detectArmourloc, detectStudioB,
 ];
 
 function detectProtection(image: DskImage): string {
@@ -637,6 +677,13 @@ function detectProtection(image: DskImage): string {
     const result = detect(image);
     if (result) return result;
   }
+
+  // Herbulot and KBI are non-exclusive: both can be present on the same disk.
+  const kbi = detectKbi(image);
+  const herbulot = detectHerbulot(image);
+  if (kbi && herbulot) return `${kbi} + ${herbulot}`;
+  if (kbi) return kbi;
+  if (herbulot) return herbulot;
 
   if (!uniform && errors) return 'Unknown';
   return '';
