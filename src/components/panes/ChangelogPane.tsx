@@ -2,6 +2,11 @@ import { Pane } from '@/components/Pane.tsx';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.5',
+    items: [
+      'BASIC viewer fix token spaces',
+    ]
+  }, {
     version: '0.2.4',
     items: [
       '+3 copy protection detection improved',
