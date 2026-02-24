@@ -41,7 +41,12 @@
       "mcp__zx84__multiface",
       "mcp__zx84__frame_trace",
       "mcp__zx84__set_register",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "mcp__zx84__disk_trace",
+      "mcp__zx84__delete_port_watchpoint",
+      "mcp__zx84__port_watchpoint",
+      "mcp__zx84__save",
+      "mcp__zx84__fdc_log"
     ]
   },
   "enabledMcpjsonServers": [
