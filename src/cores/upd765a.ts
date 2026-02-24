@@ -149,6 +149,7 @@ export class UPD765A {
   private exC = 0;
   private exH = 0;
   private exN = 0;
+  private exCmdN = 0;    // N from the command (may differ from sector ID's N)
   /** Reference to current track for write-back */
   private exTrack: DskTrack | null = null;
   /** Status registers from sector (for CRC error reporting) */
@@ -390,7 +391,7 @@ export class UPD765A {
 
     const sector = track.sectors[idx];
     if (this.exWriting) {
-      this.exBuf = new Uint8Array(sector.data.length);
+      this.exBuf = new Uint8Array(128 << this.exCmdN);
       this.exPos = 0;
     } else {
       this.exBuf = this.prepareReadBuffer(sector);
@@ -407,30 +408,40 @@ export class UPD765A {
   }
 
   /**
-   * Prepare sector data for reading. For weak sectors (st2 & 0x20) or
-   * uniform-fill sectors (Alkatraz protection), return randomized data.
+   * Prepare sector data for reading.
+   *
+   * Rule: return exactly (128 << physN) bytes, where physN is the sector's own
+   * N field (the physical data field size on disk).
+   * - cmdN is used only to detect undersized sectors (sector.n < cmdN); it
+   *   does NOT expand the transfer to cmdN bytes.  On real hardware the FDC
+   *   CRC-terminates after the physical sector bytes and the execution phase
+   *   ends there — no extra bytes are pushed into the DMA buffer.
+   * - Short sector (data.length < 128 << sector.n): fill tail with random data.
+   * - Weak/CRC-error flag (st2 & 0x20): randomise all returned data.
    */
   private prepareReadBuffer(sector: DskSector): Uint8Array {
-    const expectedSize = 128 << sector.n;
+    // Physical transfer size is always determined by the sector's own N field.
+    // Undersized sectors (sector.n < cmdN) only affect status reporting in
+    // cmdReadWrite — the number of bytes transferred here is always physSize.
+    const physSize = 128 << sector.n;
 
-    // Short sector: actual data is smaller than N specifies.
-    // On real hardware the FDC delivers the real bytes then reads garbage
-    // past the sector's CRC until it fills the full N-sized window.
-    if (sector.data.length < expectedSize) {
-      const buf = new Uint8Array(expectedSize);
+    // Short sector: fewer bytes stored than the N field claims.
+    // Deliver real bytes then pad the remainder with random data.
+    if (sector.data.length < physSize) {
+      const buf = new Uint8Array(physSize);
       buf.set(sector.data);
-      for (let i = sector.data.length; i < expectedSize; i++) buf[i] = Math.random() * 256;
+      for (let i = sector.data.length; i < physSize; i++) buf[i] = Math.floor(Math.random() * 256);
       return buf;
     }
 
     // Explicit weak flag (ST2 bit 5 = Data CRC error). Used by Speedlock disks.
     // Note: ST2 bit 6 (0x40) is Control Mark (deleted data), NOT a weak sector!
     if (sector.st2 & 0x20) {
-      return this.randomizeSector(sector.data);
+      return this.randomizeSector(sector.data.subarray(0, physSize));
     }
 
-    // Normal sector — return original data
-    return sector.data;
+    // Normal sector — return exactly physSize bytes
+    return sector.data.subarray(0, physSize);
   }
 
   /** Create a copy of sector data with ~10% random byte variations. */
@@ -662,14 +673,10 @@ export class UPD765A {
     this.latchWriting = isWrite;
     this.latchFrames = 25; // ~0.5s at 50fps
 
-    // OVERLAPPING SECTOR SUPPORT:
-    // We use sector.data.length, which may NOT match the size claimed by
-    // the N parameter (from command or sector ID). Speedlock protection
-    // uses sectors where the ID claims 512 bytes (N=2) but only 256 bytes
-    // of physical data exist. We read what's actually there and move on.
-    // No validation, no errors - just like real hardware.
+    this.exCmdN = n;  // Command N — controls transfer size (may differ from sector ID N)
+
     if (isWrite) {
-      this.exBuf = new Uint8Array(sector.data.length);
+      this.exBuf = new Uint8Array(128 << n);
       this.exPos = 0;
     } else {
       this.exBuf = this.prepareReadBuffer(sector);
@@ -679,8 +686,17 @@ export class UPD765A {
     // CRC ERROR SUPPORT: Capture sector error flags (critical for Speedlock!)
     // Speedlock checks that sectors with intentional CRC errors return the
     // proper error status. If we "fix" errors or return ST1/ST2=0, it fails.
-    this.exST1 = sector.st1;
-    this.exST2 = sector.st2;
+    //
+    // EXCEPTION — undersized protection sectors (sector.n < command N):
+    // These sectors have a smaller N in their ID than the command requests.
+    // They were written with DDAM on the original disk (deleted data AM).
+    // Standard DSK copiers capture data CRC status unreliably for such sectors
+    // and may store spurious DE/DD error bits. Clear them so the result matches
+    // what a genuine DDAM read-without-error would produce.
+    // This does NOT affect Speedlock (sector.n == cmdN there) or Alkatraz.
+    const sectorIsUndersized = sector.n < n;
+    this.exST1 = sectorIsUndersized ? 0 : sector.st1;
+    this.exST2 = sectorIsUndersized ? 0 : sector.st2;
 
     // COPY-PROTECTION SINGLE-SECTOR MODE:
     // If the sector's C field doesn't match the physical cylinder, this is a
@@ -699,14 +715,21 @@ export class UPD765A {
     // the command type. For READ_DELETED_DATA, a sector WITH DDAM is the
     // expected type, so CM should be clear. A sector WITHOUT DDAM is a
     // mismatch, so CM should be set.
-    const sectorHasDDAM = !!(sector.st2 & 0x40);
-    const cmdExpectsDDAM = (cmd === CMD_READ_DELETED || cmd === CMD_WRITE_DELETED);
-    if (sectorHasDDAM === cmdExpectsDDAM) {
-      // Address mark matches command type — clear CM
-      this.exST2 &= ~0x40;
-    } else {
-      // Address mark mismatch — set CM
-      this.exST2 |= 0x40;
+    //
+    // EXCEPTION — undersized protection sectors (sector.n < command N):
+    // These are intentionally non-standard and written with DDAM on the original
+    // disk. exST1/exST2 were already cleared above for these sectors, so there
+    // is no CM to calculate (exST2 is already 0). Skip CM calculation entirely.
+    if (!sectorIsUndersized) {
+      const sectorHasDDAM = !!(sector.st2 & 0x40);
+      const cmdExpectsDDAM = (cmd === CMD_READ_DELETED || cmd === CMD_WRITE_DELETED);
+      if (sectorHasDDAM === cmdExpectsDDAM) {
+        // Address mark matches command type — clear CM
+        this.exST2 &= ~0x40;
+      } else {
+        // Address mark mismatch — set CM
+        this.exST2 |= 0x40;
+      }
     }
 
     this.phase = Phase.Execution;

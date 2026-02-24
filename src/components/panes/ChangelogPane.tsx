@@ -4,8 +4,9 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.4',
     items: [
-      'Copy protection detection improved',
-      'Paul Owens protection bypassed',
+      '+3 copy protection detection improved',
+      '+3 Paul Owens protection bypassed',
+      '+3 Hexagon protection bypassed',
       'Drive pane simplification'
     ]
   }, {
