@@ -4,7 +4,7 @@
  * Responsibilities:
  * - Step into/over/out execution
  * - Breakpoint management
- * - Execution tracing (full/contention/portio modes)
+ * - Execution tracing (full/portio modes)
  * - CPU state inspection and disassembly
  */
 
@@ -13,7 +13,7 @@ import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne } from '@/debug/z80-disasm.ts';
 import { hex8, hex16 } from '@/utils/hex.ts';
 
-export type TraceMode = 'full' | 'contention' | 'portio';
+export type TraceMode = 'full' | 'portio';
 
 export class DebugManager {
   /** Address of a temporary "run to" breakpoint to clean up on hit */

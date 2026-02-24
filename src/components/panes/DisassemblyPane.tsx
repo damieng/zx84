@@ -85,13 +85,12 @@ export function DisassemblyPane() {
             title="Start tracing (copies to clipboard on stop)"
             items={[
               { value: 'full', label: 'Full' },
-              { value: 'contention', label: 'Contention' },
               { value: 'portio', label: 'Port IO' },
               { value: 'loopanalysis', label: 'Loop' },
             ]}
             onSelect={(mode) => {
               if (mode === 'loopanalysis') copyCpuState();
-              else startTrace(mode as 'full' | 'contention' | 'portio');
+              else startTrace(mode as 'full' | 'portio');
             }}
           />
         }>

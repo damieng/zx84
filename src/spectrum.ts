@@ -155,7 +155,7 @@ export class Spectrum {
   private totalRenderLines = 0;
   /** Execution trace */
   private _tracing = false;
-  private _traceMode: 'full' | 'contention' | 'portio' = 'full';
+  private _traceMode: 'full' | 'portio' = 'full';
   private _traceBuffer: string[] = [];
   /** Loop detection (full mode): direct-mapped cache of PC → register hash */
   private _traceLoopPC = new Int32Array(1024).fill(-1);
@@ -246,7 +246,7 @@ export class Spectrum {
 
   /** Trace state accessors for io-ports.ts */
   get tracing(): boolean { return this._tracing; }
-  get traceMode(): 'full' | 'contention' | 'portio' { return this._traceMode; }
+  get traceMode(): 'full' | 'portio' { return this._traceMode; }
 
   /** Flush pending pixels up to the current beam position.
    *  Called from the port handler BEFORE updating borderColor so that
@@ -294,21 +294,6 @@ export class Spectrum {
       if (entry.pcs.size < 32) entry.pcs.add(pc);
       if (entry.vals.size < 64) entry.vals.add(val);
       return;
-    } else if (this._traceMode === 'contention' && pc >= 0x4000) {
-      const frameTStates = this.cpu.tStates - this.contention.frameStartTStates;
-      const line = ((frameTStates - this.contention.timing.contentionStart) / this.contention.timing.tStatesPerLine) | 0;
-      const contended = this.contention.isContended(pc);
-      const isULA = (port & 1) === 0;
-      const label = this.portLabel(port);
-      // Log ULA reads from contended memory (contention probes) and
-      // reads from unrecognised ports (potential floating bus reads)
-      if (dir === 'IN' && (contended || !label)) {
-        const tag = isULA && contended ? ' (contention probe)' :
-                    !label ? ` (floating bus? ${val === 0xFF ? 'idle' : 'VRAM'})` : '';
-        this._traceBuffer.push(
-          `${hex16(pc)}  IN port=${hex16(port)} val=${hex8(val)} fT=${frameTStates} line=${line}${tag}`
-        );
-      }
     }
     if (this._traceBuffer.length >= 500_000) this._tracing = false;
   }
@@ -845,7 +830,7 @@ export class Spectrum {
     );
   }
 
-  startTrace(mode: 'full' | 'contention' | 'portio' = 'full'): void {
+  startTrace(mode: 'full' | 'portio' = 'full'): void {
     this._traceBuffer = [];
     this._traceMode = mode;
     this._traceLoopPC.fill(-1);

@@ -99,12 +99,11 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `trace` | `mode` (`full`/`contention`/`portio`) | Start a trace. |
+| `trace` | `mode` (`full`/`portio`) | Start a trace. |
 | `stop_trace` | — | Stop and return results. Traces over 200 lines are written to a file. |
 | `frame_trace` | — | Run one frame logging every instruction: T-state, beam position, contention delays, border changes, and VRAM writes. Always writes to file. |
 
 - **full** — every instruction executed
-- **contention** — contended cycle info
 - **portio** — port I/O only (great for FDC debugging)
 
 ### Screen
