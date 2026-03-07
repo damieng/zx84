@@ -99,12 +99,13 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `trace` | `mode` (`full`/`portio`) | Start a trace. |
+| `trace` | `mode` (`full`/`portio`/`zxtl`) | Start a trace. |
 | `stop_trace` | — | Stop and return results. Traces over 200 lines are written to a file. |
 | `frame_trace` | — | Run one frame logging every instruction: T-state, beam position, contention delays, border changes, and VRAM writes. Always writes to file. |
 
-- **full** — every instruction executed
+- **full** — every instruction executed (PC ≥ 0x4000, loop detection)
 - **portio** — port I/O only (great for FDC debugging)
+- **zxtl** — ZXTL V0001 standardised format: every instruction with full register dump, including ROM
 
 ### Screen
 

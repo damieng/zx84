@@ -13,7 +13,7 @@ import { Z80 } from '@/cores/Z80.ts';
 import { disasmOne } from '@/debug/z80-disasm.ts';
 import { hex8, hex16 } from '@/utils/hex.ts';
 
-export type TraceMode = 'full' | 'portio';
+export type TraceMode = 'full' | 'portio' | 'zxtl';
 
 export class DebugManager {
   /** Address of a temporary "run to" breakpoint to clean up on hit */

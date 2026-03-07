@@ -86,11 +86,12 @@ export function DisassemblyPane() {
             items={[
               { value: 'full', label: 'Full' },
               { value: 'portio', label: 'Port IO' },
+              { value: 'zxtl', label: 'ZXTrace' },
               { value: 'loopanalysis', label: 'Loop' },
             ]}
             onSelect={(mode) => {
               if (mode === 'loopanalysis') copyCpuState();
-              else startTrace(mode as 'full' | 'portio');
+              else startTrace(mode as 'full' | 'portio' | 'zxtl');
             }}
           />
         }>

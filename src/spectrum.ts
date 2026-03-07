@@ -155,7 +155,7 @@ export class Spectrum {
   private totalRenderLines = 0;
   /** Execution trace */
   private _tracing = false;
-  private _traceMode: 'full' | 'portio' = 'full';
+  private _traceMode: 'full' | 'portio' | 'zxtl' = 'full';
   private _traceBuffer: string[] = [];
   /** Loop detection (full mode): direct-mapped cache of PC → register hash */
   private _traceLoopPC = new Int32Array(1024).fill(-1);
@@ -165,6 +165,10 @@ export class Spectrum {
   /** Port IO tally (portio mode) */
   private _portTallyIn: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
   private _portTallyOut: Map<number, { count: number; pcs: Set<number>; vals: Set<number> }> | null = null;
+
+  /** ZXTL trace: previous instruction PC and length for jump detection */
+  private _zxtlPrevPC = -1;
+  private _zxtlPrevLen = 0;
 
   /** Loader detection: auto-start tape based on edge-detection loop patterns */
   loaderDetector = new LoaderDetector();
@@ -246,7 +250,7 @@ export class Spectrum {
 
   /** Trace state accessors for io-ports.ts */
   get tracing(): boolean { return this._tracing; }
-  get traceMode(): 'full' | 'portio' { return this._traceMode; }
+  get traceMode(): 'full' | 'portio' | 'zxtl' { return this._traceMode; }
 
   /** Flush pending pixels up to the current beam position.
    *  Called from the port handler BEFORE updating borderColor so that
@@ -552,7 +556,9 @@ export class Spectrum {
           break;
         }
         if (this._tracing && this._traceMode === 'full' && this.cpu.pc >= 0x4000) this.captureTraceLine();
+        const zxtlPC = this._tracing && this._traceMode === 'zxtl' ? this.cpu.pc : -1;
         this.cpu.step();
+        if (zxtlPC >= 0) this.captureZxtlLine(zxtlPC);
         // Break mid-frame if a port watchpoint fired during this instruction
         if (this.portWatchHit !== null) break;
       }
@@ -830,7 +836,7 @@ export class Spectrum {
     );
   }
 
-  startTrace(mode: 'full' | 'portio' = 'full'): void {
+  startTrace(mode: 'full' | 'portio' | 'zxtl' = 'full'): void {
     this._traceBuffer = [];
     this._traceMode = mode;
     this._traceLoopPC.fill(-1);
@@ -841,13 +847,19 @@ export class Spectrum {
       this._portTallyIn = new Map();
       this._portTallyOut = new Map();
     }
+    if (mode === 'zxtl') {
+      this._zxtlPrevPC = -1;
+      this._zxtlPrevLen = 0;
+      this._traceBuffer.push('ZXTL V0001, ZX84 Emulator, JUMPS ADDRESS CYCLES MEM4 DISASSEMBLY REGS');
+      this._traceBuffer.push('J   Cycle Addr. +0 +1 +2 +3 DISASSEMBLY          A  F  B  C  D  E  H  L  XH XL YH YL SP   PC   W  Z  I  R');
+    }
     this._tracing = true;
   }
 
   stopTrace(): string {
     this._tracing = false;
     if (this._traceMode === 'portio') return this.formatPortTally();
-    if (this._traceLoopCount > 0) {
+    if (this._traceMode === 'full' && this._traceLoopCount > 0) {
       this._traceBuffer.push(`      ... loops back to ${hex16(this._traceLoopAddr)} x${this._traceLoopCount}`);
     }
     return this._traceBuffer.join('\n');
@@ -887,6 +899,43 @@ export class Spectrum {
     this._traceBuffer.push(ctx
       ? `${addr}  ${mnem.padEnd(24)} ${ctx}`
       : `${addr}  ${mnem}`);
+    if (this._traceBuffer.length >= 500_000) this._tracing = false;
+  }
+
+  /**
+   * Capture one ZXTL trace line.  Called after cpu.step() with the pre-step PC
+   * so register values reflect the result of the executed instruction.
+   */
+  private captureZxtlLine(prePC: number): void {
+    const cpu = this.cpu;
+    const mem = cpu.memory;
+
+    // Disassemble the instruction that was at prePC
+    const dl = disasmOne(mem, prePC);
+    const mnem = stripMarkers(dl.text);
+
+    // Jump detection: is prePC non-sequential from previous instruction?
+    const isJump = this._zxtlPrevPC >= 0 &&
+      prePC !== ((this._zxtlPrevPC + this._zxtlPrevLen) & 0xFFFF);
+    this._zxtlPrevPC = prePC;
+    this._zxtlPrevLen = dl.length;
+
+    // Format: J Cycle Addr MEM4 DISASM REGS
+    this._traceBuffer.push(
+      `${isJump ? '*' : ' '} ${String(cpu.tStates).padStart(7)} ${String(prePC).padStart(5)} ` +
+      `${hex8(mem[prePC])} ${hex8(mem[(prePC + 1) & 0xFFFF])} ` +
+      `${hex8(mem[(prePC + 2) & 0xFFFF])} ${hex8(mem[(prePC + 3) & 0xFFFF])} ` +
+      `${mnem.padEnd(20)} ` +
+      `${hex8(cpu.a)} ${hex8(cpu.f)} ` +
+      `${hex8((cpu.bc >> 8) & 0xFF)} ${hex8(cpu.bc & 0xFF)} ` +
+      `${hex8((cpu.de >> 8) & 0xFF)} ${hex8(cpu.de & 0xFF)} ` +
+      `${hex8((cpu.hl >> 8) & 0xFF)} ${hex8(cpu.hl & 0xFF)} ` +
+      `${hex8((cpu.ix >> 8) & 0xFF)} ${hex8(cpu.ix & 0xFF)} ` +
+      `${hex8((cpu.iy >> 8) & 0xFF)} ${hex8(cpu.iy & 0xFF)} ` +
+      `${hex16(cpu.sp)} ${hex16(cpu.pc)} ` +
+      `${hex8((cpu.memptr >> 8) & 0xFF)} ${hex8(cpu.memptr & 0xFF)} ` +
+      `${hex8(cpu.i)} ${hex8(cpu.r)}`
+    );
     if (this._traceBuffer.length >= 500_000) this._tracing = false;
   }
 
