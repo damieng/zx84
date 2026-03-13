@@ -57,6 +57,10 @@ export function installMemoryHooks(s: Spectrum): void {
       if (s.multiface.pagedIn) {
         if (addr < 0x2000) return; // MF ROM — discard
         // 0x2000-0x3FFF: MF RAM — allow through
+      } else if (s.vtx5000.enabled && s.vtx5000.vtxRomPaged && addr >= 0x2000) {
+        // VTX-5000: 0x2000-0x3FFF is RAM on real hardware — allow through
+        // (only when VTX ROM is paged; when Spectrum ROM is paged, all of
+        // slot 0 is ROM and writes are discarded)
       } else if (!memory.specialPaging) {
         return; // Normal ROM — discard
       }
@@ -140,6 +144,13 @@ export function wirePortIO(s: Spectrum): void {
         s.fdc.writeData(val);
         s.activity.fdcAccesses++;
       }
+    }
+
+    // VTX-5000 8251 USART ports (48K only, active when VTX-5000 enabled)
+    if (s.vtx5000.enabled) {
+      const lo = port & 0xFF;
+      if (lo === 0xFF) { s.vtx5000.writeControl(val); return; }
+      if (lo === 0x7F) { s.vtx5000.writeData(val); return; }
     }
 
     // AMX mouse PIO control ports (active when AMX enabled, A7=0)
@@ -296,6 +307,13 @@ export function wirePortIO(s: Spectrum): void {
         if (s.multiface.variant === 'MF1') return s.joystick.state;
         return 0xFF;
       }
+    }
+
+    // VTX-5000 8251 USART ports (48K only, active when VTX-5000 enabled)
+    if (s.vtx5000.enabled) {
+      const lo = port & 0xFF;
+      if (lo === 0xFF) return s.vtx5000.readStatus();
+      if (lo === 0x7F) return s.vtx5000.readData();
     }
 
     // Kempston joystick: bits 5-7 of low byte all zero

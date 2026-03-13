@@ -31,6 +31,7 @@ import { KempstonMouse } from '@/peripherals/kempston-mouse.ts';
 import { AmxMouse } from '@/peripherals/amx-mouse.ts';
 import { AudioMixer } from '@/peripherals/audio-mixer.ts';
 import { Multiface } from '@/peripherals/multiface.ts';
+import { VTX5000 } from '@/peripherals/vtx5000.ts';
 import { hex8, hex16 } from '@/utils/hex.ts';
 import { createVariant, type MachineVariant } from '@/variants/index.ts';
 
@@ -119,6 +120,9 @@ export class Spectrum {
 
   /** Multiface peripheral (MF1/MF128/MF3) */
   multiface = new Multiface();
+
+  /** VTX-5000 viewdata modem peripheral (48K only) */
+  vtx5000 = new VTX5000();
 
   private running = false;
   private starting = false;
@@ -246,6 +250,24 @@ export class Spectrum {
     this._cellRenderOffset = this.variant.cellRenderOffset;
     installMemoryHooks(this);
     wirePortIO(this);
+
+    // VTX-5000: wire ROM paging callback driven by the 8251's RTS output.
+    // When RTS changes, swap slot 0 between VTX ROM+RAM and Spectrum ROM.
+    // 48K only: ROM is always romPages[1], no banking.
+    this.vtx5000.onRomPage = (rts: boolean) => {
+      if (!this.vtx5000.enabled || !this.vtx5000.romLoaded) return;
+      if (rts && this.vtx5000.vtxRomPaged) {
+        // RTS=1 → page in Spectrum ROM.  Save VTX RAM first.
+        this.vtx5000.vtxRam.set(this.cpu.memory.subarray(0x2000, 0x4000));
+        this.cpu.memory.set(this.memory.romPages[1], 0);
+        this.vtx5000.vtxRomPaged = false;
+      } else if (!rts && !this.vtx5000.vtxRomPaged) {
+        // RTS=0 → page in VTX ROM + RAM
+        this.cpu.memory.set(this.vtx5000.vtxRom.subarray(0, this.vtx5000.romSize), 0);
+        this.cpu.memory.set(this.vtx5000.vtxRam, 0x2000);
+        this.vtx5000.vtxRomPaged = true;
+      }
+    };
   }
 
   /** Trace state accessors for io-ports.ts */
@@ -306,6 +328,9 @@ export class Spectrum {
     this.memory.loadROM(data);
     this.memory.applyBanking();
     this.cpu.memory = this.memory.flat;
+    if (this.variant.is48K && this.vtx5000.enabled && this.vtx5000.romLoaded) {
+      this.vtx5000.applyROM(this.cpu.memory);
+    }
     this.setStatus('ROM loaded');
   }
 
@@ -327,6 +352,10 @@ export class Spectrum {
     this.fdc.reset();
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
+    this.vtx5000.reset();
+    if (this.variant.is48K && this.vtx5000.enabled && this.vtx5000.romLoaded) {
+      this.vtx5000.applyROM(this.cpu.memory);
+    }
     this.joystick.reset();
     this.kempstonMouse.reset();
     this.amxMouse.reset();

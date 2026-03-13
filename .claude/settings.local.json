@@ -46,7 +46,8 @@
       "mcp__zx84__delete_port_watchpoint",
       "mcp__zx84__port_watchpoint",
       "mcp__zx84__save",
-      "mcp__zx84__fdc_log"
+      "mcp__zx84__fdc_log",
+      "mcp__zx84__vtx5000"
     ]
   },
   "enabledMcpjsonServers": [

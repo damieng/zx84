@@ -217,6 +217,20 @@ export async function createMachine(): Promise<boolean> {
   applyDisplaySettings();
   resetSpeedTracking();
 
+  // Apply VTX-5000 settings BEFORE loadROM/reset so vtx5000.romLoaded is true
+  // when applyROM is called inside loadROM() and reset().
+  spectrum.vtx5000.enabled = settings.vtx5000Enabled() && spectrum.variant.is48K;
+  if (spectrum.vtx5000.enabled) {
+    await loadVTX5000ROM(spectrum);
+  }
+
+  // Apply Multiface settings
+  spectrum.multiface.variant = variantForModel(model);
+  spectrum.multiface.enabled = settings.multifaceEnabled();
+  if (spectrum.multiface.enabled) {
+    loadMultifaceROM(spectrum).catch(err => console.warn('MF ROM load failed:', err));
+  }
+
   let hmrRestored = false;
   if (romData) {
     spectrum.loadROM(romData);
@@ -227,13 +241,6 @@ export async function createMachine(): Promise<boolean> {
     if (!hmrRestored) {
       spectrum.start();
     }
-  }
-
-  // Apply Multiface settings
-  spectrum.multiface.variant = variantForModel(model);
-  spectrum.multiface.enabled = settings.multifaceEnabled();
-  if (spectrum.multiface.enabled) {
-    loadMultifaceROM(spectrum).catch(err => console.warn('MF ROM load failed:', err));
   }
 
   // Apply saved AY stereo mode
@@ -851,6 +858,35 @@ export async function loadMultifaceROM(s: Spectrum): Promise<boolean> {
   console.log('[MF] ROM loaded: variant=%s size=%d byte66=%s',
     variant, data.length, data[0x66]?.toString(16) ?? 'undef');
   setStatus(`${variantLabel(variant)} ROM loaded (${data.length} bytes)`);
+  return true;
+}
+
+// ── VTX-5000 ─────────────────────────────────────────────────────────
+
+const VTX5000_ROM_KEY = 'vtx5000-rom';
+const VTX5000_ROM_URL = 'https://zx84files.bitsparse.com/roms/vtx5000-3-1.rom';
+
+/**
+ * Load the VTX-5000 ROM into a Spectrum instance, fetching from CDN if not
+ * already cached in IndexedDB.  Mirrors the loadMultifaceROM() pattern.
+ */
+export async function loadVTX5000ROM(s: Spectrum): Promise<boolean> {
+  let data = await dbLoad(VTX5000_ROM_KEY);
+  if (!data) {
+    try {
+      setStatus('Fetching VTX-5000 ROM…');
+      const resp = await fetch(VTX5000_ROM_URL);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      data = new Uint8Array(await resp.arrayBuffer());
+      await dbSave(VTX5000_ROM_KEY, data);
+    } catch (err) {
+      console.warn('Failed to fetch VTX-5000 ROM:', err);
+      setStatus('Failed to load VTX-5000 ROM');
+      return false;
+    }
+  }
+  s.vtx5000.loadROM(data);
+  setStatus(`VTX-5000 ROM loaded (${data.length} bytes)`);
   return true;
 }
 

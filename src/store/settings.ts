@@ -242,6 +242,10 @@ const _plus3V41Roms = /*@once*/ createRoot(() => createSignal(getSaved('plus3-v4
 export const plus3V41Roms = _plus3V41Roms[0];
 export const setPlus3V41Roms = _plus3V41Roms[1];
 
+const _vtx5000Enabled = /*@once*/ createRoot(() => createSignal(getSaved('vtx5000', 'off') === 'on'));
+export const vtx5000Enabled = _vtx5000Enabled[0];
+export const setVtx5000Enabled = _vtx5000Enabled[1];
+
 // ── Derived ─────────────────────────────────────────────────────────────
 
 export const needsGamepadPolling = /*@once*/ createRoot(() => createMemo(() =>
@@ -314,6 +318,7 @@ const PANE_SETTINGS: Record<string, SettingDef[]> = {
   hardware: [
     { key: 'multiface',      default: 'off', set: setMultifaceEnabled, type: 'bool' },
     { key: 'plus3-v41-roms', default: 'off', set: setPlus3V41Roms,     type: 'bool' },
+    { key: 'vtx5000',        default: 'off', set: setVtx5000Enabled,   type: 'bool' },
   ],
   font: [
     { key: 'font', default: '', set: setFontName, type: 'string' },
