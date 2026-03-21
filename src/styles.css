@@ -803,6 +803,8 @@ input[type="range"]::-moz-range-thumb {
   white-space: pre;
   overflow-y: auto;
   max-height: 500px;
+  user-select: text;
+  cursor: text;
 }
 
 #basic-output .basic-line-num {

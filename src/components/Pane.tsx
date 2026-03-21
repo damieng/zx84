@@ -31,7 +31,10 @@ export function Pane(props: PaneProps) {
   function onLabelMouseDown(e: MouseEvent) {
     if ((e.target as HTMLElement).closest('select, button')) return;
     const pane = (e.currentTarget as HTMLElement).closest('.pane') as HTMLElement;
-    if (pane) pane.dataset.dragFromLabel = '1';
+    if (pane) {
+      pane.draggable = true;
+      pane.dataset.dragFromLabel = '1';
+    }
   }
 
   function toggleMenu() {
@@ -69,7 +72,7 @@ export function Pane(props: PaneProps) {
 
   return (
     <Show when={props.visible !== false}>
-      <div id={props.id} class={`pane${props.mono ? ' pane--mono' : ''}${collapsedPanes().has(props.id) ? ' collapsed' : ''}`} draggable={true}>
+      <div id={props.id} class={`pane${props.mono ? ' pane--mono' : ''}${collapsedPanes().has(props.id) ? ' collapsed' : ''}`}>
         <div class="section-label" onClick={onLabelClick} onMouseDown={onLabelMouseDown}>
           <svg class="twisty" width="10" height="10" viewBox="0 0 10 10">
             <path d="M2,3 L8,3 L5,8 Z" fill="currentColor" />

@@ -44,7 +44,10 @@ export function Sidebar(props: SidebarProps) {
 
   function onDragEnd(e: DragEvent) {
     const pane = (e.target as HTMLElement).closest('.pane') as HTMLElement;
-    if (pane) pane.classList.remove('dragging');
+    if (pane) {
+      pane.classList.remove('dragging');
+      pane.draggable = false;
+    }
     draggedPaneId = null;
     dropIndicator.remove();
   }
@@ -114,9 +117,10 @@ export function Sidebar(props: SidebarProps) {
   );
 }
 
-// Global mouseup handler to clear drag-from-label flag
+// Global mouseup handler to clear drag-from-label flag and draggable
 document.addEventListener('mouseup', () => {
   document.querySelectorAll('.pane[data-drag-from-label]').forEach(p => {
     delete (p as HTMLElement).dataset.dragFromLabel;
+    (p as HTMLElement).draggable = false;
   });
 });
