@@ -1,9 +1,12 @@
-import { Pane } from '@/components/Pane.tsx';
+import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
     version: '0.2.5',
     items: [
+      'VTX5000 modem emulation',
+      'Pane drag reordering',
+      'ZXTL tracing format',
       'BASIC viewer fix token spaces',
     ]
   }, {
@@ -63,17 +66,27 @@ const CHANGELOG: { version: string; items: string[] }[] = [
   },
 ];
 
-export function ChangelogPane() {
+const [changelogOpen, setChangelogOpen] = createSignal(false);
+export { changelogOpen };
+
+export function toggleChangelog() {
+  setChangelogOpen(v => !v);
+}
+
+export function ChangelogOverlay() {
   return (
-    <Pane id="changelog-panel" label="Changelog">
-      {CHANGELOG.map((release) => (
-        <div class="changelog-release">
-          <div class="changelog-version">v{release.version}</div>
-          <ul class="changelog-list">
-            {release.items.map((item) => <li>{item}</li>)}
-          </ul>
-        </div>
-      ))}
-    </Pane>
+    <Show when={changelogOpen()}>
+      <div class="changelog-backdrop" onClick={() => setChangelogOpen(false)} />
+      <div class="changelog-overlay">
+        {CHANGELOG.map((release) => (
+          <div class="changelog-release">
+            <div class="changelog-version">v{release.version}</div>
+            <ul class="changelog-list">
+              {release.items.map((item) => <li>{item}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </Show>
   );
 }

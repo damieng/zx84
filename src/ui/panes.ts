@@ -23,7 +23,6 @@ const DEFAULT_ORDER: PanePosition[] = [
   { id: 'display-pane', sidebar: 'left' },
   { id: 'font-panel', sidebar: 'left' },
   { id: 'text-panel', sidebar: 'left' },
-  { id: 'changelog-panel', sidebar: 'left' },
   { id: 'sysvar-panel', sidebar: 'right' },
   { id: 'basic-panel', sidebar: 'right' },
   { id: 'basic-vars-panel', sidebar: 'right' },
@@ -55,7 +54,7 @@ function loadPaneOrder(): PanePosition[] {
   return [...DEFAULT_ORDER];
 }
 
-const DEFAULT_COLLAPSED = new Set(['changelog-panel']);
+const DEFAULT_COLLAPSED = new Set<string>();
 
 function loadCollapsed(): Set<string> {
   try {
