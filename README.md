@@ -9,6 +9,8 @@ Experience the legendary ZX Spectrum with pixel-perfect emulation, authentic CRT
 ![ZX Spectrum Models](https://img.shields.io/badge/Models-48K%20%7C%20128K%20%7C%20%2B2%20%7C%20%2B2A%20%7C%20%2B3-blue)
 ![File Formats](https://img.shields.io/badge/Formats-SNA%20%7C%20Z80%20%7C%20SZX%20%7C%20TAP%20%7C%20TZX%20%7C%20DSK%20%7C%20ZIP-green)
 
+This project has been extensively developed using AI - specifically Claude Code.
+
 ---
 
 ## ✨ Features
