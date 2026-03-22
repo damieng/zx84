@@ -2,6 +2,8 @@
 
 **A high-accuracy ZX Spectrum emulator for your browser.**
 
+https://zx84.envytech.workers.dev
+
 Experience the legendary ZX Spectrum with pixel-perfect emulation, authentic CRT filtering, and a powerful integrated debugger. Built from scratch in TypeScript with zero runtime dependencies.
 
 ![ZX Spectrum Models](https://img.shields.io/badge/Models-48K%20%7C%20128K%20%7C%20%2B2%20%7C%20%2B2A%20%7C%20%2B3-blue)
