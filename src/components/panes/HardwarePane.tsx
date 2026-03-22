@@ -4,6 +4,7 @@ import {
   currentModel, romStatusText, switchModel, loadRomFiles,
   turboMode, clockSpeedText, resetMachine, toggleTurbo,
   spectrum, triggerNMI, loadMultifaceROM, loadVTX5000ROM,
+  multifaceRomFailed, vtx5000RomFailed,
 } from '@/emulator.ts';
 import type { SpectrumModel } from '@/spectrum.ts';
 import { Show } from 'solid-js';
@@ -58,10 +59,14 @@ export function HardwarePane() {
         >{clockSpeedText()}</button>
       </div>
       <div class="multiface-row">
-        <label class="mf-check">
+        <label
+          class={`mf-check${multifaceRomFailed() ? ' rom-failed' : ''}`}
+          title={multifaceRomFailed() || undefined}
+        >
           <input
             type="checkbox"
             checked={settings.multifaceEnabled()}
+            disabled={!!multifaceRomFailed()}
             onChange={(e) => {
               const on = (e.target as HTMLInputElement).checked;
               settings.setMultifaceEnabled(on);
@@ -83,28 +88,30 @@ export function HardwarePane() {
           onClick={triggerNMI}
         >NMI</button>
       </div>
-      <Show when={currentModel() === '48k'}>
-        <div class="multiface-row">
-          <label class="mf-check">
-            <input
-              type="checkbox"
-              checked={settings.vtx5000Enabled()}
-              onChange={(e) => {
-                const on = (e.target as HTMLInputElement).checked;
-                settings.setVtx5000Enabled(on);
-                settings.persistSetting('vtx5000', on ? 'on' : 'off');
-                if (spectrum) {
-                  spectrum.vtx5000.enabled = on;
-                  if (on && !spectrum.vtx5000.romLoaded) {
-                    loadVTX5000ROM(spectrum);
-                  }
+      <div class="multiface-row">
+        <label
+          class={`mf-check${vtx5000RomFailed() ? ' rom-failed' : ''}`}
+          title={vtx5000RomFailed() || undefined}
+        >
+          <input
+            type="checkbox"
+            checked={settings.vtx5000Enabled()}
+            disabled={!!vtx5000RomFailed()}
+            onChange={(e) => {
+              const on = (e.target as HTMLInputElement).checked;
+              settings.setVtx5000Enabled(on);
+              settings.persistSetting('vtx5000', on ? 'on' : 'off');
+              if (spectrum) {
+                spectrum.vtx5000.enabled = on;
+                if (on && !spectrum.vtx5000.romLoaded) {
+                  loadVTX5000ROM(spectrum);
                 }
-              }}
-            />
-            VTX-5000
-          </label>
-        </div>
-      </Show>
+              }
+            }}
+          />
+          VTX-5000
+        </label>
+      </div>
       <Show when={currentModel() === '+3'}>
         <div class="multiface-row">
           <label class="mf-check">

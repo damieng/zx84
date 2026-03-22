@@ -51,6 +51,10 @@ import {
   setEmulationPaused,
   setTurboMode,
   setClockSpeedText,
+  multifaceRomFailed,
+  vtx5000RomFailed,
+  setMultifaceRomFailed,
+  setVtx5000RomFailed,
 } from '@/state/machine-state.ts';
 
 import {
@@ -96,6 +100,7 @@ import {
 // Re-export machine state
 export { statusText, romStatusText, currentModel, emulationPaused, turboMode, clockSpeedText, saveModel };
 export { setStatusText, setRomStatusText, setCurrentModel, setEmulationPaused, setTurboMode, setClockSpeedText };
+export { multifaceRomFailed, vtx5000RomFailed };
 
 // Re-export tape state
 export { tapeLoaded, tapeBlocks, tapePosition, tapePaused, tapePlaying, tapeName };
@@ -219,7 +224,7 @@ export async function createMachine(): Promise<boolean> {
 
   // Apply VTX-5000 settings BEFORE loadROM/reset so vtx5000.romLoaded is true
   // when applyROM is called inside loadROM() and reset().
-  spectrum.vtx5000.enabled = settings.vtx5000Enabled() && spectrum.variant.is48K;
+  spectrum.vtx5000.enabled = settings.vtx5000Enabled();
   if (spectrum.vtx5000.enabled) {
     await loadVTX5000ROM(spectrum);
   }
@@ -850,7 +855,9 @@ export async function loadMultifaceROM(s: Spectrum): Promise<boolean> {
       await dbSave(cacheKey, data);
     } catch (err) {
       console.warn('Failed to fetch Multiface ROM:', err);
-      setStatus(`Failed to load ${variantLabel(variant)} ROM`);
+      const msg = `Failed to load ${variantLabel(variant)} ROM`;
+      setStatus(msg);
+      setMultifaceRomFailed(msg);
       return false;
     }
   }
@@ -858,6 +865,7 @@ export async function loadMultifaceROM(s: Spectrum): Promise<boolean> {
   console.log('[MF] ROM loaded: variant=%s size=%d byte66=%s',
     variant, data.length, data[0x66]?.toString(16) ?? 'undef');
   setStatus(`${variantLabel(variant)} ROM loaded (${data.length} bytes)`);
+  setMultifaceRomFailed('');
   return true;
 }
 
@@ -881,12 +889,15 @@ export async function loadVTX5000ROM(s: Spectrum): Promise<boolean> {
       await dbSave(VTX5000_ROM_KEY, data);
     } catch (err) {
       console.warn('Failed to fetch VTX-5000 ROM:', err);
-      setStatus('Failed to load VTX-5000 ROM');
+      const msg = 'Failed to load VTX-5000 ROM';
+      setStatus(msg);
+      setVtx5000RomFailed(msg);
       return false;
     }
   }
   s.vtx5000.loadROM(data);
   setStatus(`VTX-5000 ROM loaded (${data.length} bytes)`);
+  setVtx5000RomFailed('');
   return true;
 }
 

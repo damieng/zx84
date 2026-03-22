@@ -50,6 +50,10 @@ export class SpectrumMemory {
   /** True when +2A special all-RAM paging is active */
   specialPaging = false;
 
+  /** True when an external peripheral (e.g. VTX-5000) has overridden slot 0.
+   *  Suppresses ROM writes to flat[] during bank switches. */
+  externalRomPaged = false;
+
   constructor(model: SpectrumModel, opts?: { hasBanking?: boolean; romPageCount?: number }) {
     this.is128K = opts?.hasBanking ?? (model !== '48k');
     this.flat = new Uint8Array(65536);
@@ -111,6 +115,7 @@ export class SpectrumMemory {
     this.currentBank = 0;
     this.currentROM = 0;
     this.specialPaging = false;
+    this.externalRomPaged = false;
     this.applyBanking();
   }
 
@@ -208,7 +213,7 @@ export class SpectrumMemory {
       else if (newBank === 2) this.saveSlot(0x8000, 2);
       this.loadSlot(0xC000, newBank);
     }
-    if (newROM !== this.currentROM) {
+    if (newROM !== this.currentROM && !this.externalRomPaged) {
       this.flat.set(this.romPages[newROM], 0);
     }
 
@@ -249,15 +254,17 @@ export class SpectrumMemory {
       if (oldSlots[i] >= 0) this.saveSlot(bases[i], oldSlots[i]);
       // Load incoming content
       if (newSlots[i] < 0) {
-        // ROM slot
-        this.flat.set(this.romPages[this.currentROM], bases[i]);
+        // ROM slot — skip if external peripheral has overridden slot 0
+        if (i !== 0 || !this.externalRomPaged) {
+          this.flat.set(this.romPages[this.currentROM], bases[i]);
+        }
       } else {
         this.loadSlot(bases[i], newSlots[i]);
       }
     }
 
     // Edge case: switching normal→normal with ROM change but same slot banks
-    if (!wasSpecial && !this.specialPaging && !skipSlot0) {
+    if (!wasSpecial && !this.specialPaging && !skipSlot0 && !this.externalRomPaged) {
       if (oldSlots[0] < 0 && newSlots[0] < 0 && this.currentROM !== oldROM) {
         this.flat.set(this.romPages[this.currentROM], 0);
       }

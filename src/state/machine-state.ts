@@ -54,3 +54,12 @@ export const setTurboMode = _turboMode[1];
 const _clockSpeedText = createSignal('MHz');
 export const clockSpeedText = _clockSpeedText[0];
 export const setClockSpeedText = _clockSpeedText[1];
+
+// Peripheral ROM load failures (empty string = OK, non-empty = error reason)
+const _multifaceRomFailed = createSignal('');
+export const multifaceRomFailed = _multifaceRomFailed[0];
+export const setMultifaceRomFailed = _multifaceRomFailed[1];
+
+const _vtx5000RomFailed = createSignal('');
+export const vtx5000RomFailed = _vtx5000RomFailed[0];
+export const setVtx5000RomFailed = _vtx5000RomFailed[1];

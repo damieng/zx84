@@ -751,6 +751,14 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
+.mf-check.rom-failed {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mf-check.rom-failed input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
 .mf-nmi-btn {
   flex: 0 0 auto;
   width: auto !important;

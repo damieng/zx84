@@ -253,19 +253,20 @@ export class Spectrum {
 
     // VTX-5000: wire ROM paging callback driven by the 8251's RTS output.
     // When RTS changes, swap slot 0 between VTX ROM+RAM and Spectrum ROM.
-    // 48K only: ROM is always romPages[1], no banking.
     this.vtx5000.onRomPage = (rts: boolean) => {
       if (!this.vtx5000.enabled || !this.vtx5000.romLoaded) return;
       if (rts && this.vtx5000.vtxRomPaged) {
         // RTS=1 → page in Spectrum ROM.  Save VTX RAM first.
         this.vtx5000.vtxRam.set(this.cpu.memory.subarray(0x2000, 0x4000));
-        this.cpu.memory.set(this.memory.romPages[1], 0);
+        this.cpu.memory.set(this.memory.romPages[this.memory.currentROM], 0);
         this.vtx5000.vtxRomPaged = false;
+        this.memory.externalRomPaged = false;
       } else if (!rts && !this.vtx5000.vtxRomPaged) {
         // RTS=0 → page in VTX ROM + RAM
         this.cpu.memory.set(this.vtx5000.vtxRom.subarray(0, this.vtx5000.romSize), 0);
         this.cpu.memory.set(this.vtx5000.vtxRam, 0x2000);
         this.vtx5000.vtxRomPaged = true;
+        this.memory.externalRomPaged = true;
       }
     };
   }
@@ -328,8 +329,12 @@ export class Spectrum {
     this.memory.loadROM(data);
     this.memory.applyBanking();
     this.cpu.memory = this.memory.flat;
-    if (this.variant.is48K && this.vtx5000.enabled && this.vtx5000.romLoaded) {
+    if (this.vtx5000.enabled && this.vtx5000.romLoaded) {
+      if (this.memory.is128K) {
+        this.memory.currentROM = this.memory.romPages.length === 4 ? 3 : 1;
+      }
       this.vtx5000.applyROM(this.cpu.memory);
+      this.memory.externalRomPaged = true;
     }
     this.setStatus('ROM loaded');
   }
@@ -353,8 +358,15 @@ export class Spectrum {
     this.memory.reset();
     this.cpu.memory = this.memory.flat;
     this.vtx5000.reset();
-    if (this.variant.is48K && this.vtx5000.enabled && this.vtx5000.romLoaded) {
+    if (this.vtx5000.enabled && this.vtx5000.romLoaded) {
+      // Select the 48K BASIC ROM page so that when the VTX software pages
+      // back the Spectrum ROM it gets the ROM it was designed for.
+      // 128K/+2: page 1.  +2A/+3: page 3.  48K: already page 1 (no banking).
+      if (this.memory.is128K) {
+        this.memory.currentROM = this.memory.romPages.length === 4 ? 3 : 1;
+      }
       this.vtx5000.applyROM(this.cpu.memory);
+      this.memory.externalRomPaged = true;
     }
     this.joystick.reset();
     this.kempstonMouse.reset();

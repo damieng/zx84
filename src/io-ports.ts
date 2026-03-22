@@ -116,12 +116,17 @@ export function wirePortIO(s: Spectrum): void {
           // Sync live MF RAM before bank switch — bankSwitch() may
           // overwrite slot 0 (ROM change), clobbering flat[0x2000-0x3FFF]
           s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
+        } else if (s.vtx5000.enabled && s.vtx5000.vtxRomPaged) {
+          s.vtx5000.vtxRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
         }
         s.memory.bankSwitch(val);
         s.cpu.memory = s.memory.flat;
         if (s.multiface.pagedIn) {
           s.cpu.memory.set(s.multiface.mfRom, 0);
           s.cpu.memory.set(s.multiface.mfRam, 0x2000);
+        } else if (s.vtx5000.enabled && s.vtx5000.vtxRomPaged) {
+          s.cpu.memory.set(s.vtx5000.vtxRom.subarray(0, s.vtx5000.romSize), 0);
+          s.cpu.memory.set(s.vtx5000.vtxRam, 0x2000);
         }
       }
 
@@ -129,13 +134,18 @@ export function wirePortIO(s: Spectrum): void {
       if (v.decodes1FFD(port)) {
         if (s.multiface.pagedIn) {
           s.multiface.mfRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
+        } else if (s.vtx5000.enabled && s.vtx5000.vtxRomPaged) {
+          s.vtx5000.vtxRam.set(s.cpu.memory.subarray(0x2000, 0x4000));
         }
-        s.memory.bankSwitch1FFD(val, s.multiface.pagedIn);
+        s.memory.bankSwitch1FFD(val, s.multiface.pagedIn || (s.vtx5000.enabled && s.vtx5000.vtxRomPaged));
         if (v.hasFDC) s.fdc.motorOn = (val & 0x08) !== 0;
         s.cpu.memory = s.memory.flat;
         if (s.multiface.pagedIn) {
           s.cpu.memory.set(s.multiface.mfRom, 0);
           s.cpu.memory.set(s.multiface.mfRam, 0x2000);
+        } else if (s.vtx5000.enabled && s.vtx5000.vtxRomPaged) {
+          s.cpu.memory.set(s.vtx5000.vtxRom.subarray(0, s.vtx5000.romSize), 0);
+          s.cpu.memory.set(s.vtx5000.vtxRam, 0x2000);
         }
       }
 
@@ -146,7 +156,7 @@ export function wirePortIO(s: Spectrum): void {
       }
     }
 
-    // VTX-5000 8251 USART ports (48K only, active when VTX-5000 enabled)
+    // VTX-5000 8251 USART ports (active when VTX-5000 enabled)
     if (s.vtx5000.enabled) {
       const lo = port & 0xFF;
       if (lo === 0xFF) { s.vtx5000.writeControl(val); return; }
@@ -309,7 +319,7 @@ export function wirePortIO(s: Spectrum): void {
       }
     }
 
-    // VTX-5000 8251 USART ports (48K only, active when VTX-5000 enabled)
+    // VTX-5000 8251 USART ports (active when VTX-5000 enabled)
     if (s.vtx5000.enabled) {
       const lo = port & 0xFF;
       if (lo === 0xFF) return s.vtx5000.readStatus();
