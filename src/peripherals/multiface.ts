@@ -8,7 +8,7 @@
  */
 
 import type { SpectrumModel } from '@/spectrum.ts';
-import type { Z80 } from '@/cores/Z80.ts';
+import type { Z80 } from '@/cores/z80.ts';
 
 export type MultifaceVariant = 'MF1' | 'MF128' | 'MF3';
 

@@ -9,7 +9,7 @@
  * emulator locked to real-time without drift.
  */
 
-import { Z80 } from '@/cores/Z80.ts';
+import { Z80 } from '@/cores/z80.ts';
 import { disasmOne, stripMarkers } from '@/debug/z80-disasm.ts';
 import { AY3891x } from '@/cores/ay-3-8910.ts';
 import { SpectrumMemory } from '@/memory.ts';
