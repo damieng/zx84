@@ -79,6 +79,7 @@ const KEY_MAP: Record<string, KeyMapping | ComboMapping> = {
 
   // Convenience mappings (key combos)
   'Backspace':    [{ row: 0, bit: 0 }, { row: 4, bit: 0 }],  // SHIFT + 0 (DELETE)
+  'Delete':       [{ row: 0, bit: 0 }, { row: 4, bit: 0 }],  // SHIFT + 0 (DELETE)
   'ArrowLeft':    [{ row: 0, bit: 0 }, { row: 3, bit: 4 }],  // SHIFT + 5
   'ArrowDown':    [{ row: 0, bit: 0 }, { row: 4, bit: 4 }],  // SHIFT + 6
   'ArrowUp':      [{ row: 0, bit: 0 }, { row: 4, bit: 3 }],  // SHIFT + 7
@@ -139,15 +140,24 @@ export class SpectrumKeyboard {
   /** Count of physical Shift keys currently held (ShiftLeft + ShiftRight) */
   private physicalShiftCount = 0;
 
+  /**
+   * Reference count per [row][bit].  Multiple sources can press the same bit
+   * (e.g. physical Shift + Backspace combo both press CS).  The bit only
+   * releases when the count drops to zero.
+   */
+  private pressCount: number[][];
+
   constructor() {
     this.rows = new Uint8Array(8);
     this.rows.fill(0xFF);
+    this.pressCount = Array.from({ length: 8 }, () => Array(5).fill(0));
   }
 
   reset(): void {
     this.rows.fill(0xFF);
     this.activeCharCombos.clear();
     this.physicalShiftCount = 0;
+    for (const row of this.pressCount) row.fill(0);
   }
 
   /**
@@ -166,9 +176,32 @@ export class SpectrumKeyboard {
 
   setKey(row: number, bit: number, pressed: boolean): void {
     if (pressed) {
+      this.pressCount[row][bit]++;
       this.rows[row] &= ~(1 << bit);
     } else {
-      this.rows[row] |= (1 << bit);
+      this.pressCount[row][bit] = Math.max(0, this.pressCount[row][bit] - 1);
+      if (this.pressCount[row][bit] === 0) {
+        this.rows[row] |= (1 << bit);
+      }
+    }
+  }
+
+  /**
+   * Temporarily suppress a bit (force release) without affecting the press
+   * count.  Used by CHAR_MAP handling to hide CAPS SHIFT while a symbol
+   * combo is active, without confusing the reference count.
+   */
+  private suppressBit(row: number, bit: number): void {
+    this.rows[row] |= (1 << bit);
+  }
+
+  /**
+   * Restore a previously suppressed bit — re-asserts it only if the press
+   * count says something is still holding it.
+   */
+  private restoreBit(row: number, bit: number): void {
+    if (this.pressCount[row][bit] > 0) {
+      this.rows[row] &= ~(1 << bit);
     }
   }
 
@@ -192,7 +225,7 @@ export class SpectrumKeyboard {
         // Restore CAPS SHIFT only if physical Shift is still held.
         // If Shift was released before this key, CS was already cleared by the
         // ShiftLeft/Right keyup event; restoring it here would leave CS stuck.
-        if (stored.suppressedCS && this.physicalShiftCount > 0) this.setKey(0, 0, true);
+        if (stored.suppressedCS && this.physicalShiftCount > 0) this.restoreBit(0, 0);
         this.activeCharCombos.delete(code);
         return true;
       }
@@ -210,7 +243,7 @@ export class SpectrumKeyboard {
         // doesn't need it, suppress CS to avoid entering extended mode.
         const comboNeedsCS = charMapping.some(k => k.row === 0 && k.bit === 0);
         const suppressCS = this.capsShiftPressed && !comboNeedsCS;
-        if (suppressCS) this.setKey(0, 0, false);
+        if (suppressCS) this.suppressBit(0, 0);
         this.activeCharCombos.set(code, { combo: charMapping, suppressedCS: suppressCS });
       }
       for (const k of charMapping) this.setKey(k.row, k.bit, pressed);
