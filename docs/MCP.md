@@ -68,6 +68,23 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 | `port_watchpoint` | `port` (optional) | Set port watchpoint(s) (breaks on IN **or** OUT). Comma/space-separated list OK. Omit to list all. |
 | `delete_port_watchpoint` | `port` (optional) | Remove port watchpoint(s). Comma/space-separated list OK. Omit to clear all. |
 
+### Traps
+
+Traps fire when PC hits an address.  Three actions:
+
+- **`log`** — record registers + auto-decoded CP/M info to a buffer, continue execution.
+- **`break`** — halt execution so the MCP client can inspect state.
+- **`respond`** — stuff registers from a pre-queued response and RET (skip the real call).  Queue is FIFO; when empty, reverts to break.
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `trap` | `address` (optional), `action`, `cond_c`, `label`, `responses` | Set a trap, or list all if no address given. `cond_c` filters by C register (e.g. BDOS function). |
+| `trap_delete` | `address` (optional), `cond_c` | Remove traps at address (optionally filtered by `cond_c`). Omit address to clear all. |
+| `trap_log` | `from`, `to`, `clear` | Read the trap log buffer (chunked). Optionally clear after reading. |
+| `trap_respond` | `address`, `cond_c`, `responses` | Queue additional `{reg: value}` responses for an existing respond-mode trap. |
+
+BDOS calls at `0005` are auto-decoded in log output (function name, string contents for print calls, etc.).
+
 ### I/O Ports
 
 | Tool | Parameters | Description |

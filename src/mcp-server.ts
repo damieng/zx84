@@ -245,6 +245,7 @@ async function initMachine(m: SpectrumModel): Promise<string> {
   spec.loadROM(romData);
   spec.reset();
   wireFdcLog();
+  installTrapHook();
   return `Machine ready: ${model.toUpperCase()} PC=${h16(spec.cpu.pc)}`;
 }
 
@@ -308,8 +309,8 @@ server.tool(
   'Continue execution until a breakpoint is hit (max N frames, default 5000).',
   { max_frames: z.number().int().positive().default(5000).describe('Maximum frames before giving up') },
   async ({ max_frames }) => {
-    if (spec.breakpoints.size === 0 && spec.portWatchpoints.size === 0)
-      return text('No breakpoints set. Use "breakpoint" or "port_watchpoint" tool first.');
+    if (spec.breakpoints.size === 0 && spec.portWatchpoints.size === 0 && traps.size === 0)
+      return text('No breakpoints or traps set. Use "breakpoint", "port_watchpoint", or "trap" first.');
     const ran = spec.runUntil(max_frames);
     if (spec.portWatchHit !== null) {
       const { port, value, dir } = spec.portWatchHit;
@@ -545,6 +546,247 @@ server.tool(
     const ports = port.split(/[\s,]+/).filter(Boolean).map(s => parseAddr(s) & 0xFFFF);
     for (const p of ports) spec.portWatchpoints.delete(p);
     return text(`Port watchpoint${ports.length > 1 ? 's' : ''} at ${ports.map(h16).join(', ')} removed`);
+  },
+);
+
+// ── Trap system ──────────────────────────────────────────────────────────────
+//
+// Traps are pre-configured hooks that fire when PC hits a specific address.
+// Three modes:
+//   log     — record the call (registers, decoded info) to a buffer, continue
+//   break   — halt execution (like a breakpoint) so the MCP client can inspect
+//   respond — stuff registers from a pre-loaded response queue and RET, skip
+//             the real code entirely.  Responses are consumed in FIFO order;
+//             when the queue is empty the trap reverts to "break".
+
+interface TrapResponse {
+  /** Register values to set before RETurning.  Only listed regs are changed. */
+  regs: Record<string, number>;
+}
+
+interface Trap {
+  address: number;
+  action: 'log' | 'break' | 'respond';
+  /** Optional: only fire when C register equals this value (for BDOS function filtering) */
+  condC?: number;
+  /** Label shown in log output */
+  label: string;
+  /** Pre-queued responses for 'respond' mode */
+  responses: TrapResponse[];
+}
+
+const traps = new Map<number, Trap[]>();   // address → traps at that address
+const trapLog: string[] = [];
+
+/** Read a '$'-terminated CP/M string from memory starting at addr. */
+function readCpmString(addr: number, maxLen = 256): string {
+  let s = '';
+  for (let i = 0; i < maxLen; i++) {
+    const ch = spec.cpu.memory[(addr + i) & 0xFFFF];
+    if (ch === 0x24) break; // '$'
+    s += (ch >= 0x20 && ch < 0x7F) ? String.fromCharCode(ch) : '.';
+  }
+  return s;
+}
+
+/** Format a trap log entry with registers and optional CP/M decoding. */
+function formatTrapLog(trap: Trap): string {
+  const cpu = spec.cpu;
+  let line = `[${h16(cpu.pc)}] ${trap.label}  C=${h8(cpu.c)} DE=${h16(cpu.de)} A=${h8(cpu.a)} T=${cpu.tStates}`;
+  // Auto-decode common BDOS calls
+  if (trap.address === 0x0005) {
+    const fn = cpu.c;
+    if (fn === 2) line += `  CON_OUT char='${String.fromCharCode(cpu.e)}'`;
+    else if (fn === 9) line += `  PRINT_STR "${readCpmString(cpu.de)}"`;
+    else if (fn === 1) line += '  CON_IN';
+    else if (fn === 10) line += `  READ_LINE buf=${h16(cpu.de)}`;
+    else if (fn === 12) line += '  GET_VERSION';
+    else if (fn === 15) line += `  OPEN fcb=${h16(cpu.de)}`;
+    else if (fn === 16) line += `  CLOSE fcb=${h16(cpu.de)}`;
+    else if (fn === 17) line += `  SEARCH_FIRST fcb=${h16(cpu.de)}`;
+    else if (fn === 18) line += '  SEARCH_NEXT';
+    else if (fn === 19) line += `  DELETE fcb=${h16(cpu.de)}`;
+    else if (fn === 20) line += `  READ_SEQ fcb=${h16(cpu.de)}`;
+    else if (fn === 21) line += `  WRITE_SEQ fcb=${h16(cpu.de)}`;
+    else if (fn === 22) line += `  CREATE fcb=${h16(cpu.de)}`;
+    else if (fn === 26) line += `  SET_DMA addr=${h16(cpu.de)}`;
+    else if (fn === 33) line += `  READ_RND fcb=${h16(cpu.de)}`;
+    else if (fn === 34) line += `  WRITE_RND fcb=${h16(cpu.de)}`;
+    else if (fn === 35) line += `  FILE_SIZE fcb=${h16(cpu.de)}`;
+    else if (fn === 36) line += `  SET_RND fcb=${h16(cpu.de)}`;
+  }
+  return line;
+}
+
+/** Execute a RET: pop PC from stack. */
+function execRET(): void {
+  const cpu = spec.cpu;
+  const lo = cpu.memory[cpu.sp & 0xFFFF];
+  const hi = cpu.memory[(cpu.sp + 1) & 0xFFFF];
+  cpu.sp = (cpu.sp + 2) & 0xFFFF;
+  cpu.pc = (hi << 8) | lo;
+}
+
+/** Install the onTrap callback. Called once at startup and after model switches. */
+function installTrapHook(): void {
+  spec.onTrap = (pc: number): boolean => {
+    const list = traps.get(pc);
+    if (!list) return false;
+    for (const trap of list) {
+      // Check optional condition
+      if (trap.condC !== undefined && spec.cpu.c !== trap.condC) continue;
+
+      if (trap.action === 'log') {
+        trapLog.push(formatTrapLog(trap));
+        return false; // continue execution
+      }
+      if (trap.action === 'break') {
+        trapLog.push(formatTrapLog(trap) + '  [BREAK]');
+        return true; // halt execution
+      }
+      if (trap.action === 'respond') {
+        const resp = trap.responses.shift();
+        if (!resp) {
+          // Queue exhausted — break so the client can decide
+          trapLog.push(formatTrapLog(trap) + '  [RESPOND queue empty — BREAK]');
+          return true;
+        }
+        trapLog.push(formatTrapLog(trap) + `  [RESPOND ${JSON.stringify(resp.regs)}]`);
+        // Apply register values
+        const cpu = spec.cpu;
+        for (const [reg, val] of Object.entries(resp.regs)) {
+          switch (reg.toUpperCase()) {
+            case 'A':  cpu.a  = val & 0xFF; break;
+            case 'F':  cpu.f  = val & 0xFF; break;
+            case 'B':  cpu.b  = val & 0xFF; break;
+            case 'C':  cpu.c  = val & 0xFF; break;
+            case 'D':  cpu.d  = val & 0xFF; break;
+            case 'E':  cpu.e  = val & 0xFF; break;
+            case 'H':  cpu.h  = val & 0xFF; break;
+            case 'L':  cpu.l  = val & 0xFF; break;
+            case 'BC': cpu.bc = val & 0xFFFF; break;
+            case 'DE': cpu.de = val & 0xFFFF; break;
+            case 'HL': cpu.hl = val & 0xFFFF; break;
+          }
+        }
+        execRET();
+        return false; // continue execution after the synthetic return
+      }
+    }
+    return false;
+  };
+}
+
+// -- trap --
+server.tool(
+  'trap',
+  'Set a trap at an address. Actions: "log" (record and continue), "break" (halt execution), "respond" (stuff registers and RET). Omit address to list all traps.',
+  {
+    address: z.string().optional().describe('Address to trap (omit to list all)'),
+    action: z.enum(['log', 'break', 'respond']).default('log').describe('What to do when the trap fires'),
+    cond_c: z.number().int().min(0).max(255).optional().describe('Only fire when C register equals this value (e.g. BDOS function number)'),
+    label: z.string().default('').describe('Label for log output (e.g. "BDOS", "BIOS_CONOUT")'),
+    responses: z.array(z.record(z.string(), z.number())).optional().describe('For respond mode: array of {reg: value} objects consumed in FIFO order'),
+  },
+  async ({ address, action, cond_c, label, responses }) => {
+    if (!address) {
+      // List all traps
+      if (traps.size === 0) return text('No traps set');
+      const lines: string[] = [];
+      for (const [addr, list] of traps) {
+        for (const t of list) {
+          let desc = `${h16(addr)}  ${t.action}`;
+          if (t.condC !== undefined) desc += `  C==${h8(t.condC)}`;
+          if (t.label) desc += `  "${t.label}"`;
+          if (t.action === 'respond') desc += `  queue=${t.responses.length}`;
+          lines.push(desc);
+        }
+      }
+      return text(lines.join('\n'));
+    }
+    const addr = parseAddr(address) & 0xFFFF;
+    const trap: Trap = {
+      address: addr,
+      action,
+      condC: cond_c,
+      label: label || `trap@${h16(addr)}`,
+      responses: (responses ?? []).map(r => ({ regs: r })),
+    };
+    if (!traps.has(addr)) traps.set(addr, []);
+    traps.get(addr)!.push(trap);
+    let msg = `Trap set at ${h16(addr)}: ${action}`;
+    if (cond_c !== undefined) msg += ` when C==${h8(cond_c)}`;
+    if (trap.responses.length > 0) msg += `, ${trap.responses.length} response(s) queued`;
+    return text(msg);
+  },
+);
+
+// -- trap_delete --
+server.tool(
+  'trap_delete',
+  'Delete traps. If address given, removes all traps at that address. If cond_c also given, only removes matching traps. Omit address to clear all.',
+  {
+    address: z.string().optional().describe('Address to remove traps from (omit to clear all)'),
+    cond_c: z.number().int().min(0).max(255).optional().describe('Only remove traps with this C condition'),
+  },
+  async ({ address, cond_c }) => {
+    if (!address) {
+      const count = [...traps.values()].reduce((s, l) => s + l.length, 0);
+      traps.clear();
+      return text(`Cleared all ${count} trap(s)`);
+    }
+    const addr = parseAddr(address) & 0xFFFF;
+    const list = traps.get(addr);
+    if (!list || list.length === 0) return text(`No traps at ${h16(addr)}`);
+    if (cond_c !== undefined) {
+      const before = list.length;
+      const filtered = list.filter(t => t.condC !== cond_c);
+      traps.set(addr, filtered);
+      if (filtered.length === 0) traps.delete(addr);
+      return text(`Removed ${before - filtered.length} trap(s) at ${h16(addr)} with C==${h8(cond_c)}`);
+    }
+    traps.delete(addr);
+    return text(`Removed ${list.length} trap(s) at ${h16(addr)}`);
+  },
+);
+
+// -- trap_log --
+server.tool(
+  'trap_log',
+  'Read the trap log buffer. Returns total line count and requested range.',
+  {
+    from: z.number().int().min(0).default(0).describe('Start line (0-based, inclusive)'),
+    to: z.number().int().min(0).optional().describe('End line (exclusive, default: from+100)'),
+    clear: z.boolean().default(false).describe('Clear the log after reading'),
+  },
+  async ({ from, to, clear }) => {
+    if (trapLog.length === 0) return text('Trap log is empty');
+    const end = Math.min(to ?? from + 100, trapLog.length);
+    const start = Math.min(from, trapLog.length);
+    const chunk = trapLog.slice(start, end);
+    const result = `Trap log: ${trapLog.length} total lines. Showing ${start}..${end - 1}:\n\n${chunk.join('\n')}`;
+    if (clear) trapLog.length = 0;
+    return text(result);
+  },
+);
+
+// -- trap_respond --
+server.tool(
+  'trap_respond',
+  'Queue additional responses for an existing respond-mode trap.',
+  {
+    address: z.string().describe('Trap address'),
+    cond_c: z.number().int().min(0).max(255).optional().describe('Match trap with this C condition'),
+    responses: z.array(z.record(z.string(), z.number())).describe('Array of {reg: value} response objects to append to the queue'),
+  },
+  async ({ address, cond_c, responses }) => {
+    const addr = parseAddr(address) & 0xFFFF;
+    const list = traps.get(addr);
+    if (!list) return text(`No traps at ${h16(addr)}`);
+    const match = list.find(t => t.action === 'respond' && (cond_c === undefined || t.condC === cond_c));
+    if (!match) return text(`No respond-mode trap at ${h16(addr)}${cond_c !== undefined ? ` with C==${h8(cond_c)}` : ''}`);
+    for (const r of responses) match.responses.push({ regs: r });
+    return text(`Queued ${responses.length} response(s) at ${h16(addr)}. Total queue: ${match.responses.length}`);
   },
 );
 

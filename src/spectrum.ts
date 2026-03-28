@@ -214,6 +214,13 @@ export class Spectrum {
   /** Set when a port watchpoint fires; null means no hit this frame */
   portWatchHit: { port: number; value: number; dir: 'in' | 'out' } | null = null;
 
+  /**
+   * Pre-instruction trap hook.  Called with the current PC before each
+   * instruction executes.  Return true to break execution (like a breakpoint).
+   * The MCP server uses this for trap logic (log / respond / break).
+   */
+  onTrap: ((pc: number) => boolean) | null = null;
+
   /** Status callback */
   onStatus: ((msg: string) => void) | null = null;
 
@@ -596,6 +603,11 @@ export class Spectrum {
       } else {
         // Breakpoint check (skipped when set is empty for zero overhead)
         if (this.breakpoints.size > 0 && this.breakpoints.has(this.cpu.pc)) {
+          this.breakpointHit = this.cpu.pc;
+          break;
+        }
+        // Pre-instruction trap hook (MCP traps: log, respond, break)
+        if (this.onTrap !== null && this.onTrap(this.cpu.pc)) {
           this.breakpointHit = this.cpu.pc;
           break;
         }

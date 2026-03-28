@@ -72,7 +72,7 @@
 - [ ] Multiface 1/2/+3 (snapshot/poke hardware)
 - [ ] SpecDrum (8-bit DAC)
 - [ ] RAM Music Machine (6-channel sample playback)
-- [ ] VTX5000 speech synthesizer
+- [ ] Currah speech synthesizer
 - [ ] Printer support (ZX Printer, Epson, etc.)
 
 ### Hardware Fixes
