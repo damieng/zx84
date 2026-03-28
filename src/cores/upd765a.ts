@@ -308,6 +308,7 @@ export class UPD765A {
   /** Write data register — feeds command/parameter bytes or execution data. */
   writeData(val: number): void {
     if (this.phase === Phase.Execution && this.exWriting) {
+      this.exOverrunPolls = 0; // CPU is still writing — reset overrun counter
       this.writeExecution(val);
       return;
     }
@@ -462,7 +463,12 @@ export class UPD765A {
     if (!track) return;
     const idx = track.sectorMap.get(this.exR);
     if (idx === undefined) return;
-    track.sectors[idx].data.set(this.exBuf);
+    // Replace the sector's data array entirely.  The write buffer is sized by
+    // the command's N parameter, which may differ from the sector ID's N (e.g.
+    // protection sectors).  Using .set() would throw RangeError when exBuf is
+    // larger, or leave stale tail bytes when smaller.  Replacing the array
+    // ensures read-back via prepareReadBuffer() sees exactly what was written.
+    track.sectors[idx].data = new Uint8Array(this.exBuf);
   }
 
   /** End execution phase with result. Sets EN + abnormal termination if EOT was reached. */
