@@ -2,6 +2,12 @@ import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.6',
+    items: [
+      'Right Shift now maps to Symbol Shift for direct symbol access',
+      'Combo keys (DEL, arrows, etc.) stagger modifier by one frame for reliable detection',
+    ]
+  }, {
     version: '0.2.5',
     items: [
       'VTX5000 modem emulation',

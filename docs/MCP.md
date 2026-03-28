@@ -49,9 +49,8 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `memory` | `address`, `length` (default 64) | Hex dump with ASCII sidebar. |
-| `peek` | `address` | Read one byte. |
-| `poke` | `address`, `value` | Write one byte. |
+| `read_memory` | `address`, `length` (default 64), `bank` (optional 0-7) | Hex dump with ASCII sidebar. With `bank`: address is offset within that 16KB RAM bank. |
+| `write_memory` | `address`, `hex_bytes`, `bank` (optional 0-7) | Write hex bytes (e.g. `"CD0050FF"`). With `bank`: address is offset within that 16KB RAM bank. |
 | `find` | `hex_bytes` | Search all 64KB for a byte sequence (e.g. `"CD0050"`). Up to 64 matches. |
 
 ### Disassembly
@@ -64,10 +63,10 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `breakpoint` | `address` (optional) | Set a PC breakpoint, or list all if no address given. |
-| `delete_breakpoint` | `address` (optional) | Remove one breakpoint, or clear all. |
-| `port_watchpoint` | `port` (optional) | Set a port watchpoint (breaks on IN **or** OUT to that port), or list all. |
-| `delete_port_watchpoint` | `port` (optional) | Remove one port watchpoint, or clear all. |
+| `breakpoint` | `address` (optional) | Set PC breakpoint(s). Comma/space-separated list OK (e.g. `"FE10,FE20"`). Omit to list all. |
+| `delete_breakpoint` | `address` (optional) | Remove breakpoint(s). Comma/space-separated list OK. Omit to clear all. |
+| `port_watchpoint` | `port` (optional) | Set port watchpoint(s) (breaks on IN **or** OUT). Comma/space-separated list OK. Omit to list all. |
+| `delete_port_watchpoint` | `port` (optional) | Remove port watchpoint(s). Comma/space-separated list OK. Omit to clear all. |
 
 ### I/O Ports
 
@@ -82,7 +81,7 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 |------|-----------|-------------|
 | `load` | `file`, `drive` (default `"0"`) | Load TAP, TZX, SNA, Z80, SZX, or DSK. TAP/TZX reset and start playback. DSK inserts into FDC. SZX restores a full snapshot. |
 | `save` | `file` | Save current machine state to a SZX snapshot file. `.szx` extension added automatically. |
-| `disk_boot` | — | +3 only. Runs 500 frames to reach the startup menu, presses Enter on "Loader". |
+| `disk_boot` | `file` (optional) | +3 only. Runs 500 frames to reach the startup menu, presses Enter on "Loader". If `file` given, switches to +3, mounts the DSK, and boots it. |
 | `disk_trace` | `file` | All-in-one: switch to +3, mount DSK, boot to Loader, arm FE10h breakpoint + 3FFDh port watchpoint. |
 | `eject` | `target` (`tape`/`disk`), `drive` | Eject tape or disk from drive A/B. |
 
@@ -91,7 +90,7 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `key` | `name`, `frames` (default 5) | Press and hold a key for N frames. Supports combos like `"shift+2"` or `"sym+p"`. |
-| `type` | `text` | Type a string of characters. Handles letters, digits, symbols, and `\n` for Enter. |
+| `type` | `text` | Type a string of characters. Use backtick-delimited names for control keys: `` `enter` ``, `` `backspace` ``, `` `left` ``, `` `right` ``, `` `up` ``, `` `down` ``, `` `escape` ``, `` `shift` ``, `` `sym` ``. E.g. ``LOAD ""`enter` `` |
 
 Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, `left`, `right`, `up`, `down`, `capslock`, `escape`
 
@@ -99,8 +98,9 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `trace` | `mode` (`full`/`portio`/`zxtl`) | Start a trace. |
-| `stop_trace` | — | Stop and return results. Traces over 200 lines are written to a file. |
+| `trace` | `mode` (`full`/`portio`/`zxtl`) | Start a trace. ZXTL traces are stored in-memory for chunked retrieval. |
+| `stop_trace` | — | Stop trace. Full/portio: returns inline or writes to file. ZXTL: stores in memory, returns line count — use `trace_read` to fetch. |
+| `trace_read` | `from` (default 0), `to` (optional, default from+100) | Read a range of lines from the stored ZXTL trace buffer. |
 | `frame_trace` | — | Run one frame logging every instruction: T-state, beam position, contention delays, border changes, and VRAM writes. Always writes to file. |
 
 - **full** — every instruction executed (PC ≥ 0x4000, loop detection)
@@ -118,6 +118,14 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `model` | `target` (optional) | Show current model, or switch to `48k`/`128k`/`+2`/`+2a`/`+3`. Switching creates a fresh machine. |
+
+### Disk Inspection
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `disk_geometry` | `drive` (default 0) | Overview of mounted disk: format, tracks, sides, protection, per-track sector summary. |
+| `track_geometry` | `track`, `side` (default 0), `drive` (default 0) | Detailed single-track info: gap3, filler, full CHRN + status + data size per sector. |
+| `sector_read` | `track`, `sector`, `side` (default 0), `drive` (default 0), `offset` (default 0), `length` (optional) | Hex dump of raw sector data from the in-memory disk image (includes any writes). |
 
 ### Disk Protection
 
@@ -159,10 +167,8 @@ Checkpoints let you rewind to a known state without re-running hundreds of frame
 ### Boot a +3 disk and break at entry (manual)
 
 ```
-model        → switch to +3
-load         → file: "path/to/game.dsk"
+disk_boot    → file: "path/to/game.dsk"    # switches to +3, mounts, and boots
 breakpoint   → address: "FE10"
-disk_boot
 continue
 registers
 disassemble

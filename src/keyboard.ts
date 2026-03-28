@@ -21,7 +21,7 @@ type ComboMapping = KeyMapping[];
 const KEY_MAP: Record<string, KeyMapping | ComboMapping> = {
   // Row 0: SHIFT, Z, X, C, V
   'ShiftLeft':    { row: 0, bit: 0 },
-  'ShiftRight':   { row: 0, bit: 0 },
+  'ShiftRight':   { row: 7, bit: 1 },  // SYM SHIFT (RShift = symbol access)
   'KeyZ':         { row: 0, bit: 1 },
   'KeyX':         { row: 0, bit: 2 },
   'KeyC':         { row: 0, bit: 3 },
@@ -137,8 +137,15 @@ export class SpectrumKeyboard {
   /** Track active CHAR_MAP combos by physical key code for correct release */
   private activeCharCombos = new Map<string, { combo: ComboMapping; suppressedCS: boolean }>();
 
-  /** Count of physical Shift keys currently held (ShiftLeft + ShiftRight) */
+  /** Count of physical Shift keys currently held (ShiftLeft only — ShiftRight is SYM SHIFT) */
   private physicalShiftCount = 0;
+
+  /**
+   * Keys deferred from combo presses — the modifier goes down immediately, and
+   * the remaining keys land one frame later so the Spectrum's scan always sees
+   * the modifier first.  Cleared by processPending() each frame.
+   */
+  private pendingKeys: KeyMapping[] = [];
 
   /**
    * Reference count per [row][bit].  Multiple sources can press the same bit
@@ -157,7 +164,18 @@ export class SpectrumKeyboard {
     this.rows.fill(0xFF);
     this.activeCharCombos.clear();
     this.physicalShiftCount = 0;
+    this.pendingKeys = [];
     for (const row of this.pressCount) row.fill(0);
+  }
+
+  /**
+   * Apply deferred combo keys.  Call once per frame (start of runFrame) so
+   * that the modifier pressed on keydown is visible for one full scan before
+   * the main key appears.
+   */
+  processPending(): void {
+    for (const k of this.pendingKeys) this.setKey(k.row, k.bit, true);
+    this.pendingKeys = [];
   }
 
   /**
@@ -212,7 +230,8 @@ export class SpectrumKeyboard {
 
   handleKeyEvent(code: string, pressed: boolean, key?: string): boolean {
     // Track physical Shift state so we know whether to restore CS on combo release.
-    if (code === 'ShiftLeft' || code === 'ShiftRight') {
+    // Only track ShiftLeft — ShiftRight now maps to SYM SHIFT, not CAPS SHIFT.
+    if (code === 'ShiftLeft') {
       this.physicalShiftCount = Math.max(0, this.physicalShiftCount + (pressed ? 1 : -1));
     }
 
@@ -254,7 +273,15 @@ export class SpectrumKeyboard {
     if (!mapping) return false;
 
     if (Array.isArray(mapping)) {
-      for (const k of mapping) this.setKey(k.row, k.bit, pressed);
+      if (pressed) {
+        // Stagger: press the modifier (first key) immediately, defer the rest
+        // by one frame so the Spectrum's keyboard scan always sees the modifier
+        // first.  This prevents e.g. Backspace (SHIFT+0) registering as just 0.
+        this.setKey(mapping[0].row, mapping[0].bit, true);
+        for (let ci = 1; ci < mapping.length; ci++) this.pendingKeys.push(mapping[ci]);
+      } else {
+        for (const k of mapping) this.setKey(k.row, k.bit, false);
+      }
     } else {
       this.setKey(mapping.row, mapping.bit, pressed);
     }

@@ -274,6 +274,7 @@ export class Spectrum {
   /** Trace state accessors for io-ports.ts */
   get tracing(): boolean { return this._tracing; }
   get traceMode(): 'full' | 'portio' | 'zxtl' { return this._traceMode; }
+  get traceBuffer(): readonly string[] { return this._traceBuffer; }
 
   /** Flush pending pixels up to the current beam position.
    *  Called from the port handler BEFORE updating borderColor so that
@@ -490,6 +491,8 @@ export class Spectrum {
   };
 
   private runFrame(): void {
+    // Apply any deferred combo keys (modifier was pressed last frame).
+    this.keyboard.processPending();
     // Reset activity counters for this frame
     this.activity.reset();
     this.portWatchHit = null;
