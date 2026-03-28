@@ -11,7 +11,7 @@ Add to `.mcp.json` in the project root (already present):
   "mcpServers": {
     "zx84": {
       "command": "cmd",
-      "args": ["/c", "npx", "tsx", "test/mcp-server.ts"]
+      "args": ["/c", "npx", "tsx", "src/mcp-server.ts"]
     }
   }
 }
@@ -250,6 +250,6 @@ All address/value string parameters are parsed as **hex by default**:
 
 ## Architecture
 
-The server (`test/mcp-server.ts`) creates a single `Spectrum` instance that persists across all tool calls. State (breakpoints, loaded files, memory modifications) accumulates naturally. Switching models with the `model` tool creates a fresh machine.
+The server (`src/mcp-server.ts`) creates a single `Spectrum` instance that persists across all tool calls. State (breakpoints, loaded files, memory modifications) accumulates naturally. Switching models with the `model` tool creates a fresh machine.
 
 The server communicates over stdio using the MCP SDK (`@modelcontextprotocol/sdk`). Claude Code spawns it automatically based on `.mcp.json`.

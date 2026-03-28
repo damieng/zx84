@@ -2,7 +2,7 @@
   "mcpServers": {
     "zx84": {
       "command": "cmd",
-      "args": ["/c", "npx", "tsx", "test/mcp-server.ts"],
+      "args": ["/c", "npx", "tsx", "src/mcp-server.ts"],
       "env": {}
     }
   }

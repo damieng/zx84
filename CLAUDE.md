@@ -39,7 +39,7 @@ line of code.  Step back and ask:
 - `src/frame-bridge.ts` — transfers per-frame state from the emulator to the
   Solid.js UI.  Read-only consumer of `activity` / machine state.
 - `src/contention.ts` — ULA memory/IO contention timing.
-- `test/mcp-server.ts` — MCP server for Claude Code integration.
+- `src/mcp-server.ts` — MCP server for Claude Code integration.
 
 ## Workflow Rules
 

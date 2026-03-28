@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "npm run build && wrangler dev",
-    "mcp": "tsx test/mcp-server.ts",
+    "mcp": "tsx src/mcp-server.ts",
     "hmr-freeze": "echo freeze > .hmr-freeze",
     "hmr-unfreeze": "rm .hmr-freeze",
     "deploy": "npm run build && wrangler deploy"
