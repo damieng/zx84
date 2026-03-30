@@ -1,75 +1,52 @@
 # ZX84 — Claude Code Guidelines
 
-## Engineering Philosophy
+## Architecture
 
-**Favour thoughtful abstractions over minimal patches.**
+### Source layout
 
-When fixing a bug or adding a feature, don't just slap a band-aid on the nearest
-line of code.  Step back and ask:
+- `src/cores/` — hardware cores (Z80, ULA, AY-3-8910, uPD765A FDC). Pure emulation logic, no UI or framework dependencies.
+- `src/spectrum.ts` — the main machine. Owns the frame loop, orchestrates cores, is the authority on machine state.
+- `src/io-ports.ts` — wires CPU port I/O to the appropriate cores. Thin glue only, no business logic.
+- `src/contention.ts` — ULA memory/IO contention timing (Ferranti vs Amstrad models differ — see below).
+- `src/frame-bridge.ts` — transfers per-frame state from the emulator to the Solid.js UI. Read-only consumer of machine state.
+- `src/memory.ts` — `SpectrumMemory`: slot-based paged memory, 8 × 16KB RAM banks, ROM pages.
+- `src/debug/` — disassembler, BASIC parser, screen OCR. These tools take `Uint8Array`, not `ByteReader`.
+- `src/managers/` — debug-manager, media-manager. Higher-level orchestration over the emulator.
+- `src/snapshot/` — SNA, Z80, SP snapshot loaders/savers.
+- `src/mcp-server.ts` — MCP server for Claude Code integration (persistent emulator process).
 
-1. **Where does this logic belong?**  If multiple subsystems need the same
-   information (e.g. "is the program loading from tape?"), put the logic in
-   *one* place and expose it through a clean interface.  Don't scatter inline
-   heuristics across io-ports.ts, spectrum.ts, and frame-bridge.ts.
+### Memory architecture
 
-2. **Single source of truth.**  Classification / masking / decoding of hardware
-   signals (port addresses, ULA reads, FDC status) should live in the subsystem
-   that owns them.  Consumers read the result; they don't re-derive it.
+Each of the 8 × 16KB RAM banks is the single authoritative source for its data. The Z80 address space is a 4-slot view into those banks (and ROM pages), updated O(1) on each bank switch.
 
-3. **Don't duplicate or half-duplicate.**  If you see two places computing the
-   same thing with slightly different thresholds or conditions, unify them.
-   A broken duplicate is worse than no abstraction at all.
+- **Z80 execution** — must go through `memory.readByte(addr)` / `memory.writeByte(addr, val)`. These do the slot/paging lookup.
+- **Debug tools and UI** — use `Uint8Array` directly. Call `memory.snapshot()` for a full 64KB view, or `memory.getRamBank(n)` / `memory.screenBank` for a specific bank.
+- **`memory.snapshot()`** allocates a fresh 64KB `Uint8Array` — don't call it from hot paths (e.g. per traced instruction). The trace path uses `spectrum.disasmAt(pc)` which reads just 8 bytes.
+- **Multiface / VTX overlays** use `memory.setSlot0(overlay)` / `memory.restoreSlot0()` to temporarily replace slot 0. Pass `skipSlot0 = true` to `bankSwitch()` while an overlay is active.
 
-4. **Reliable > minimal.**  The right fix often touches more files than the
-   smallest possible diff.  That's fine.  A refactor that prevents the next
-   three bugs is better than a one-liner that invites them.
+## Build and type-checking
 
-5. **Understand before changing.**  Read the surrounding code.  Trace the data
-   flow.  Know *why* the current code is the way it is before proposing changes.
-   Don't guess at fixes — if you're not sure, investigate first.
+```
+npx tsc --noEmit          # type-check (no output = clean)
+npx vite build            # production build
+```
 
-## Architecture Notes
+The dev server (`npx vite`) uses HMR — every file save triggers a hot reload. **Minimise edit churn**: plan all changes to a file upfront and apply them in one pass. Multiple sequential edits to the same file cause cascading reloads.
 
-- `src/cores/` — hardware cores (Z80, ULA, AY, FDC).  Pure emulation logic,
-  no UI or framework dependencies.
-- `src/spectrum.ts` — the main machine, owns the frame loop and orchestrates
-  cores.  This is the authority on machine state.
-- `src/io-ports.ts` — wires CPU port I/O to the appropriate cores.  Should be
-  thin glue, not business logic.
-- `src/frame-bridge.ts` — transfers per-frame state from the emulator to the
-  Solid.js UI.  Read-only consumer of `activity` / machine state.
-- `src/contention.ts` — ULA memory/IO contention timing.
-- `src/mcp-server.ts` — MCP server for Claude Code integration.
+## Workflow rules
 
-## Workflow Rules
+- **No `cd` in commands.** Don't prefix commands with `cd /path &&`. It breaks the permission model. Qualify file paths on the command itself (e.g. `npx tsc --noEmit` run from the project root).
+- **Never commit.** Do not run `git add`, `git commit`, or `git push` unless the user explicitly asks. The user manages their own commits.
+- **Present options for non-trivial features.** If there are multiple reasonable approaches, describe them and let the user choose — don't silently pick the smallest diff.
 
-- **No `cd` in commands.**  Don't prefix commands with `cd /path &&`.  It breaks
-  the permission model.  Instead, qualify file paths on the command itself
-  (e.g. `npx tsc --noEmit` from the project root, or pass absolute/relative
-  paths to the tool).
+## Common pitfalls
 
-- **Minimise file edit churn.**  Don't make multiple sequential edits to the
-  same file — each write triggers HMR and can cause cascading reloads.  Plan
-  all edits upfront and apply them in one pass.  If you absolutely must do
-  multiple passes, copy the file to a temp location, make all changes there,
-  then copy it back.
+- **Port 0xFE is shared**: keyboard reads and tape EAR reads both hit the ULA port. Distinguish by the high byte of the port address (0xFF = no row selected = EAR-only read; anything else selects keyboard half-rows).
 
-- **Don't default to "minimal change" for new features.**  Consider reuse
-  opportunities, cleaner abstractions, and broader design options.  If there
-  are multiple reasonable approaches, present them to the user and let them
-  choose — don't silently pick the smallest diff.
+- **Memory access layer**: only the Z80 execution path uses `readByte`/`writeByte`. Debug tools (`src/debug/`), UI components, and snapshot code use `Uint8Array` directly — either a `snapshot()` or a specific bank array. Don't add `ByteReader` parameters to debug tool functions.
 
-- **Never commit.**  Do not run `git add`, `git commit`, or `git push` unless
-  the user explicitly asks you to.  The user manages their own commits.
+- **Contention models differ**: Ferranti ULA (48K/128K/+2) vs Amstrad gate array (+2A/+3) have different contention patterns, different contended banks, and different IO contention rules. Check `contention.ts` and `timings.md` before touching timing-sensitive code.
 
-## Common Pitfalls
+- **FDC drive aliasing**: on the +3, units 2/3 alias to physical drives 0/1 (`physUnit = unit & 1`). Use the alias for all physical resource access (disk images, track positions); keep the original logical unit for ST0/ST3 result bits.
 
-- **Port 0xFE is shared**: keyboard reads and tape EAR reads both hit the ULA
-  port.  Distinguish them by the high byte of the port address (0xFF = no row
-  selected = EAR-only read; anything else selects keyboard half-rows).
-- **`memory.flat[]` vs `memory.ramBanks[]`**: `flat` is live; `ramBanks` is a
-  snapshot updated only on bank switches.  Always call `saveToRAMBanks()` before
-  reading from `ramBanks` (e.g. saving snapshots).
-- **Contention models differ**: Ferranti ULA (48K/128K/+2) vs Amstrad gate
-  array (+2A/+3) have different patterns, different contended banks, and
-  different IO contention rules.
+- **`romPages` indexing**: for +2A/+3 (4 ROM pages), the 48K BASIC ROM is page 3. For 128K/+2 (2 ROM pages), it's page 1. `spectrum.romFont` handles this correctly — use it rather than indexing `romPages` directly.
