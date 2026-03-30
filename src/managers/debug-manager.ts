@@ -47,13 +47,13 @@ export class DebugManager {
    */
   stepOver(spectrum: Spectrum, onUpdate: () => void): void {
     const cpu = spectrum.cpu;
-    const op = cpu.memory[cpu.pc];
+    const op = spectrum.memory.readByte(cpu.pc);
 
     // CALL nn / CALL cc,nn / RST: step until SP returns to current level
     const isCall = op === 0xCD ||                                           // CALL nn
       (op & 0xC7) === 0xC4 ||                                              // CALL cc,nn
       (op & 0xC7) === 0xC7 ||                                              // RST
-      (op === 0xED && ((cpu.memory[(cpu.pc + 1) & 0xFFFF] & 0xC7) === 0xB0)); // block repeat (LDIR etc)
+      (op === 0xED && ((spectrum.memory.readByte((cpu.pc + 1) & 0xFFFF) & 0xC7) === 0xB0)); // block repeat (LDIR etc)
 
     // Conditional jumps: run to the next instruction (skip if taken)
     const isCondJump =
@@ -198,11 +198,11 @@ export class DebugManager {
     ];
 
     // Disassemble 16 instructions around PC
+    const snap = spectrum.memory.snapshot();
     let addr = cpu.pc;
     for (let i = 0; i < 16; i++) {
-      const dl = disasmOne(cpu.memory, addr);
-      const bytesStr = Array.from(cpu.memory.slice(dl.addr, dl.addr + dl.length))
-        .map(b => hex8(b))
+      const dl = disasmOne(snap, addr);
+      const bytesStr = Array.from({ length: dl.length }, (_, j) => hex8(snap[(dl.addr + j) & 0xFFFF]))
         .join(' ')
         .padEnd(12, ' ');
       const mnem = dl.text.padEnd(24, ' ');

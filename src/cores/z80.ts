@@ -62,7 +62,6 @@ const _ddfdHL = new Uint8Array(256);
 function ddfdUsesHL(op: number): boolean { return _ddfdHL[op] !== 0; }
 
 export class Z80 {
-  memory: Uint8Array;
   portOutHandler: ((port: number, val: number) => void) | null;
   portInHandler: ((port: number) => number) | null;
   postStepHook: ((cpu: Z80) => void) | null;
@@ -128,8 +127,7 @@ export class Z80 {
   static readonly FLAG_Z = 0x40;
   static readonly FLAG_S = 0x80;
 
-  constructor(memory: Uint8Array) {
-    this.memory = memory;
+  constructor() {
     this.portOutHandler = null;
     this.portInHandler = null;
     this.postStepHook = null;
@@ -169,16 +167,6 @@ export class Z80 {
     this._pendingVector = 0xFF;
   }
 
-  loadBinary(data: Uint8Array, address: number): void {
-    if (address + data.length <= 65536) {
-      this.memory.set(data, address);
-    } else {
-      for (let i = 0; i < data.length; i++) {
-        this.memory[(address + i) & 0xFFFF] = data[i];
-      }
-    }
-  }
-
   // Helper register pair access
   get bc(): number { return (this.b << 8) | this.c; }
   set bc(v: number) { this.b = (v >> 8) & 0xFF; this.c = v & 0xFF; }
@@ -189,14 +177,9 @@ export class Z80 {
   get af(): number { return (this.a << 8) | this.f; }
   set af(v: number) { this.a = (v >> 8) & 0xFF; this.f = v & 0xFF; }
 
-  // Memory access
-  read8(addr: number): number {
-    return this.memory[addr & 0xFFFF];
-  }
-
-  write8(addr: number, val: number): void {
-    this.memory[addr & 0xFFFF] = val & 0xFF;
-  }
+  // Memory access — overridden by io-ports.ts hooks before execution.
+  read8(_addr: number): number { return 0xFF; }
+  write8(_addr: number, _val: number): void {}
 
   read16(addr: number): number {
     const lo = this.read8(addr);
@@ -621,29 +604,6 @@ export class Z80 {
       case 7: return !!(this.f & 0x80);
     }
     return false;
-  }
-
-  // --- Execute instructions until tStates budget is reached or CPU halts ---
-  run(tBudget: number): void {
-    const mem = this.memory;
-    const limit = this.tStates + tBudget;
-    while (this.tStates < limit) {
-      if (this.halted) {
-        // Skip remaining budget in one go (HALT burns 4 T per NOP)
-        const remaining = limit - this.tStates;
-        const nops = ((remaining + 3) / 4) | 0;
-        this.tStates += nops * 4;
-        this.r = (this.r & 0x80) | ((this.r + nops) & 0x7F);
-        return;
-      }
-      this._prevQ = this._qReg;
-      this._qReg = 0;
-      const opcode = mem[this.pc];
-      this.pc = (this.pc + 1) & 0xFFFF;
-      this.r = (this.r & 0x80) | ((this.r + 1) & 0x7F);
-      this.tStates += 4;  // M1 cycle (no contention hooks in fast path)
-      this.executeMain(opcode);
-    }
   }
 
   // --- Execute one instruction ---

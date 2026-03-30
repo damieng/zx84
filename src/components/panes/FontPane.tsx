@@ -110,7 +110,7 @@ export function FontPane() {
 
   function huntFonts() {
     if (!spectrum) { setStatus('No emulator running'); return; }
-    const mem = spectrum.memory.flat;
+    const mem = spectrum.memory.snapshot();
     const store = loadFontStore();
     const existingIds = new Set(store.map(e => e.id));
     const existingAddrs = new Set(store.filter(e => e.address != null).map(e => e.address!));

@@ -79,7 +79,7 @@ const KEY_NAME_MAP: Record<string, string> = {
 
 function formatStep(spec: Spectrum): string {
   const cpu = spec.cpu;
-  const line = disasmOne(cpu.memory, cpu.pc);
+  const line = disasmOne(spec.memory, cpu.pc);
   const mnem = stripMarkers(line.text).padEnd(20);
   return (
     `${h16(cpu.pc)}  ${mnem}` +
@@ -115,14 +115,30 @@ function formatRegs(spec: Spectrum): string {
   return lines.join('\n');
 }
 
-function formatHexDump(mem: Uint8Array, start: number, len: number): string {
+/** Returns a one-line watchpoint/breakpoint hit message, or null if none. */
+function checkWatchHit(spec: Spectrum): string | null {
+  if (spec.portWatchHit !== null) {
+    const { port, value, dir } = spec.portWatchHit;
+    return `Port watchpoint: ${dir === 'out' ? 'OUT' : 'IN '} (${h16(port)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`;
+  }
+  if (spec.memWatchHit !== null) {
+    const { addr, value, dir } = spec.memWatchHit;
+    return `Memory watchpoint: ${dir === 'write' ? 'WR' : 'RD'} (${h16(addr)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`;
+  }
+  if (spec.breakpointHit >= 0) {
+    return `Breakpoint at ${h16(spec.breakpointHit)}. T=${spec.cpu.tStates}\n${formatStep(spec)}`;
+  }
+  return null;
+}
+
+function formatHexDump(readByte: (addr: number) => number, start: number, len: number): string {
   const lines: string[] = [];
   for (let i = 0; i < len; i += 16) {
     const addr = (start + i) & 0xFFFF;
     let hex = '';
     let ascii = '';
     for (let j = 0; j < 16 && i + j < len; j++) {
-      const b = mem[(addr + j) & 0xFFFF];
+      const b = readByte((addr + j) & 0xFFFF);
       hex += h8(b) + ' ';
       ascii += (b >= 0x20 && b < 0x7F) ? String.fromCharCode(b) : '.';
     }
@@ -131,12 +147,12 @@ function formatHexDump(mem: Uint8Array, start: number, len: number): string {
   return lines.join('\n');
 }
 
-function doFindBytes(mem: Uint8Array, needle: Uint8Array): string {
+function doFindBytes(readByte: (addr: number) => number, needle: Uint8Array): string {
   const results: number[] = [];
   for (let i = 0; i <= 0xFFFF - needle.length + 1; i++) {
     let match = true;
     for (let j = 0; j < needle.length; j++) {
-      if (mem[i + j] !== needle[j]) { match = false; break; }
+      if (readByte(i + j) !== needle[j]) { match = false; break; }
     }
     if (match) results.push(i);
     if (results.length >= 64) break;
@@ -175,13 +191,11 @@ async function loadFileInto(spec: Spectrum, filepath: string, diskUnit: number =
     spec.reset();
     const result = loadSNA(data, spec.cpu, spec.memory);
     spec.ula.borderColor = result.borderColor;
-    spec.cpu.memory = spec.memory.flat;
     return `SNA loaded: ${filename} (${result.is128K ? '128K' : '48K'}) PC=${h16(spec.cpu.pc)}`;
   } else if (ext === '.z80') {
     spec.reset();
     const result = loadZ80(data, spec.cpu, spec.memory);
     spec.ula.borderColor = result.borderColor;
-    spec.cpu.memory = spec.memory.flat;
     return `Z80 loaded: ${filename} (${result.is128K ? '128K' : '48K'}) PC=${h16(spec.cpu.pc)}`;
   } else if (ext === '.szx') {
     // Auto-detect model from SZX header byte 6 (machine ID).
@@ -208,7 +222,6 @@ async function loadFileInto(spec: Spectrum, filepath: string, diskUnit: number =
       spec.memory.applyBanking();
     }
     spec.ula.borderColor = result.borderColor;
-    spec.cpu.memory = spec.memory.flat;
     return `SZX loaded: ${filename} (${szxModel}) PC=${h16(spec.cpu.pc)}`;
   }
   return `Unsupported file type: ${ext}`;
@@ -267,6 +280,10 @@ server.tool(
       const { port, value, dir } = spec.portWatchHit;
       return text(`Port watchpoint: ${dir === 'out' ? 'OUT' : 'IN '} (${h16(port)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
     }
+    if (spec.memWatchHit !== null) {
+      const { addr, value, dir } = spec.memWatchHit;
+      return text(`Memory watchpoint: ${dir === 'write' ? 'WR' : 'RD'} (${h16(addr)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
+    }
     if (spec.breakpointHit >= 0) {
       return text(`Breakpoint hit at ${h16(spec.breakpointHit)} after ${ran}/${frames} frame(s). T=${spec.cpu.tStates}\n${formatStep(spec)}`);
     }
@@ -281,6 +298,14 @@ server.tool(
   {},
   async () => {
     spec.tick();
+    if (spec.portWatchHit !== null) {
+      const { port, value, dir } = spec.portWatchHit;
+      return text(`Port watchpoint: ${dir === 'out' ? 'OUT' : 'IN '} (${h16(port)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
+    }
+    if (spec.memWatchHit !== null) {
+      const { addr, value, dir } = spec.memWatchHit;
+      return text(`Memory watchpoint: ${dir === 'write' ? 'WR' : 'RD'} (${h16(addr)}) = ${h8(value)}  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
+    }
     if (spec.breakpointHit >= 0) {
       return text(`Breakpoint at ${h16(spec.breakpointHit)}. T=${spec.cpu.tStates}\n${formatStep(spec)}`);
     }
@@ -309,12 +334,16 @@ server.tool(
   'Continue execution until a breakpoint is hit (max N frames, default 5000).',
   { max_frames: z.number().int().positive().default(5000).describe('Maximum frames before giving up') },
   async ({ max_frames }) => {
-    if (spec.breakpoints.size === 0 && spec.portWatchpoints.size === 0 && traps.size === 0)
-      return text('No breakpoints or traps set. Use "breakpoint", "port_watchpoint", or "trap" first.');
+    if (spec.breakpoints.size === 0 && spec.portWatchpoints.size === 0 && spec.memWatchpoints.length === 0 && traps.size === 0)
+      return text('No breakpoints or traps set. Use "breakpoint", "port_watchpoint", "memory_watchpoint", or "trap" first.');
     const ran = spec.runUntil(max_frames);
     if (spec.portWatchHit !== null) {
       const { port, value, dir } = spec.portWatchHit;
       return text(`Port watchpoint: ${dir === 'out' ? 'OUT' : 'IN '} (${h16(port)}) = ${h8(value)}  after ${ran} frame(s)  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
+    }
+    if (spec.memWatchHit !== null) {
+      const { addr, value, dir } = spec.memWatchHit;
+      return text(`Memory watchpoint: ${dir === 'write' ? 'WR' : 'RD'} (${h16(addr)}) = ${h8(value)}  after ${ran} frame(s)  PC=${h16(spec.cpu.pc)}\n${formatStep(spec)}`);
     }
     if (spec.breakpointHit >= 0) {
       return text(`Breakpoint hit at ${h16(spec.breakpointHit)} after ${ran} frame(s). T=${spec.cpu.tStates}\n${formatStep(spec)}`);
@@ -376,11 +405,11 @@ server.tool(
   },
   async ({ address, lines: n }) => {
     const addr = address ? parseAddr(address) : spec.cpu.pc;
-    const result = disassemble(spec.cpu.memory, addr, n);
+    const result = disassemble(spec.memory, addr, n);
     const out: string[] = [];
     for (const l of result) {
       const bytes: string[] = [];
-      for (let i = 0; i < l.length; i++) bytes.push(h8(spec.cpu.memory[(l.addr + i) & 0xFFFF]));
+      for (let i = 0; i < l.length; i++) bytes.push(h8(spec.memory.readByte((l.addr + i) & 0xFFFF)));
       const prefix = l.addr === spec.cpu.pc ? '>' : ' ';
       out.push(`${prefix} ${h16(l.addr)}  ${bytes.join(' ').padEnd(11)}  ${stripMarkers(l.text)}`);
     }
@@ -392,28 +421,10 @@ server.tool(
 
 /**
  * Resolve a bank number to a Uint8Array view.
- * If the bank is currently paged into flat[], returns a subarray of flat[]
- * (live, no flush needed).  Otherwise returns the raw ramBanks[] entry.
- * Returns null for ROM bank (-1) when requested via the bank param.
+ * Banks are always authoritative — return the bank array directly.
  */
 function resolveBankView(bank: number): Uint8Array | null {
-  const mem = spec.memory;
-  // Determine which banks are in each 16K slot of flat[]
-  let slots: readonly number[];
-  if (mem.specialPaging) {
-    const SPECIAL_MODES = [[0,1,2,3],[4,5,6,7],[4,5,6,3],[4,7,6,3]] as const;
-    slots = SPECIAL_MODES[(mem.port1FFD >> 1) & 3];
-  } else {
-    slots = [-1, 5, 2, mem.currentBank];
-  }
-  for (let slot = 0; slot < 4; slot++) {
-    if (slots[slot] === bank) {
-      const base = slot * 0x4000;
-      return spec.cpu.memory.subarray(base, base + 0x4000);
-    }
-  }
-  // Not mapped — access ramBanks directly
-  return mem.getRamBank(bank);
+  return spec.memory.getRamBank(bank);
 }
 
 // -- read_memory --
@@ -431,9 +442,9 @@ server.tool(
       if (!view) return text(`Bank ${bank} not available`);
       const offset = parseAddr(address) & 0x3FFF;
       const len = Math.min(length, 0x4000 - offset);
-      return text(`Bank ${bank}, offset ${h16(offset)}:\n${formatHexDump(view, offset, len)}`);
+      return text(`Bank ${bank}, offset ${h16(offset)}:\n${formatHexDump(a => view[a] ?? 0xFF, offset, len)}`);
     }
-    return text(formatHexDump(spec.cpu.memory, parseAddr(address), length));
+    return text(formatHexDump(addr => spec.memory.readByte(addr), parseAddr(address), length));
   },
 );
 
@@ -465,7 +476,7 @@ server.tool(
     for (let i = 0; i < count; i++) {
       const val = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
       if (isNaN(val)) return text(`Invalid hex at position ${i * 2}: "${hex.slice(i * 2, i * 2 + 2)}"`);
-      spec.cpu.memory[(addr + i) & 0xFFFF] = val;
+      spec.memory.writeByte((addr + i) & 0xFFFF, val);
     }
     return text(`Wrote ${count} byte${count !== 1 ? 's' : ''} at ${h16(addr)}..${h16((addr + count - 1) & 0xFFFF)}`);
   },
@@ -481,7 +492,7 @@ server.tool(
     if (hex.length % 2 !== 0) return text('Hex string must have even length');
     const needle = new Uint8Array(hex.length / 2);
     for (let i = 0; i < needle.length; i++) needle[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-    return text(doFindBytes(spec.cpu.memory, needle));
+    return text(doFindBytes(addr => spec.memory.readByte(addr), needle));
   },
 );
 
@@ -549,6 +560,51 @@ server.tool(
   },
 );
 
+// -- memory_watchpoint --
+server.tool(
+  'memory_watchpoint',
+  'Set a memory watchpoint that breaks on read, write, or either. Omit address to list all.',
+  {
+    address: z.string().optional().describe('Start address (hex, e.g. "4000"). Omit to list all watchpoints.'),
+    length:  z.number().int().positive().default(1).describe('Number of bytes to watch (default 1)'),
+    mode:    z.enum(['read', 'write', 'rw']).default('rw').describe('Access type to watch: read, write, or rw (default rw)'),
+  },
+  async ({ address, length, mode }) => {
+    if (!address) {
+      if (spec.memWatchpoints.length === 0) return text('No memory watchpoints');
+      const lines = spec.memWatchpoints.map(wp =>
+        wp.start === wp.end ? `${h16(wp.start)} ${wp.mode}` : `${h16(wp.start)}-${h16(wp.end)} ${wp.mode}`
+      );
+      return text('Memory watchpoints:\n' + lines.join('\n'));
+    }
+    const start = parseAddr(address) & 0xFFFF;
+    const end = (start + length - 1) & 0xFFFF;
+    spec.memWatchpoints.push({ start, end, mode });
+    const range = start === end ? h16(start) : `${h16(start)}-${h16(end)}`;
+    return text(`Memory watchpoint set: ${range} (${mode})`);
+  },
+);
+
+// -- delete_memory_watchpoint --
+server.tool(
+  'delete_memory_watchpoint',
+  'Delete a memory watchpoint by start address, or omit to clear all.',
+  { address: z.string().optional().describe('Start address of watchpoint to remove (omit to clear all)') },
+  async ({ address }) => {
+    if (!address) {
+      spec.memWatchpoints.length = 0;
+      return text('All memory watchpoints cleared');
+    }
+    const start = parseAddr(address) & 0xFFFF;
+    const before = spec.memWatchpoints.length;
+    spec.memWatchpoints = spec.memWatchpoints.filter(wp => wp.start !== start);
+    const removed = before - spec.memWatchpoints.length;
+    return removed > 0
+      ? text(`Memory watchpoint at ${h16(start)} removed`)
+      : text(`No memory watchpoint found at ${h16(start)}`);
+  },
+);
+
 // ── Trap system ──────────────────────────────────────────────────────────────
 //
 // Traps are pre-configured hooks that fire when PC hits a specific address.
@@ -582,7 +638,7 @@ const trapLog: string[] = [];
 function readCpmString(addr: number, maxLen = 256): string {
   let s = '';
   for (let i = 0; i < maxLen; i++) {
-    const ch = spec.cpu.memory[(addr + i) & 0xFFFF];
+    const ch = spec.memory.readByte((addr + i) & 0xFFFF);
     if (ch === 0x24) break; // '$'
     s += (ch >= 0x20 && ch < 0x7F) ? String.fromCharCode(ch) : '.';
   }
@@ -621,8 +677,8 @@ function formatTrapLog(trap: Trap): string {
 /** Execute a RET: pop PC from stack. */
 function execRET(): void {
   const cpu = spec.cpu;
-  const lo = cpu.memory[cpu.sp & 0xFFFF];
-  const hi = cpu.memory[(cpu.sp + 1) & 0xFFFF];
+  const lo = spec.memory.readByte(cpu.sp & 0xFFFF);
+  const hi = spec.memory.readByte((cpu.sp + 1) & 0xFFFF);
   cpu.sp = (cpu.sp + 2) & 0xFFFF;
   cpu.pc = (hi << 8) | lo;
 }
@@ -1044,15 +1100,27 @@ server.tool(
         i++;
       }
     }
-    for (const keys of tokens) {
+    let hit: string | null = null;
+    typeLoop: for (const keys of tokens) {
       const codes = keys.map(k => KEY_NAME_MAP[k]);
       for (const c of codes) spec.keyboard.handleKeyEvent(c, true);
-      for (let f = 0; f < 5; f++) spec.tick();
+      for (let f = 0; f < 5; f++) {
+        spec.tick();
+        hit = checkWatchHit(spec);
+        if (hit) { for (const c of codes) spec.keyboard.handleKeyEvent(c, false); break typeLoop; }
+      }
       for (const c of codes) spec.keyboard.handleKeyEvent(c, false);
       spec.tick();
+      hit = checkWatchHit(spec);
+      if (hit) break;
       // small gap between keypresses
-      for (let f = 0; f < 3; f++) spec.tick();
+      for (let f = 0; f < 3; f++) {
+        spec.tick();
+        hit = checkWatchHit(spec);
+        if (hit) break typeLoop;
+      }
     }
+    if (hit) return text(`Typed ${tokens.length} keystrokes, then hit:\n${hit}`);
     return text(`Typed ${tokens.length} keystrokes`);
   },
 );
@@ -1219,7 +1287,7 @@ server.tool(
       }
 
       // Disassemble current instruction
-      const { text: mnem } = disasmOne(spec.cpu.memory, pc);
+      const { text: mnem } = disasmOne(spec.memory, pc);
 
       // Reset accumulators
       instrContentionTotal = 0;
@@ -1448,9 +1516,8 @@ server.tool(
 
     if (action === 'off') {
       if (mf.pagedIn) {
-        mf.pageOut(spec.cpu.memory);
+        mf.pageOut(spec.memory);
         spec.memory.applyBanking();
-        spec.cpu.memory = spec.memory.flat;
       }
       mf.enabled = false;
       return text('Multiface disabled');
@@ -1478,10 +1545,10 @@ server.tool(
     if (!mf.romLoaded) return text('Multiface ROM not loaded. Use action=on first.');
 
     const prevPC = spec.cpu.pc;
-    mf.pressButton(spec.cpu.memory, spec.cpu, spec.memory.slot0Bank);
+    mf.pressButton(spec.memory, spec.cpu, spec.memory.slot0Bank);
     return text(
       `NMI triggered. PC: ${h16(prevPC)} → ${h16(spec.cpu.pc)}\n` +
-      `pagedIn=${mf.pagedIn}  flat[0x66]=${h8(spec.cpu.memory[0x66])}  flat[0x67]=${h8(spec.cpu.memory[0x67])}  flat[0x68..6A]=${h8(spec.cpu.memory[0x68])}${h8(spec.cpu.memory[0x69])}${h8(spec.cpu.memory[0x6A])}\n` +
+      `pagedIn=${mf.pagedIn}  [0x66]=${h8(spec.memory.readByte(0x66))}  [0x67]=${h8(spec.memory.readByte(0x67))}  [0x68..6A]=${h8(spec.memory.readByte(0x68))}${h8(spec.memory.readByte(0x69))}${h8(spec.memory.readByte(0x6A))}\n` +
       `SP=${h16(spec.cpu.sp)}  IFF1=${spec.cpu.iff1}  IFF2=${spec.cpu.iff2}`
     );
   },
@@ -1503,7 +1570,7 @@ async function fetchVTXRom(): Promise<Uint8Array> {
 
 server.tool(
   'vtx5000',
-  'Enable/disable the VTX-5000 viewdata peripheral (48K only). Loads the ROM overlay and resets the machine.',
+  'Enable/disable the VTX-5000 Viewdata/Prestel modem (48K only). Loads the ROM overlay and resets the machine.',
   { action: z.enum(['on', 'off', 'status']).describe('Action to perform') },
   async ({ action }) => {
     const vtx = spec.vtx5000;
@@ -1513,14 +1580,13 @@ server.tool(
         `VTX-5000: ${vtx.enabled ? 'ON' : 'OFF'}  romLoaded=${vtx.romLoaded}  romSize=${vtx.romSize}\n` +
         `8251: vtxRomPaged=${vtx.vtxRomPaged}  status=${h8(vtx.readStatus())}  dsr=${vtx.dsr}\n` +
         `Model: ${spec.model}  (only supported on 48K)\n` +
-        `flat[0x0000]=${h8(spec.cpu.memory[0x0000])}  flat[0x1FFF]=${h8(spec.cpu.memory[0x1FFF])}  flat[0x2000]=${h8(spec.cpu.memory[0x2000])}`
+        `[0x0000]=${h8(spec.memory.readByte(0x0000))}  [0x1FFF]=${h8(spec.memory.readByte(0x1FFF))}  [0x2000]=${h8(spec.memory.readByte(0x2000))}`
       );
     }
 
     if (action === 'off') {
       vtx.enabled = false;
       spec.memory.applyBanking();
-      spec.cpu.memory = spec.memory.flat;
       spec.cpu.pc = 0;
       return text('VTX-5000 disabled. Memory restored to Spectrum ROM. PC=0000');
     }
@@ -1541,7 +1607,7 @@ server.tool(
     spec.reset();
     return text(
       `VTX-5000 enabled (ROM: ${vtx.romSize} bytes). Machine reset.\n` +
-      `flat[0x0000]=${h8(spec.cpu.memory[0x0000])}  flat[0x1FFF]=${h8(spec.cpu.memory[0x1FFF])}  flat[0x2000]=${h8(spec.cpu.memory[0x2000])}\n` +
+      `[0x0000]=${h8(spec.memory.readByte(0x0000))}  [0x1FFF]=${h8(spec.memory.readByte(0x1FFF))}  [0x2000]=${h8(spec.memory.readByte(0x2000))}\n` +
       `PC=${h16(spec.cpu.pc)}`
     );
   },

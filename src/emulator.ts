@@ -642,7 +642,7 @@ export function saveScreenshot(format: 'png' | 'scr'): void {
 
   if (format === 'scr') {
     // .scr = raw 6912 bytes from 0x4000 (6144 pixels + 768 attrs)
-    const screenData = spectrum.memory.flat.slice(0x4000, 0x4000 + 6912);
+    const screenData = spectrum.memory.getRamBank(5).slice(0, 6912);
     downloadFile(screenData, 'screen.scr');
     setStatus('Saved screen.scr');
   } else {
@@ -671,7 +671,7 @@ export function saveRAM(): void {
   // Check if RAM is at 0x0000 (special paging mode on +2A/+3)
   const mem = spectrum.memory;
   const startAddr = mem.specialPaging ? 0 : 0x4000;
-  const ramData = spectrum.memory.flat.slice(startAddr);
+  const ramData = spectrum.memory.readBlock(startAddr, 0x10000 - startAddr);
 
   const filename = startAddr === 0 ? 'ram-64k.bin' : 'ram-48k.bin';
   downloadFile(ramData, filename);
@@ -910,15 +910,11 @@ export function triggerNMI(): void {
   if (!mf.enabled) { setStatus('Multiface not enabled'); return; }
   if (!mf.romLoaded) { setStatus('Multiface ROM not loaded'); return; }
 
-  const flat = spectrum.cpu.memory;
   console.log('[MF] Before pageIn: flat[0x66]=%s pagedIn=%s',
-    flat[0x66].toString(16), mf.pagedIn);
-  mf.pressButton(flat, spectrum.cpu, spectrum.memory.slot0Bank);
+    spectrum.memory.readByte(0x66).toString(16), mf.pagedIn);
+  mf.pressButton(spectrum.memory, spectrum.cpu, spectrum.memory.slot0Bank);
   console.log('[MF] After pressButton: flat[0x66]=%s PC=%s pagedIn=%s',
-    flat[0x66].toString(16), spectrum.cpu.pc.toString(16), mf.pagedIn);
-  // Verify flat is still the live CPU memory
-  console.log('[MF] flat === cpu.memory: %s, flat === memory.flat: %s',
-    flat === spectrum.cpu.memory, flat === spectrum.memory.flat);
+    spectrum.memory.readByte(0x66).toString(16), spectrum.cpu.pc.toString(16), mf.pagedIn);
   setStatus('Multiface NMI triggered');
 }
 
@@ -1103,8 +1099,6 @@ export async function restoreHMRState(): Promise<boolean> {
     }
 
     spectrum.ula.borderColor = result.borderColor;
-    spectrum.cpu.memory = spectrum.memory.flat;
-
     // Restore AY state if present
     if (result.ayRegs) {
       spectrum.ay.setRegisters(result.ayRegs);

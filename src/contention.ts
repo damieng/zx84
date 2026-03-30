@@ -146,8 +146,9 @@ export class Contention {
    * Floating bus read: returns whatever the ULA is currently fetching from VRAM.
    * During active display, this is a pixel byte or attribute byte.
    * Outside active display, returns 0xFF.
+   * @param screenBank 16KB bank array for the current screen (bank 5 or 7).
    */
-  floatingBusRead(cpuTStates: number, mem: Uint8Array): number {
+  floatingBusRead(cpuTStates: number, screenBank: Uint8Array): number {
     const t = this.timing;
     const frameTStates = cpuTStates - this.frameStartTStates;
     const offset = frameTStates - t.contentionStart + t.floatingBusAdjust;
@@ -157,14 +158,16 @@ export class Contention {
     const col = offset - line * t.tStatesPerLine;
     if (col >= 128) return 0xFF;
 
-    // Each character cell takes 4 T-states: pixel fetch, attr fetch
+    // Each character cell takes 4 T-states: pixel fetch, attr fetch.
+    // Addresses from vramBitmapAddr/vramAttrAddr are 64K-space; subtract 0x4000
+    // because screenBank is indexed from 0 within the 16KB bank.
     const charCol = (col >> 2) & 0x1F;
     const phase = col & 3;
 
     if (phase < 2) {
-      return mem[vramBitmapAddr(line) + charCol];  // Pixel byte
+      return screenBank[vramBitmapAddr(line) - 0x4000 + charCol];  // Pixel byte
     } else {
-      return mem[vramAttrAddr(line, charCol)];      // Attribute byte
+      return screenBank[vramAttrAddr(line, charCol) - 0x4000];     // Attribute byte
     }
   }
 }

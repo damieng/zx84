@@ -102,7 +102,7 @@ export function loadSNA(
     memory.load48KRAM(data.subarray(27, 27 + 49152));
 
     // PC is recovered by popping from stack
-    cpu.pc = memory.flat[cpu.sp] | (memory.flat[cpu.sp + 1] << 8);
+    cpu.pc = memory.readByte(cpu.sp) | (memory.readByte((cpu.sp + 1) & 0xFFFF) << 8);
     cpu.sp = (cpu.sp + 2) & 0xFFFF;
 
     return { is128K: false, port7FFD: 0, borderColor };
@@ -151,20 +151,23 @@ export function saveSNA(
 
     // Push PC onto stack (SNA 48K stores PC on the stack)
     const sp = (cpu.sp - 2) & 0xFFFF;
-    memory.flat[sp] = cpu.pc & 0xFF;
-    memory.flat[sp + 1] = (cpu.pc >> 8) & 0xFF;
+    memory.writeByte(sp, cpu.pc & 0xFF);
+    memory.writeByte((sp + 1) & 0xFFFF, (cpu.pc >> 8) & 0xFF);
 
     writeHeader(data, cpu, borderColor);
     // Write modified SP (with PC pushed)
     data[23] = sp & 0xFF;
     data[24] = (sp >> 8) & 0xFF;
 
-    // 48K RAM at 0x4000-0xFFFF
-    data.set(memory.flat.subarray(0x4000, 0x10000), 27);
+    // 48K RAM at 0x4000-0xFFFF: banks 5, 2, currentBank
+    const banks = memory.flushBanks();
+    data.set(banks[5], 27);
+    data.set(banks[2], 27 + 16384);
+    data.set(banks[memory.currentBank], 27 + 32768);
 
     // Restore original stack
-    memory.flat[sp] = 0;
-    memory.flat[sp + 1] = 0;
+    memory.writeByte(sp, 0);
+    memory.writeByte((sp + 1) & 0xFFFF, 0);
 
     return data;
   }
