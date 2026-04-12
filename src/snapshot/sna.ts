@@ -50,7 +50,7 @@ export function loadSNA(
   cpu.f = data[21];  cpu.a = data[22];
   cpu.sp = data[23] | (data[24] << 8);
 
-  cpu.im = data[25];
+  cpu.im = data[25] & 0x03;
 
   const borderColor = data[26] & 0x07;
 
@@ -121,14 +121,19 @@ export function saveSNA(
   const banks = memory.flushBanks();
 
   if (memory.is128K) {
-    // 128K SNA: header(27) + banks 5,2,current(49152) + PC(2) + 7FFD(1) + TRDOS(1) + remaining banks(5*16384)
-    const data = new Uint8Array(131103);
+    const cb = memory.currentBank;
+    let extraBanks = 0;
+    for (let bank = 0; bank < 8; bank++) {
+      if (bank === 5 || bank === 2 || bank === cb) continue;
+      extraBanks++;
+    }
+    const data = new Uint8Array(49183 + extraBanks * 16384);
     writeHeader(data, cpu, borderColor);
 
     // Main 48K region: banks 5, 2, currentBank
     data.set(banks[5], 27);
     data.set(banks[2], 27 + 16384);
-    data.set(banks[memory.currentBank], 27 + 32768);
+    data.set(banks[cb], 27 + 32768);
 
     // Extended header
     data[49179] = cpu.pc & 0xFF;
@@ -139,7 +144,7 @@ export function saveSNA(
     // Remaining banks in order 0-7, skipping 5, 2, and currentBank
     let offset = 49183;
     for (let bank = 0; bank < 8; bank++) {
-      if (bank === 5 || bank === 2 || bank === memory.currentBank) continue;
+      if (bank === 5 || bank === 2 || bank === cb) continue;
       data.set(banks[bank], offset);
       offset += 16384;
     }
@@ -151,6 +156,8 @@ export function saveSNA(
 
     // Push PC onto stack (SNA 48K stores PC on the stack)
     const sp = (cpu.sp - 2) & 0xFFFF;
+    const origLo = memory.readByte(sp);
+    const origHi = memory.readByte((sp + 1) & 0xFFFF);
     memory.writeByte(sp, cpu.pc & 0xFF);
     memory.writeByte((sp + 1) & 0xFFFF, (cpu.pc >> 8) & 0xFF);
 
@@ -166,8 +173,8 @@ export function saveSNA(
     data.set(banks[memory.currentBank], 27 + 32768);
 
     // Restore original stack
-    memory.writeByte(sp, 0);
-    memory.writeByte((sp + 1) & 0xFFFF, 0);
+    memory.writeByte(sp, origLo);
+    memory.writeByte((sp + 1) & 0xFFFF, origHi);
 
     return data;
   }
