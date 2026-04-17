@@ -153,7 +153,7 @@ export class SpectrumMemory implements ByteReader {
   private updateSlots(): void {
     if (this.specialPaging) {
       const banks = SPECIAL_MODES[(this.port1FFD >> 1) & 3];
-      this._slots[0] = this._ramBanks[banks[0]];
+      if (!this.externalRomPaged) this._slots[0] = this._ramBanks[banks[0]];
       this._slots[1] = this._ramBanks[banks[1]];
       this._slots[2] = this._ramBanks[banks[2]];
       this._slots[3] = this._ramBanks[banks[3]];
@@ -227,8 +227,6 @@ export class SpectrumMemory implements ByteReader {
       if (val & 0x20) this.pagingLocked = true;
       return;
     }
-
-    // Normal paging: update slot 3 and possibly slot 0 (ROM).
     this._slots[3] = this._ramBanks[newBank];
     if (!skipSlot0 && !this.externalRomPaged && newROM !== this.currentROM) {
       this._slots[0] = this.romPages[newROM];
@@ -255,10 +253,11 @@ export class SpectrumMemory implements ByteReader {
 
     if (this.specialPaging) {
       const banks = SPECIAL_MODES[(val >> 1) & 3];
-      if (!skipSlot0) this._slots[0] = this._ramBanks[banks[0]];
+      if (!skipSlot0 && !this.externalRomPaged) this._slots[0] = this._ramBanks[banks[0]];
       this._slots[1] = this._ramBanks[banks[1]];
       this._slots[2] = this._ramBanks[banks[2]];
       this._slots[3] = this._ramBanks[banks[3]];
+      this.currentBank = banks[3];
     } else {
       if (!skipSlot0 && !this.externalRomPaged) {
         this._slots[0] = this.romPages[this.currentROM];
@@ -334,5 +333,17 @@ export class SpectrumMemory implements ByteReader {
       return SPECIAL_MODES[(this.port1FFD >> 1) & 3][0];
     }
     return -1;
+  }
+
+  /** Return the RAM bank index actually paged at the given address. */
+  bankAt(addr: number): number {
+    const slot = addr >>> 14;
+    if (this.specialPaging) {
+      return SPECIAL_MODES[(this.port1FFD >> 1) & 3][slot];
+    }
+    if (slot === 3) return this.currentBank;
+    if (slot === 1) return 5;
+    if (slot === 2) return 2;
+    return -1; // slot 0 holds ROM
   }
 }

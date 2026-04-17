@@ -76,7 +76,8 @@ export class Contention {
 
   /** True if the given address is in ULA-contended memory. */
   isContended(addr: number): boolean {
-    return this.variant.isContended(addr, this.memory.currentBank);
+    const bank = this.memory.bankAt(addr);
+    return this.variant.isContended(addr, bank);
   }
 
   /** Returns the contention delay (extra T-states) for the current beam position. */

@@ -36,7 +36,7 @@ export function installMemoryHooks(s: Spectrum): void {
 
   // Internal bus contention (no MREQ).
   s.cpu.contend = v.hasIOContention ? (addr: number): void => {
-    if (addr >= 0x4000 && addr < 0x8000) {
+    if (contention.isContended(addr)) {
       s.cpu.tStates += contention.contentionDelay(s.cpu.tStates);
     }
   } : () => {};
