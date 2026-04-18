@@ -102,17 +102,8 @@ function saveSetting(key: string, val: string): void {
  * otherwise (last-saved snapshot from the most recent bank switch).
  */
 function getBankData(mem: SpectrumMemory, bank: number): Uint8Array {
-  if (mem.specialPaging) {
-    const mode = (mem.port1FFD >> 1) & 3;
-    const configs = [[0, 1, 2, 3], [4, 5, 6, 7], [4, 5, 6, 3], [4, 7, 6, 3]];
-    const slot = configs[mode].indexOf(bank);
-    if (slot >= 0) return mem.flat.subarray(slot * 0x4000, (slot + 1) * 0x4000);
-  } else {
-    if (bank === 5)               return mem.flat.subarray(0x4000, 0x8000);
-    if (bank === 2)               return mem.flat.subarray(0x8000, 0xC000);
-    if (bank === mem.currentBank) return mem.flat.subarray(0xC000, 0x10000);
-  }
-  return mem.getRamBank(bank); // not currently mapped — last saved snapshot
+  // Banks are always authoritative — return the bank array directly.
+  return mem.getRamBank(bank);
 }
 
 // ── Row renderer ─────────────────────────────────────────────────────────
@@ -200,7 +191,7 @@ export function MemoryPane() {
     const mem = spec.memory;
     const r   = region();
 
-    if (r === 'mapped') return { data: mem.flat, baseAddr: 0 };
+    if (r === 'mapped') return { data: mem.readBlock(0, 0x10000), baseAddr: 0 };
 
     if (r.startsWith('rom')) {
       const idx = parseInt(r.slice(3), 10);

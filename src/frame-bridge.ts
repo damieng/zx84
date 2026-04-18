@@ -149,11 +149,12 @@ function updateHardwareSignals(activeUnit: number): void {
 /** Update disassembly, system variables, BASIC listing, and variables signals. */
 function updateDebugSignals(): void {
   setSysvarRev(v => v + 1);
-  setBasicHtml(parseBasicProgram(spectrum!.cpu.memory));
-  setBasicVarsHtml(parseBasicVariables(spectrum!.cpu.memory));
+  const snap = spectrum!.memory.snapshot();
+  setBasicHtml(parseBasicProgram(snap));
+  setBasicVarsHtml(parseBasicVariables(snap));
   const cpu = spectrum!.cpu;
-  const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-  setDisasmText(formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints));
+  const dLines = disassembleAroundPC(snap, cpu.pc, 24);
+  setDisasmText(formatDisasmHtml(dLines, snap, cpu.pc, spectrum!.breakpoints));
 }
 
 export function updateRegsOnce(): void {
@@ -248,22 +249,22 @@ export function updateFontPreview(): { type: 'custom'; data: Uint8Array } | { ty
     return { type: 'custom', data: font };
   } else {
     if (!spectrum) return null;
-    const mem = spectrum.memory.flat;
-    let charsAddr = mem[0x5C36] | (mem[0x5C37] << 8);
+    const snap = spectrum.memory.snapshot();
+    let charsAddr = snap[0x5C36] | (snap[0x5C37] << 8);
     if (charsAddr === 0) charsAddr = 0x3C00;
     const fontStart = charsAddr + 256;
     if (fontStart + 768 > 65536) return null;
 
     let spaceBlank = true;
-    for (let i = 0; i < 8; i++) { if (mem[fontStart + i] !== 0) { spaceBlank = false; break; } }
+    for (let i = 0; i < 8; i++) { if (snap[fontStart + i] !== 0) { spaceBlank = false; break; } }
     if (!spaceBlank) return null;
 
-    const hash = fontDataHash(mem, fontStart, 768);
+    const hash = fontDataHash(snap, fontStart, 768);
     if (fontStart === romFontCacheAddr && hash === romFontCacheHash) return null;
     romFontCacheAddr = fontStart;
     romFontCacheHash = hash;
 
-    capturedFontData = mem.slice(fontStart, fontStart + 768);
+    capturedFontData = snap.slice(fontStart, fontStart + 768);
     return { type: 'rom', data: capturedFontData };
   }
 }
@@ -365,8 +366,9 @@ export function onFrame(): void {
       // Disassembly only when paused (breakpoint hit etc.)
       if (emulationPaused()) {
         const cpu = spectrum!.cpu;
-        const dLines = disassembleAroundPC(cpu.memory, cpu.pc, 24);
-        setDisasmText(formatDisasmHtml(dLines, cpu.memory, cpu.pc, spectrum!.breakpoints));
+        const snap = spectrum!.memory.snapshot();
+        const dLines = disassembleAroundPC(snap, cpu.pc, 24);
+        setDisasmText(formatDisasmHtml(dLines, snap, cpu.pc, spectrum!.breakpoints));
       }
     }
 
@@ -377,11 +379,10 @@ export function onFrame(): void {
       if (!isCollapsed('sysvar-panel')) {
         setSysvarRev(v => v + 1);
       }
-      if (!isCollapsed('basic-panel')) {
-        setBasicHtml(parseBasicProgram(spectrum!.cpu.memory));
-      }
-      if (!isCollapsed('basic-vars-panel')) {
-        setBasicVarsHtml(parseBasicVariables(spectrum!.cpu.memory));
+      if (!isCollapsed('basic-panel') || !isCollapsed('basic-vars-panel')) {
+        const snap = spectrum!.memory.snapshot();
+        if (!isCollapsed('basic-panel')) setBasicHtml(parseBasicProgram(snap));
+        if (!isCollapsed('basic-vars-panel')) setBasicVarsHtml(parseBasicVariables(snap));
       }
     }
 

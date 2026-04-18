@@ -143,6 +143,7 @@ export class UPD765A {
   /** End-of-track R value */
   private exEOT = 0;
   private exHitEOT = false;
+  private exAbnormal = false;
   /** Command parameters preserved for multi-sector and result phase */
   private exUnit = 0;
   private exHead = 0;
@@ -308,6 +309,7 @@ export class UPD765A {
   /** Write data register — feeds command/parameter bytes or execution data. */
   writeData(val: number): void {
     if (this.phase === Phase.Execution && this.exWriting) {
+      this.exOverrunPolls = 0; // CPU is still writing — reset overrun counter
       this.writeExecution(val);
       return;
     }
@@ -377,6 +379,7 @@ export class UPD765A {
 
     this.exR++;
     if (this.exR > this.exEOT) {
+      this.exR--;
       this.exHitEOT = true;
       return false;
     }
@@ -386,6 +389,9 @@ export class UPD765A {
 
     const idx = track.sectorMap.get(this.exR);
     if (idx === undefined) {
+      this.exR--;
+      this.exST1 |= 0x04;
+      this.exAbnormal = true;
       return false;
     }
 
@@ -401,6 +407,7 @@ export class UPD765A {
     // Update CHRN and status registers from the new sector's ID field
     this.exC = sector.c;
     this.exH = sector.h;
+    this.exN = sector.n;
     this.exST1 = sector.st1;
     this.exST2 = sector.st2;
 
@@ -462,7 +469,12 @@ export class UPD765A {
     if (!track) return;
     const idx = track.sectorMap.get(this.exR);
     if (idx === undefined) return;
-    track.sectors[idx].data.set(this.exBuf);
+    // Replace the sector's data array entirely.  The write buffer is sized by
+    // the command's N parameter, which may differ from the sector ID's N (e.g.
+    // protection sectors).  Using .set() would throw RangeError when exBuf is
+    // larger, or leave stale tail bytes when smaller.  Replacing the array
+    // ensures read-back via prepareReadBuffer() sees exactly what was written.
+    track.sectors[idx].data = new Uint8Array(this.exBuf);
   }
 
   /** End execution phase with result. Sets EN + abnormal termination if EOT was reached. */
@@ -476,6 +488,9 @@ export class UPD765A {
       // (Alkatraz, Speedlock) check for exactly ST0=0x40 / ST1=0x80.
       st0 |= ST0_ABNORMAL;
       st1 |= 0x80;  // EN (End of Cylinder)
+    }
+    if (this.exAbnormal) {
+      st0 |= ST0_ABNORMAL;
     }
     // Return actual ST1 and ST2 from the sector (preserves CRC errors!)
     // Speedlock checks for intentional CRC errors - must not "fix" them!
@@ -662,6 +677,7 @@ export class UPD765A {
     this.exR = r;
     this.exEOT = eot;
     this.exHitEOT = false;
+    this.exAbnormal = false;
     this.exTrack = track;
     this.exWriting = isWrite;
     this.exReadTrack = false; // Reading individual sectors, not raw track
@@ -773,6 +789,7 @@ export class UPD765A {
     this.exR = r;
     this.exEOT = eot;
     this.exHitEOT = false;
+    this.exAbnormal = false;
     this.exTrack = track;
     this.exWriting = false;
     this.exReadTrack = true; // Flag: reading entire raw track

@@ -85,13 +85,13 @@ export function loadSP(data: Uint8Array, cpu: Z80, memory: SpectrumMemory): SPRe
     memory.setBankFromSnapshot(5, ramData.slice(0, 16384));
     memory.setBankFromSnapshot(2, ramData.slice(16384, 32768));
 
-    // Port 0x7FFD is at offset 38 + 49152 + 2 (after PC)
-    const port7FFD = data[38 + 49152 + 2];
+    // Port 0x7FFD is directly after the 48K RAM dump
+    const port7FFD = data[38 + 49152];
     const currentBank = port7FFD & 0x07;
     memory.setBankFromSnapshot(currentBank, ramData.slice(32768, 49152));
 
     // Load remaining banks (skip 2, 5, and current)
-    let offset = 38 + 49152 + 3; // After port byte
+    let offset = 38 + 49152 + 1; // After port byte
     for (let bank = 0; bank < 8; bank++) {
       if (bank === 2 || bank === 5 || bank === currentBank) continue;
       if (offset + 16384 > data.length) break;
@@ -123,8 +123,10 @@ export function loadSP(data: Uint8Array, cpu: Z80, memory: SpectrumMemory): SPRe
       memory.setBankFromSnapshot(0, ramData.slice(32768, 49152)); // 0xC000-0xFFFF
       memory.applyBanking();
     } else {
-      // Non-standard layout - copy directly to flat memory
-      memory.flat.set(ramData, ramStart);
+      // Non-standard layout - write directly to address space
+      for (let i = 0; i < ramData.length; i++) {
+        memory.writeByte((ramStart + i) & 0xFFFF, ramData[i]);
+      }
     }
 
     return {

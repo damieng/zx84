@@ -38,6 +38,8 @@ const DSR     = 0x80;  // Bit 7: Data Set Ready
 const CMD_RTS  = 0x20;  // Bit 5: RTS — controls ROMCS
 const CMD_IR   = 0x40;  // Bit 6: Internal reset
 
+import type { SpectrumMemory } from '@/memory.ts';
+
 export class VTX5000 {
   enabled = false;
   romLoaded = false;
@@ -49,6 +51,9 @@ export class VTX5000 {
 
   /** VTX-5000 on-board RAM at 0x2000-0x3FFF (preserved across ROM switches) */
   vtxRam = new Uint8Array(8192);
+
+  /** 16KB overlay placed in slot 0 when VTX ROM is paged in: [vtxRom | vtxRam]. */
+  private vtxOverlay = new Uint8Array(16384);
 
   /** Whether VTX ROM is currently paged in (RTS=0) vs Spectrum ROM (RTS=1) */
   vtxRomPaged = true;
@@ -94,15 +99,19 @@ export class VTX5000 {
   }
 
   /**
-   * Overlay VTX-5000 ROM into flat memory starting at 0x0000, and clear the
-   * 0x2000-0x3FFF region (which is RAM on VTX-5000 hardware).
-   * Call after SpectrumMemory.applyBanking() so the Spectrum ROM is already present.
+   * Place VTX-5000 ROM and RAM into slot 0 via an overlay buffer.
+   * Call after SpectrumMemory.applyBanking() so paging state is settled.
    */
-  applyROM(flat: Uint8Array): void {
-    flat.set(this.vtxRom.subarray(0, this.romSize), 0);
-    // Clear the RAM region — must not contain Spectrum ROM bytes
-    flat.fill(0, 0x2000, 0x4000);
+  applyROM(memory: SpectrumMemory): void {
+    this.vtxOverlay.set(this.vtxRom.subarray(0, this.romSize), 0);
+    this.vtxOverlay.set(this.vtxRam, 0x2000);
+    memory.setSlot0(this.vtxOverlay);
     this.vtxRomPaged = true;
+  }
+
+  /** Save VTX RAM from the overlay (call before restoring slot 0). */
+  saveRAMFromOverlay(): void {
+    this.vtxRam.set(this.vtxOverlay.subarray(0x2000, 0x4000));
   }
 
   // ── 8251 port handlers ──────────────────────────────────────────────

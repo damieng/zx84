@@ -10,7 +10,7 @@
  */
 
 import { Z80 } from '@/cores/z80.ts';
-import { disasmOne, stripMarkers } from '@/debug/z80-disasm.ts';
+import { disasmOne, stripMarkers, type DisasmLine } from '@/debug/z80-disasm.ts';
 import { AY3891x } from '@/cores/ay-3-8910.ts';
 import { SpectrumMemory } from '@/memory.ts';
 import { ULA, type BorderMode } from '@/cores/ula.ts';
@@ -214,6 +214,11 @@ export class Spectrum {
   /** Set when a port watchpoint fires; null means no hit this frame */
   portWatchHit: { port: number; value: number; dir: 'in' | 'out' } | null = null;
 
+  /** Memory watchpoints: break on read/write access within a watched range */
+  memWatchpoints: { start: number; end: number; mode: 'read' | 'write' | 'rw' }[] = [];
+  /** Set when a memory watchpoint fires; null means no hit this frame */
+  memWatchHit: { addr: number; value: number; dir: 'read' | 'write' } | null = null;
+
   /**
    * Pre-instruction trap hook.  Called with the current PC before each
    * instruction executes.  Return true to break execution (like a breakpoint).
@@ -235,7 +240,7 @@ export class Spectrum {
       hasBanking: this.variant.hasBanking,
       romPageCount: this.variant.romPageCount,
     });
-    this.cpu = new Z80(this.memory.flat);
+    this.cpu = new Z80();
     this.ay = new AY3891x(AY_CLOCK, 44100, 'ABC');
     this.keyboard = new SpectrumKeyboard();
     this.ula = new ULA(this.keyboard);
@@ -263,16 +268,14 @@ export class Spectrum {
     this.vtx5000.onRomPage = (rts: boolean) => {
       if (!this.vtx5000.enabled || !this.vtx5000.romLoaded) return;
       if (rts && this.vtx5000.vtxRomPaged) {
-        // RTS=1 → page in Spectrum ROM.  Save VTX RAM first.
-        this.vtx5000.vtxRam.set(this.cpu.memory.subarray(0x2000, 0x4000));
-        this.cpu.memory.set(this.memory.romPages[this.memory.currentROM], 0);
+        // RTS=1 → page in Spectrum ROM.  Save VTX RAM from overlay first.
+        this.vtx5000.saveRAMFromOverlay();
         this.vtx5000.vtxRomPaged = false;
         this.memory.externalRomPaged = false;
+        this.memory.restoreSlot0();
       } else if (!rts && !this.vtx5000.vtxRomPaged) {
         // RTS=0 → page in VTX ROM + RAM
-        this.cpu.memory.set(this.vtx5000.vtxRom.subarray(0, this.vtx5000.romSize), 0);
-        this.cpu.memory.set(this.vtx5000.vtxRam, 0x2000);
-        this.vtx5000.vtxRomPaged = true;
+        this.vtx5000.applyROM(this.memory);
         this.memory.externalRomPaged = true;
       }
     };
@@ -335,13 +338,11 @@ export class Spectrum {
 
   loadROM(data: Uint8Array): void {
     this.memory.loadROM(data);
-    this.memory.applyBanking();
-    this.cpu.memory = this.memory.flat;
     if (this.vtx5000.enabled && this.vtx5000.romLoaded) {
       if (this.memory.is128K) {
         this.memory.currentROM = this.memory.romPages.length === 4 ? 3 : 1;
       }
-      this.vtx5000.applyROM(this.cpu.memory);
+      this.vtx5000.applyROM(this.memory);
       this.memory.externalRomPaged = true;
     }
     this.setStatus('ROM loaded');
@@ -349,9 +350,7 @@ export class Spectrum {
 
   setBorderSize(mode: BorderMode): void {
     this.ula.setBorderMode(mode);
-    // Re-render VRAM into the new pixel buffer so the display stays correct
-    // even when paused (the old buffer was discarded by setBorderMode).
-    this.ula.renderFrame(this.cpu.memory);
+    this.ula.renderFrame(this.memory.screenBank, 0x4000);
     if (this.display) this.display.resize(this.ula.screenWidth, this.ula.screenHeight);
   }
 
@@ -364,16 +363,12 @@ export class Spectrum {
     this.audio.reset();
     this.fdc.reset();
     this.memory.reset();
-    this.cpu.memory = this.memory.flat;
     this.vtx5000.reset();
     if (this.vtx5000.enabled && this.vtx5000.romLoaded) {
-      // Select the 48K BASIC ROM page so that when the VTX software pages
-      // back the Spectrum ROM it gets the ROM it was designed for.
-      // 128K/+2: page 1.  +2A/+3: page 3.  48K: already page 1 (no banking).
       if (this.memory.is128K) {
         this.memory.currentROM = this.memory.romPages.length === 4 ? 3 : 1;
       }
-      this.vtx5000.applyROM(this.cpu.memory);
+      this.vtx5000.applyROM(this.memory);
       this.memory.externalRomPaged = true;
     }
     this.joystick.reset();
@@ -427,7 +422,7 @@ export class Spectrum {
   }
 
   /** Run one frame (for headless / test harness use). */
-  tick(): void { this.breakpointHit = -1; this.portWatchHit = null; this.runFrame(); }
+  tick(): void { this.breakpointHit = -1; this.portWatchHit = null; this.memWatchHit = null; this.runFrame(); }
 
   /**
    * Run up to `maxFrames` frames, stopping early if a breakpoint or port
@@ -436,9 +431,10 @@ export class Spectrum {
   runUntil(maxFrames: number): number {
     this.breakpointHit = -1;
     this.portWatchHit = null;
+    this.memWatchHit = null;
     for (let i = 0; i < maxFrames; i++) {
       this.runFrame();
-      if (this.breakpointHit >= 0 || this.portWatchHit !== null) return i + 1;
+      if (this.breakpointHit >= 0 || this.portWatchHit !== null || this.memWatchHit !== null) return i + 1;
     }
     return maxFrames;
   }
@@ -503,6 +499,7 @@ export class Spectrum {
     // Reset activity counters for this frame
     this.activity.reset();
     this.portWatchHit = null;
+    this.memWatchHit = null;
     // The ULA's frame boundary occurs at exact tStatesPerFrame intervals,
     // regardless of CPU instruction overshoot from the previous frame.
     // On real hardware the beam resets at fixed intervals; the CPU may still
@@ -566,7 +563,7 @@ export class Spectrum {
       // Auto-unpause: the tape starts paused on mount so the playback engine
       // doesn't race ahead; we unpause here when the ROM actually tries to LOAD.
       if (this.tapeInstantLoad && this.tape.loaded && this.cpu.pc === 0x0556 &&
-          this.cpu.memory[0x0556] === 0x14 && this.tape.hasRomBlock()) {
+          this.memory.readByte(0x0556) === 0x14 && this.tape.hasRomBlock()) {
         if (this.tape.paused) {
           this.tape.paused = false;
           this.tape.startPlayback();
@@ -615,8 +612,8 @@ export class Spectrum {
         const zxtlPC = this._tracing && this._traceMode === 'zxtl' ? this.cpu.pc : -1;
         this.cpu.step();
         if (zxtlPC >= 0) this.captureZxtlLine(zxtlPC);
-        // Break mid-frame if a port watchpoint fired during this instruction
-        if (this.portWatchHit !== null) break;
+        // Break mid-frame if a port or memory watchpoint fired during this instruction
+        if (this.portWatchHit !== null || this.memWatchHit !== null) break;
       }
 
       // Clear EI delay after each instruction (see timings.md § EI Delay).
@@ -881,15 +878,23 @@ export class Spectrum {
   }
 
   ocrScreen(extraFonts?: FontSource[]): string {
-    return this.screenText.ocr(this.cpu.memory, this.romFont, extraFonts);
+    return this.screenText.ocr(this.memory.snapshot(), this.romFont, extraFonts);
   }
 
   ocrScreenStyled(extraFonts?: FontSource[]): OcrResult {
     return this.screenText.ocrStyled(
-      this.cpu.memory, this.romFont,
+      this.memory.snapshot(), this.romFont,
       this.ula.palette, this.ula.flashState,
       extraFonts,
     );
+  }
+
+  /** Disassemble a single instruction at `pc` without a full memory snapshot. */
+  private disasmAt(pc: number): DisasmLine {
+    const buf = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) buf[i] = this.memory.readByte((pc + i) & 0xFFFF);
+    const result = disasmOne(buf, 0);
+    return { ...result, addr: pc };
   }
 
   startTrace(mode: 'full' | 'portio' | 'zxtl' = 'full'): void {
@@ -947,8 +952,7 @@ export class Spectrum {
     this._traceLoopHash[slot] = hash;
 
     // Record trace line
-    const mem = cpu.memory;
-    const line = disasmOne(mem, pc);
+    const line = this.disasmAt(pc);
     const mnem = stripMarkers(line.text);
     const ctx = this.traceCtx(pc);
     const addr = hex16(pc);
@@ -964,10 +968,10 @@ export class Spectrum {
    */
   private captureZxtlLine(prePC: number): void {
     const cpu = this.cpu;
-    const mem = cpu.memory;
+    const mem = this.memory;
 
     // Disassemble the instruction that was at prePC
-    const dl = disasmOne(mem, prePC);
+    const dl = this.disasmAt(prePC);
     const mnem = stripMarkers(dl.text);
 
     // Jump detection: is prePC non-sequential from previous instruction?
@@ -979,8 +983,8 @@ export class Spectrum {
     // Format: J Cycle Addr MEM4 DISASM REGS
     this._traceBuffer.push(
       `${isJump ? '*' : ' '} ${String(cpu.tStates).padStart(7)} ${String(prePC).padStart(5)} ` +
-      `${hex8(mem[prePC])} ${hex8(mem[(prePC + 1) & 0xFFFF])} ` +
-      `${hex8(mem[(prePC + 2) & 0xFFFF])} ${hex8(mem[(prePC + 3) & 0xFFFF])} ` +
+      `${hex8(mem.readByte(prePC))} ${hex8(mem.readByte((prePC + 1) & 0xFFFF))} ` +
+      `${hex8(mem.readByte((prePC + 2) & 0xFFFF))} ${hex8(mem.readByte((prePC + 3) & 0xFFFF))} ` +
       `${mnem.padEnd(20)} ` +
       `${hex8(cpu.a)} ${hex8(cpu.f)} ` +
       `${hex8((cpu.bc >> 8) & 0xFF)} ${hex8(cpu.bc & 0xFF)} ` +
@@ -997,17 +1001,17 @@ export class Spectrum {
 
   private traceCtx(pc: number): string {
     const cpu = this.cpu;
-    const mem = cpu.memory;
-    let op = mem[pc];
+    const mem = this.memory;
+    let op = mem.readByte(pc);
 
     // DD/FD prefix → IX/IY memory access
     if (op === 0xDD || op === 0xFD) {
       const ixr = op === 0xDD ? cpu.ix : cpu.iy;
-      const op2 = mem[(pc + 1) & 0xFFFF];
+      const op2 = mem.readByte((pc + 1) & 0xFFFF);
       if (op2 === 0xCB) {
-        const d = mem[(pc + 2) & 0xFFFF];
+        const d = mem.readByte((pc + 2) & 0xFFFF);
         const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
-        return `(${hex16(addr)})=${hex8(mem[addr])}`;
+        return `(${hex16(addr)})=${hex8(mem.readByte(addr))}`;
       }
       if (op2 === 0xED || op2 === 0xDD || op2 === 0xFD) return '';
       const x = (op2 >> 6) & 3, y = (op2 >> 3) & 7, z = op2 & 7;
@@ -1015,23 +1019,23 @@ export class Spectrum {
           (x === 2 && z === 6) ||
           (x === 0 && (z === 4 || z === 5) && y === 6) ||
           op2 === 0x36) {
-        const d = mem[(pc + 2) & 0xFFFF];
+        const d = mem.readByte((pc + 2) & 0xFFFF);
         const addr = (ixr + (d < 128 ? d : d - 256)) & 0xFFFF;
-        if (x === 2) return `A=${hex8(cpu.a)} (${hex16(addr)})=${hex8(mem[addr])}`;
-        return `(${hex16(addr)})=${hex8(mem[addr])}`;
+        if (x === 2) return `A=${hex8(cpu.a)} (${hex16(addr)})=${hex8(mem.readByte(addr))}`;
+        return `(${hex16(addr)})=${hex8(mem.readByte(addr))}`;
       }
       return '';
     }
 
     // CB: bit ops on (HL)
     if (op === 0xCB) {
-      if ((mem[(pc + 1) & 0xFFFF] & 7) === 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl])}`;
+      if ((mem.readByte((pc + 1) & 0xFFFF) & 7) === 6) return `(${hex16(cpu.hl)})=${hex8(mem.readByte(cpu.hl))}`;
       return '';
     }
 
     // ED prefix
     if (op === 0xED) {
-      const ed = mem[(pc + 1) & 0xFFFF];
+      const ed = mem.readByte((pc + 1) & 0xFFFF);
       const x = (ed >> 6) & 3, y = (ed >> 3) & 7, z = ed & 7;
       if (x === 1 && (z === 0 || z === 1)) return `port=${hex16(cpu.bc)}`;
       if (x === 2 && y >= 4 && z < 4) return `HL=${hex16(cpu.hl)} DE=${hex16(cpu.de)} BC=${hex16(cpu.bc)}`;
@@ -1047,19 +1051,19 @@ export class Spectrum {
       if (z === 0 && y >= 4) return cpu.checkCondition(y - 4) ? 'taken' : '--'; // JR cc
       if (z === 2) {
         if (q === 0 && p <= 1) return `A=${hex8(cpu.a)}→(${hex16(p === 0 ? cpu.bc : cpu.de)})`;
-        if (q === 1 && p === 0) return `(${hex16(cpu.bc)})=${hex8(mem[cpu.bc & 0xFFFF])}`;
-        if (q === 1 && p === 1) return `(${hex16(cpu.de)})=${hex8(mem[cpu.de & 0xFFFF])}`;
+        if (q === 1 && p === 0) return `(${hex16(cpu.bc)})=${hex8(mem.readByte(cpu.bc & 0xFFFF))}`;
+        if (q === 1 && p === 1) return `(${hex16(cpu.de)})=${hex8(mem.readByte(cpu.de & 0xFFFF))}`;
       }
-      if ((z === 4 || z === 5) && y === 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
+      if ((z === 4 || z === 5) && y === 6) return `(${hex16(cpu.hl)})=${hex8(mem.readByte(cpu.hl & 0xFFFF))}`;
     }
 
     if (x === 1) {
       if (y === 6 && z !== 6) return `${hex8(cpu.getReg8(z))}→(${hex16(cpu.hl)})`;
-      if (z === 6 && y !== 6) return `(${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
+      if (z === 6 && y !== 6) return `(${hex16(cpu.hl)})=${hex8(mem.readByte(cpu.hl & 0xFFFF))}`;
     }
 
     if (x === 2) {
-      if (z === 6) return `A=${hex8(cpu.a)} (${hex16(cpu.hl)})=${hex8(mem[cpu.hl & 0xFFFF])}`;
+      if (z === 6) return `A=${hex8(cpu.a)} (${hex16(cpu.hl)})=${hex8(mem.readByte(cpu.hl & 0xFFFF))}`;
       return `A=${hex8(cpu.a)}`;
     }
 

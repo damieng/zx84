@@ -143,7 +143,7 @@ export function SysVars() {
 
     createEffect(() => {
       sysvarRev(); // track
-      const mem = spectrum?.cpu?.memory;
+      const mem = spectrum?.memory.snapshot();
       if (!mem) return;
       for (const slot of slots) {
         const { num, str } = readVal(mem, slot.def);

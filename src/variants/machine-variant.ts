@@ -33,7 +33,8 @@ export interface MachineVariant {
   readonly hasIOContention: boolean;
 
   /** True if the given address is in ULA-contended memory.
-   *  `currentBank` is the RAM bank paged at 0xC000 (from memory). */
+   *  `bank` is the actual RAM bank at the address from memory.bankAt(),
+   *  or -1 if the address holds ROM. */
   isContended(addr: number, currentBank: number): boolean;
 
   // ── Capabilities ─────────────────────────────────────────────────────

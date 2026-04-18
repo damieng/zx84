@@ -112,12 +112,12 @@ const TOKENS: Record<number, string> = {
  * Number format: ASCII digits + marker (0x0E=integral, 0x7E=floating) + 5 bytes binary
  * We display the ASCII and skip the marker + binary data.
  */
-function detokenizeLine(data: Uint8Array, offset: number, lineEnd: number): string {
+function detokenizeLine(mem: Uint8Array, offset: number, lineEnd: number): string {
   let result = '';
   let i = offset;
 
   while (i < lineEnd) {
-    const byte = data[i];
+    const byte = mem[i];
 
     if (byte === 0x0D) {
       // Line terminator (NEWLINE)
@@ -222,12 +222,12 @@ function escapeHtml(text: string): string {
  * Parse ZX Spectrum 5-byte number to a displayable value.
  * Format: 1 byte exponent, 4 bytes mantissa (or special integral format)
  */
-function parse5ByteNumber(data: Uint8Array, offset: number): string {
-  const exp = data[offset];
-  const b1 = data[offset + 1];
-  const b2 = data[offset + 2];
-  const b3 = data[offset + 3];
-  const b4 = data[offset + 4];
+function parse5ByteNumber(mem: Uint8Array, offset: number): string {
+  const exp = mem[offset];
+  const b1 = mem[offset + 1];
+  const b2 = mem[offset + 2];
+  const b3 = mem[offset + 3];
+  const b4 = mem[offset + 4];
 
   // Integral format: exp=0, b1=0 or 0xFF (sign), b2-b3=value, b4=0
   if (exp === 0 && b4 === 0) {

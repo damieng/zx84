@@ -20,12 +20,10 @@ export function createFerranti128K(model: '128k' | '+2'): MachineVariant {
     contentionPattern: CONTENTION_FERRANTI,
     hasIOContention: true,
 
-    isContended(addr: number, currentBank: number): boolean {
-      // 0x4000-0x7FFF: always contended (bank 5)
-      if (addr >= 0x4000 && addr < 0x8000) return true;
-      // 0xC000+: odd banks (1,3,5,7) are contended
-      if (addr >= 0xC000) return (currentBank & 1) === 1;
-      return false;
+    isContended(_addr: number, bank: number): boolean {
+      // Odd banks (1,3,5,7) share the upper RAM chip with the ULA.
+      // bank = -1 means ROM (uncontended).
+      return bank >= 0 && (bank & 1) === 1;
     },
 
     hasAY: true,

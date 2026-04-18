@@ -22,12 +22,11 @@ export function createAmstrad(model: '+2a' | '+3'): MachineVariant {
     contentionPattern: CONTENTION_AMSTRAD,
     hasIOContention: false,
 
-    isContended(addr: number, currentBank: number): boolean {
-      // 0x4000-0x7FFF: always contended (bank 5)
-      if (addr >= 0x4000 && addr < 0x8000) return true;
-      // 0xC000+: banks 4,5,6,7 are contended
-      if (addr >= 0xC000) return currentBank >= 4;
-      return false;
+    isContended(_addr: number, bank: number): boolean {
+      // Banks 4-7 are on the upper RAM chip shared with the gate array.
+      // bank = -1 means ROM (uncontended). Address range is irrelevant —
+      // only the physical RAM chip matters.
+      return bank >= 4;
     },
 
     hasAY: true,

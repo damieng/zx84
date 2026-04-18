@@ -160,7 +160,6 @@ export class MediaManager {
         spectrum.reset();
         const result = loadSNA(data, spectrum.cpu, spectrum.memory);
         spectrum.ula.borderColor = result.borderColor;
-        spectrum.cpu.memory = spectrum.memory.flat;
         spectrum.start();
         callbacks.onStatus(`Loaded ${result.is128K ? '128K' : '48K'} SNA: ${filename}`);
 
@@ -180,7 +179,6 @@ export class MediaManager {
         }
 
         spectrum.ula.borderColor = result.borderColor;
-        spectrum.cpu.memory = spectrum.memory.flat;
         spectrum.start();
         callbacks.onStatus(`Loaded ${result.is128K ? '128K' : '48K'} .z80: ${filename}`);
 
@@ -217,7 +215,6 @@ export class MediaManager {
         }
 
         spectrum.ula.borderColor = result.borderColor;
-        spectrum.cpu.memory = spectrum.memory.flat;
 
         // Restore AY state if present
         if (result.ayRegs) {
@@ -255,7 +252,6 @@ export class MediaManager {
         }
 
         spectrum.ula.borderColor = result.borderColor;
-        spectrum.cpu.memory = spectrum.memory.flat;
         spectrum.start();
         callbacks.onStatus(`Loaded ${result.is128K ? '128K' : '48K'} .sp: ${filename}`);
 
