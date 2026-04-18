@@ -1,6 +1,6 @@
 # ZX84
 
-**A ZX Spectrum emulator for your browser.**
+**A ZX Spectrum emulator for your browser & MCP server for AI testing**
 
 https://zx84.envytech.workers.dev
 
