@@ -79,7 +79,8 @@ const KEY_NAME_MAP: Record<string, string> = {
 
 function formatStep(spec: Spectrum): string {
   const cpu = spec.cpu;
-  const line = disasmOne(spec.memory, cpu.pc);
+  const snap = spec.memory.snapshot();
+  const line = disasmOne(snap, cpu.pc);
   const mnem = stripMarkers(line.text).padEnd(20);
   return (
     `${h16(cpu.pc)}  ${mnem}` +
@@ -405,11 +406,12 @@ server.tool(
   },
   async ({ address, lines: n }) => {
     const addr = address ? parseAddr(address) : spec.cpu.pc;
-    const result = disassemble(spec.memory, addr, n);
+    const snap = spec.memory.snapshot();
+    const result = disassemble(snap, addr, n);
     const out: string[] = [];
     for (const l of result) {
       const bytes: string[] = [];
-      for (let i = 0; i < l.length; i++) bytes.push(h8(spec.memory.readByte((l.addr + i) & 0xFFFF)));
+      for (let i = 0; i < l.length; i++) bytes.push(h8(snap[(l.addr + i) & 0xFFFF]));
       const prefix = l.addr === spec.cpu.pc ? '>' : ' ';
       out.push(`${prefix} ${h16(l.addr)}  ${bytes.join(' ').padEnd(11)}  ${stripMarkers(l.text)}`);
     }
@@ -1287,7 +1289,9 @@ server.tool(
       }
 
       // Disassemble current instruction
-      const { text: mnem } = disasmOne(spec.memory, pc);
+      const buf = new Uint8Array(8);
+      for (let i = 0; i < 8; i++) buf[i] = spec.memory.readByte((pc + i) & 0xFFFF);
+      const { text: mnem } = disasmOne(buf, 0);
 
       // Reset accumulators
       instrContentionTotal = 0;
