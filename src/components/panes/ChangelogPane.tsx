@@ -2,6 +2,16 @@ import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.7',
+    items: [
+      'Flat memory mode for simplified debugging',
+      'MCP tooling improvements',
+      'FDC bugs fixed: wrong R after EOT, missing ND flag, stale exN on advance',
+      'Snapshot bugs fixed: SNA overflow, memory corruption, SP offset, IM mask',
+      'MCP disassembler now reads correct memory bank',
+      'Disk writing fixes',
+    ]
+  }, {
     version: '0.2.6',
     items: [
       'Right Shift now maps to Symbol Shift for direct symbol access',
