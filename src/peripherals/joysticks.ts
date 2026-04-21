@@ -65,6 +65,12 @@ export const SINCLAIR1_KEYS: Record<string, { row: number; bit: number }> = {
 // so Caps Shift stays pressed until all are released.
 let cursorShiftCount = 0;
 
+/** Reset module-level input state. Called on window blur so a missed keyup
+ *  (e.g. alt-tab while a key is held) can't leave Caps Shift stuck. */
+export function resetJoystickKeyState(): void {
+  cursorShiftCount = 0;
+}
+
 export function joyPressForType(spectrum: Spectrum, dir: string, pressed: boolean, mode: string): void {
   if (mode === 'none') return;
 

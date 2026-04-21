@@ -798,7 +798,7 @@ export function loadDiskToUnit(data: Uint8Array, filename: string, unit: number)
 
 // ── Joystick helpers ────────────────────────────────────────────────────
 
-export { KEMPSTON_BITS, CURSOR_KEYS, SINCLAIR1_KEYS, SINCLAIR2_KEYS } from '@/peripherals/joysticks.ts';
+export { KEMPSTON_BITS, CURSOR_KEYS, SINCLAIR1_KEYS, SINCLAIR2_KEYS, resetJoystickKeyState } from '@/peripherals/joysticks.ts';
 import { joyPressForType as _joyPress } from '@/peripherals/joysticks.ts';
 
 export function joyPressForType(dir: string, pressed: boolean, mode: string): void {

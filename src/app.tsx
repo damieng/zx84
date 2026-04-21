@@ -81,6 +81,7 @@ export function App() {
   onMount(() => {
     document.addEventListener('keydown', inputController.onKeyDown);
     document.addEventListener('keyup', inputController.onKeyUp);
+    window.addEventListener('blur', inputController.onBlur);
     document.addEventListener('click', initAudio, { once: true });
 
     function onDragOver(e: DragEvent) {
@@ -99,6 +100,7 @@ export function App() {
     onCleanup(() => {
       document.removeEventListener('keydown', inputController.onKeyDown);
       document.removeEventListener('keyup', inputController.onKeyUp);
+      window.removeEventListener('blur', inputController.onBlur);
       document.removeEventListener('click', initAudio);
       document.removeEventListener('dragover', onDragOver);
       document.removeEventListener('drop', onDrop);

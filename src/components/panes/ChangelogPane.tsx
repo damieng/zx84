@@ -2,6 +2,12 @@ import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.8',
+    items: [
+      'Held keys no longer get stuck (OS auto-repeat was incrementing reference counts the single keyup could not undo)',
+      'Alt-tabbing while a key is held now releases it (window blur resets keyboard and joystick state)',
+    ]
+  }, {
     version: '0.2.7',
     items: [
       'Flat memory mode for simplified debugging',

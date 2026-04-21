@@ -9,7 +9,7 @@ import {
   type GamepadConfig, type GamepadBinding
 } from '@/store/settings.ts';
 import {
-  spectrum, joyPressForType,
+  spectrum, joyPressForType, resetJoystickKeyState,
 } from '@/emulator.ts';
 import {
   configuringPlayer, setConfiguringPlayer,
@@ -121,6 +121,10 @@ export class InputController {
 
   onKeyDown = (e: KeyboardEvent): void => {
     if (!spectrum) return;
+    // Drop OS-generated auto-repeat keydowns. Each one would re-enter setKey()
+    // and push pressCount / physicalShiftCount / cursorShiftCount past what
+    // the single keyup can undo, leaving the key stuck pressed.
+    if (e.repeat) { e.preventDefault(); return; }
     if (this.handleJoyKey(e, true)) { e.preventDefault(); return; }
     if (spectrum.keyboard.handleKeyEvent(e.code, true, e.key)) {
       e.preventDefault();
@@ -133,6 +137,16 @@ export class InputController {
     if (spectrum.keyboard.handleKeyEvent(e.code, false, e.key)) {
       e.preventDefault();
     }
+  };
+
+  /** Release all held keys when the window loses focus — otherwise the keyup
+   *  event is delivered to whatever window the user tabbed to, leaving the
+   *  Spectrum matrix bit (and any modifier reference counts) asserted. */
+  onBlur = (): void => {
+    if (!spectrum) return;
+    spectrum.keyboard.reset();
+    resetJoystickKeyState();
+    for (const prev of this.gamepadPrevState) for (const k of Object.keys(prev)) prev[k] = false;
   };
 
   // ── Gamepad configuration ─────────────────────────────────────────────
