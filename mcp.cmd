@@ -1,2 +1,3 @@
-cd f:\src\zx84
-npm run mcp
+@echo off
+cd /d f:\src\zx84
+npx --no-install tsx src/mcp-server.ts
