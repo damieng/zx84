@@ -6,7 +6,7 @@ Command-line utilities for examining ZX Spectrum +3 disk images. All tools are i
 
 ## Tools
 
-### `check-dsk-protection.js` — Quick protection scanner
+### `check-dsk-protection.cjs` — Quick protection scanner
 
 Identifies the copy protection scheme on a disk. Checks T0 sector IDs for non-sequential R values, searches for known signatures (Alkatraz, Speedlock), and reports what it finds.
 
@@ -43,7 +43,7 @@ node tools/check-dsk-protection.cjs <disk.dsk>
 
 ---
 
-### `examine-dsk.js` — Detailed track inspector
+### `examine-dsk.cjs` — Detailed track inspector
 
 Shows the full CHRN table, ST1/ST2 flags, actual data sizes, and gap parameters for any track on a disk. Use this when you need to understand the exact sector layout.
 
@@ -93,6 +93,39 @@ GAP3: 24  Filler: 0xE5
 - **Size** — Actual bytes stored (may differ from 128<<N for overlapping sectors)
 
 Sectors with non-standard R values are flagged with `← OFFSET`.
+
+---
+
+### `disasm-sector.cjs` — Sector Z80 disassembler
+
+Extracts sector data from a DSK image and Z80-disassembles it (or hex-dumps it). Useful for reverse-engineering boot sectors, protection loaders, and game code stored on disk.
+
+**Usage:**
+```
+node tools/disasm-sector.cjs <disk.dsk> [options]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--track N` | 0 | Track number |
+| `--side N` | 0 | Side number |
+| `--sectors R,...` | all | Hex R values to extract in order (e.g. `02,03,04`) |
+| `--org NNNN` | `0000` | Load address (hex, no prefix) for disassembly |
+| `--hex` | off | Hex dump instead of Z80 disassembly |
+| `--skip N` | 0 | Skip first N bytes of combined sector data |
+| `--count N` | all | Disassemble only N bytes |
+
+**Examples:**
+```bash
+# Disassemble boot sector (T0/S0/R1) loaded at FE00
+node tools/disasm-sector.cjs game.dsk --track 0 --sectors 01 --org FE00
+
+# Hex dump the protection track
+node tools/disasm-sector.cjs game.dsk --track 33 --hex
+
+# Disassemble specific sectors from a custom track
+node tools/disasm-sector.cjs game.dsk --track 1 --sectors 02,03,04 --org 0100
+```
 
 ---
 

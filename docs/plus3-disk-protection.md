@@ -568,13 +568,55 @@ Unknown — needs disassembly.
 
 1. Returns immediately if disk has <2 tracks or T0 is empty/short.
 2. Checks `isUniform()` (all tracks same structure) and `hasFdcErrors()` (any non-zero ST1/ST2).
-3. If uniform **and** no errors → returns `""` (no protection, skip all detectors).
-4. Runs all 15 detectors in the order shown below; returns the first non-null result.
-5. If no detector matched but disk is non-uniform or has errors → returns `"Unknown"`.
+3. If uniform **and** no errors → returns `"None"` (no protection, skip all detectors).
+4. Runs 15 detectors in the `DETECTORS` array; returns the first non-null result.
+5. Separately runs `detectKbi()` and `detectHerbulot()` (non-exclusive — both can be present on the same disk, combined into a single result string).
+6. If no detector matched but disk is non-uniform or has errors → returns `"Unknown"`.
 
-**Detector order:** Alkatraz → Frontier → Hexagon → Paul Owens → Speedlock → Three Inch → W.R.M. → P.M.S. → Players → Infogrames → Rainbow Arts → Herbulot → KBI → DiscSYS → ARMOURLOC
+**DETECTORS array order:** Alkatraz → Frontier → Hexagon → Paul Owens → Speedlock → Three Inch → W.R.M. → P.M.S. → Players → Infogrames → Rainbow Arts → DiscSYS → Amsoft → ARMOURLOC → Studio B
+
+**Separate (non-exclusive):** KBI, Herbulot
+
+Total: **17 detectors** (15 in main array + 2 non-exclusive).
 
 Detection result is display-only; emulation does not branch on it.
+
+---
+
+### Amsoft / EXOPAL
+
+**Overview.** French protection from Amsoft/EXOPAL.
+
+#### Recognition
+
+- String `"Amsoft disc protection system"` or `"EXOPAL"` in T3S0 data
+
+#### Emulation Status
+
+| Check | Status |
+|---|---|
+| Detected | ✅ |
+| Mechanism understood | 🔲 |
+| End-to-end tested | 🔲 |
+
+---
+
+### Studio B / DiscLoc / Oddball
+
+**Overview.** Protection identified by Studio B formatting strings or DISCLOC marker.
+
+#### Recognition
+
+- String `"Disc format (c) 1986 Studio B Ltd."` in T0S0 data, or
+- String `"DISCLOC"` in T2S0 data
+
+#### Emulation Status
+
+| Check | Status |
+|---|---|
+| Detected | ✅ |
+| Mechanism understood | 🔲 |
+| End-to-end tested | 🔲 |
 
 ---
 
@@ -582,9 +624,10 @@ Detection result is display-only; emulation does not branch on it.
 
 | File | Role |
 |---|---|
-| `src/plus3/dsk.ts` | DSK parser, format detection, all 15 detectors |
+| `src/plus3/dsk.ts` | DSK parser, format detection, all 17 detectors |
 | `src/cores/upd765a.ts` | uPD765A FDC — sector serving, weak sectors, raw track, CRC |
 | `src/plus3/plus3dos-trap.ts` | BIOS trap for unprotected +3DOS I/O |
+| `src/plus3/floppy-sound.ts` | Floppy drive sound effects |
 | `src/tape/loader-detect.ts` | Tape custom loader auto-detection (Speedlock tape etc.) |
 | `src/managers/media-manager.ts` | Disk file loading and IndexedDB persistence |
 | `src/components/panes/DrivePane.tsx` | Drive UI — shows format and protection name |

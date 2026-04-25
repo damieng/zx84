@@ -3,7 +3,6 @@
 ## High Priority
 
 ### Core Features
-- [ ] Handling DSK protection
 - [ ] Fullscreen mode
 - [ ] Mobile-responsive layout
 - [ ] Virtual keyboard overlay (mobile/tablet)
@@ -11,7 +10,7 @@
 
 ### File Formats
 - [x] `.szx` snapshot format
-- [ ] `.tzx` advanced blocks (turbo loaders, direct recording, pure tone)
+- [x] `.tzx` advanced blocks (turbo loaders, direct recording, pure tone, pulse sequence, loops)
 
 ### Display Enhancements
 - [x] Save screen as PNG
@@ -26,7 +25,7 @@
 - [ ] Log music as `.vgm` format
 
 ### Debugger
-- [ ] Memory viewer / hex editor
+- [x] Memory viewer / hex editor
 - [x] BASIC program listing viewer
 - [x] Breakpoints
 - [ ] Watch expressions / conditional breakpoints
@@ -36,7 +35,8 @@
 ## Medium Priority
 
 ### Input Devices
-- [ ] Kempston mouse emulation
+- [x] Kempston mouse emulation
+- [x] AMX mouse emulation
 - [ ] Light gun support (Op Wolf, etc.)
 - [ ] Light pen emulation
 - [ ] Key mapping customization UI
@@ -69,7 +69,8 @@
 - [ ] Interface 1 (RS232, network, microdrives)
 - [ ] Beta Disc interface
 - [ ] Disciple / Plus-D disk interface
-- [ ] Multiface 1/2/+3 (snapshot/poke hardware)
+- [x] Multiface 1/128/3 (snapshot/poke hardware)
+- [x] VTX-5000 Prestel modem
 - [ ] SpecDrum (8-bit DAC)
 - [ ] RAM Music Machine (6-channel sample playback)
 - [ ] Currah speech synthesizer

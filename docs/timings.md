@@ -25,8 +25,10 @@ next instruction boundary after INT fires.
 | 48K   | 14,335T        | Screen row 0, col 0  |
 | 128K  | 14,361T        | Screen row 0, col 0  |
 
-Contention only applies to addresses 0x4000–0x7FFF (RAM) and ULA port 0xFE
-reads/writes. ROM and uncontended RAM are never delayed.
+Contention applies to addresses in contended RAM banks — 0x4000–0x7FFF on 48K,
+odd banks (1,3,5,7) on 128K/+2, and banks 4–7 on +2A/+3. On Ferranti models
+(48K/128K/+2), ULA port 0xFE reads/writes also incur I/O contention. Amstrad
+models (+2A/+3) have no I/O contention. ROM and uncontended RAM are never delayed.
 
 ## EI Delay
 
@@ -60,15 +62,17 @@ mid-frame EI to defer the interrupt a whole extra frame.
 On real hardware INT is held low for ~32T. If IFF1 is false when INT fires (code
 is inside DI), the CPU accepts it as soon as IFF1 becomes true again.
 
-The emulator models this with a persistent `_intPending` flag (instance variable,
-not a local reset each frame):
+The emulator models this with a frame-scoped `intPending` flag (local variable
+in the `runFrame()` loop in `spectrum.ts`, not a Z80 instance variable):
 
-1. Frame start: `interrupt()` called.
-   - If it **fires** (IFF1=true, eiDelay=false) → `_intPending = false`.
-   - If blocked by **DI** (`!IFF1`) → `_intPending = true`.
-   - If blocked by **eiDelay** → leave `_intPending` unchanged.
-2. During `cpu.run()`: after each instruction, if `_intPending && IFF1`, call
-   `interrupt()`. If it fires, `_intPending = false`.
+1. Frame start: `interrupt()` called on the Z80.
+   - If it **fires** (IFF1=true, eiDelay=false) → `intPending = false`.
+   - If blocked by **DI** (`!IFF1`) → `intPending = true`.
+   - If blocked by **eiDelay** → leave `intPending` unchanged.
+2. During the instruction loop: after each instruction, if `intPending && IFF1`,
+   call `interrupt()`. If it fires, `intPending = false`.
+3. When `cpu.tStates >= intWindowEnd`, `intPending` is cleared (INT window
+   expired).
 
 **Why the eiDelay case must NOT set intPending:**
 

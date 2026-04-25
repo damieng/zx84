@@ -5,14 +5,22 @@
 ### Source layout
 
 - `src/cores/` — hardware cores (Z80, ULA, AY-3-8910, uPD765A FDC). Pure emulation logic, no UI or framework dependencies.
+- `src/variants/` — `MachineVariant` strategy objects. Model-specific behaviour (contention pattern, contended banks, I/O contention, port decode) lives here instead of inline `if (model)` checks. One factory per class: 48K, Ferranti 128K/+2, Amstrad +2A/+3.
 - `src/spectrum.ts` — the main machine. Owns the frame loop, orchestrates cores, is the authority on machine state.
 - `src/io-ports.ts` — wires CPU port I/O to the appropriate cores. Thin glue only, no business logic.
 - `src/contention.ts` — ULA memory/IO contention timing (Ferranti vs Amstrad models differ — see below).
 - `src/frame-bridge.ts` — transfers per-frame state from the emulator to the Solid.js UI. Read-only consumer of machine state.
 - `src/memory.ts` — `SpectrumMemory`: slot-based paged memory, 8 × 16KB RAM banks, ROM pages.
-- `src/debug/` — disassembler, BASIC parser, screen OCR. These tools take `Uint8Array`, not `ByteReader`.
-- `src/managers/` — debug-manager, media-manager. Higher-level orchestration over the emulator.
-- `src/snapshot/` — SNA, Z80, SP snapshot loaders/savers.
+- `src/models.ts` — `SpectrumModel` type and classification helpers (`is128kClass`, `isPlus2AClass`, etc.).
+- `src/debug/` — disassembler, BASIC parser, screen OCR (`screen-text.ts`). These tools take `Uint8Array`, not `ByteReader`.
+- `src/peripherals/` — Multiface 1/128/3, VTX-5000 Prestel modem, Kempston mouse, AMX mouse, joysticks, audio mixer.
+- `src/tape/` — TAP/TZX parsing, tape playback engine, custom loader auto-detection.
+- `src/plus3/` — DSK parser with 17 copy-protection detectors, floppy drive sound effects.
+- `src/display/` — Canvas and WebGL renderers with HQx/xBR upscaling shaders.
+- `src/state/` — Solid.js reactive state stores (machine, debug, disk, tape, activity).
+- `src/store/` — Settings and IndexedDB persistence.
+- `src/managers/` — debug-manager, media-manager, rom-manager. Higher-level orchestration over the emulator.
+- `src/snapshot/` — SNA, Z80, SZX, SP snapshot loaders/savers, ZIP extraction.
 - `src/mcp-server.ts` — MCP server for Claude Code integration (persistent emulator process).
 
 ### Memory architecture

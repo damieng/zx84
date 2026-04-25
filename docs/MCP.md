@@ -34,7 +34,7 @@ Defaults to `48k`. ROMs are fetched from GitHub and cached in `test/.cache/`.
 | `run` | `frames` (default 1) | Run N frames. Reports breakpoint or port watchpoint if hit. |
 | `step_frame` | — | Run exactly one frame. Equivalent to `run frames=1`. |
 | `step` | `count` (default 1) | Single-step N instructions. Returns disassembly + registers for each. |
-| `continue` | `max_frames` (default 5000) | Run until a breakpoint or port watchpoint fires. Requires at least one set. |
+| `continue` | `max_frames` (default 5000) | Run until a breakpoint, port watchpoint, or memory watchpoint fires. Requires at least one set. |
 
 ### Registers & CPU State
 
@@ -68,6 +68,13 @@ Values are parsed as hex if they contain `a-f` or start with `0x`/`$`, otherwise
 | `port_watchpoint` | `port` (optional) | Set port watchpoint(s) (breaks on IN **or** OUT). Comma/space-separated list OK. Omit to list all. |
 | `delete_port_watchpoint` | `port` (optional) | Remove port watchpoint(s). Comma/space-separated list OK. Omit to clear all. |
 
+### Memory Watchpoints
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `memory_watchpoint` | `address` (optional), `length` (default 1), `mode` (`read`/`write`/`rw`, default `rw`) | Set a memory watchpoint that breaks on read, write, or either. Omit address to list all. |
+| `delete_memory_watchpoint` | `address` (optional) | Remove memory watchpoint by start address. Omit to clear all. |
+
 ### Traps
 
 Traps fire when PC hits an address.  Three actions:
@@ -96,7 +103,7 @@ BDOS calls at `0005` are auto-decoded in log output (function name, string conte
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
-| `load` | `file`, `drive` (default `"0"`) | Load TAP, TZX, SNA, Z80, SZX, or DSK. TAP/TZX reset and start playback. DSK inserts into FDC. SZX restores a full snapshot. |
+| `load` | `file`, `drive` (default `"0"`) | Load TAP, TZX, SNA, Z80, SZX, or DSK. TAP/TZX reset and start playback. DSK inserts into FDC. SZX restores a full snapshot. Drive accepts `0`/`1` or `A`/`B`. |
 | `save` | `file` | Save current machine state to a SZX snapshot file. `.szx` extension added automatically. |
 | `disk_boot` | `file` (optional) | +3 only. Runs 500 frames to reach the startup menu, presses Enter on "Loader". If `file` given, switches to +3, mounts the DSK, and boots it. |
 | `disk_trace` | `file` | All-in-one: switch to +3, mount DSK, boot to Loader, arm FE10h breakpoint + 3FFDh port watchpoint. |
@@ -119,6 +126,12 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 | `stop_trace` | — | Stop trace. Full/portio: returns inline or writes to file. ZXTL: stores in memory, returns line count — use `trace_read` to fetch. |
 | `trace_read` | `from` (default 0), `to` (optional, default from+100) | Read a range of lines from the stored ZXTL trace buffer. |
 | `frame_trace` | — | Run one frame logging every instruction: T-state, beam position, contention delays, border changes, and VRAM writes. Always writes to file. |
+
+### FDC Logging
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `fdc_log` | `clear` (default false) | Read (and optionally clear) the FDC log ring buffer. Returns up to 2000 FDC log lines. |
 
 - **full** — every instruction executed (PC ≥ 0x4000, loop detection)
 - **portio** — port I/O only (great for FDC debugging)
@@ -155,6 +168,7 @@ Key names: `a`–`z`, `0`–`9`, `enter`, `space`, `shift`, `sym`, `backspace`, 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `multiface` | `action` (`on`/`off`/`nmi`/`status`) | Enable/disable the Multiface peripheral, press its NMI button, or show status. Supports MF1, MF128, MF3. |
+| `vtx5000` | `action` (`on`/`off`/`status`) | Enable/disable the VTX-5000 Viewdata/Prestel modem (48K only). Loads ROM overlay and resets. |
 
 ## Workflows
 

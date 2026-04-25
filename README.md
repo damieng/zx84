@@ -56,6 +56,7 @@ Play your way with multiple input options:
   - `ESC` as BREAK (CAPS SHIFT + SPACE)
 - **Joystick Emulation** — Kempston, Cursor, Sinclair IF2, Sinclair 1
 - **Gamepad** — Dual physical controller support via Gamepad API
+- **Mouse** — Kempston mouse and AMX mouse support
 - **On-screen D-Pad** — Touch and mouse controls
 
 ### 🔧 Powerful Debugger
@@ -86,6 +87,12 @@ Watch your Spectrum work in real-time:
 ### 🎯 Transcription Tools
 Extract text and graphics from running programs:
 - **Pixel OCR** — Live character recognition from screen
+
+### 🔌 Peripherals
+Hardware add-ons for expanded capabilities:
+- **Multiface 1 / 128 / 3** — Snapshot/poke hardware with NMI button
+- **VTX-5000** — Viewdata/Prestel modem with ROM overlay (48K only)
+- **+3 Floppy Drive** — Motor and seek sound effects
 
 ---
 
