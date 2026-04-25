@@ -256,6 +256,7 @@ async function initMachine(m: SpectrumModel): Promise<string> {
   model = m;
   romData = await fetchROM(model);
   spec = new Spectrum(model);
+  spec.scanlineAccuracy = 'low';
   spec.loadROM(romData);
   spec.reset();
   wireFdcLog();
