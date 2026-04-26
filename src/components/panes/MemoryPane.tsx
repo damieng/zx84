@@ -13,7 +13,7 @@
 
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from 'solid-js';
 import { Pane } from '@/components/Pane.tsx';
-import { spectrum, currentModel } from '@/emulator.ts';
+import { spectrum, currentModel, emulationPaused } from '@/emulator.ts';
 import { isCollapsed } from '@/ui/panes.ts';
 import { is128kClass, isPlus2AClass } from '@/models.ts';
 import type { SpectrumMemory } from '@/memory.ts';
@@ -206,22 +206,39 @@ export function MemoryPane() {
     return null;
   }
 
+  /** True if the user has an active text selection inside the hex dump. */
+  function hasActiveSelection(): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+    return preEl.contains(sel.anchorNode) || preEl.contains(sel.focusNode);
+  }
+
   /** Rebuild the visible portion of the hex dump. */
-  function updateView(): void {
+  function updateView(force = false): void {
     if (!scrollEl || !innerEl || !preEl) return;
+
+    // Periodic refresh while paused for debugging is pure busywork — the
+    // memory cannot have changed, so skip before doing any further work.
+    if (!force && emulationPaused()) return;
+
+    // Don't blow away an active selection on the periodic refresh — rewriting
+    // textContent collapses any range inside the <pre>. Scroll/region/mode
+    // changes pass force=true so they still take effect.
+    if (!force && hasActiveSelection()) return;
 
     const s = source();
     if (!s) {
       innerEl.style.height = '0px';
       preEl.style.top      = '0px';
-      preEl.textContent    = '(unavailable)';
+      if (preEl.textContent !== '(unavailable)') preEl.textContent = '(unavailable)';
       return;
     }
 
     const { data, baseAddr } = s;
     const bytesPerRow  = bpr();
     const totalRows    = Math.ceil(data.length / bytesPerRow);
-    innerEl.style.height = `${totalRows * ROW_H}px`;
+    const heightPx     = `${totalRows * ROW_H}px`;
+    if (innerEl.style.height !== heightPx) innerEl.style.height = heightPx;
 
     const scrollTop    = scrollEl.scrollTop;
     const clientH      = Math.max(scrollEl.clientHeight, 240);
@@ -230,8 +247,10 @@ export function MemoryPane() {
     const startRow     = Math.max(0, firstVisible - BUFFER_ROWS);
     const endRow       = Math.min(totalRows, firstVisible + visibleCount + BUFFER_ROWS);
 
-    preEl.style.top    = `${startRow * ROW_H}px`;
-    preEl.textContent  = renderRows(data, baseAddr, startRow, endRow - startRow, mode(), bytesPerRow);
+    const topPx = `${startRow * ROW_H}px`;
+    if (preEl.style.top !== topPx) preEl.style.top = topPx;
+    const next = renderRows(data, baseAddr, startRow, endRow - startRow, mode(), bytesPerRow);
+    if (preEl.textContent !== next) preEl.textContent = next;
   }
 
   function scrollToAddr(hexStr: string): void {
@@ -243,14 +262,14 @@ export function MemoryPane() {
     scrollEl.scrollTop = Math.floor(clamped / bpr()) * ROW_H;
     setAddrText(h4(clamped));
     setGoOpen(false);
-    updateView();
+    updateView(true);
   }
 
   function onScroll(): void {
     const firstRow = Math.floor(scrollEl.scrollTop / ROW_H);
     const s = source();
     if (s) setAddrText(h4(Math.min(firstRow * bpr() + s.baseAddr, 0xFFFF)));
-    updateView();
+    updateView(true);
   }
 
   function changeRegion(r: string): void {
@@ -258,13 +277,13 @@ export function MemoryPane() {
     saveSetting(REGION_KEY, r);
     if (scrollEl) scrollEl.scrollTop = 0;
     setAddrText('0000');
-    updateView();
+    updateView(true);
   }
 
   function changeMode(m: DisplayMode): void {
     setMode(m);
     saveSetting(MODE_KEY, m);
-    updateView();
+    updateView(true);
   }
 
   function toggleGo(): void {

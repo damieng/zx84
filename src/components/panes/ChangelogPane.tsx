@@ -2,6 +2,11 @@ import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.9',
+    items: [
+      'Memory pane no longer drops your selection on its periodic refresh, and skips updates entirely while paused for debugging',
+    ]
+  }, {
     version: '0.2.8',
     items: [
       'Held keys no longer get stuck (OS auto-repeat was incrementing reference counts the single keyup could not undo)',
