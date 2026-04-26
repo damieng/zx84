@@ -217,22 +217,35 @@ export class ULA {
 
   /**
    * Blank matched character cells to paper color in the rendered framebuffer.
-   * Called after renderFrame when TEXT mode is active.
+   * Called after renderFrame when TEXT mode is active. Supports any cell size
+   * (8×8 standard, 5×8 CP/M Plus, 4×8 Tasword, …); attributes are still sampled
+   * from the byte-aligned 32×24 attribute file at `vramOffset + 0x5800`.
    */
-  blankCells(memory: Uint8Array, mask: boolean[], vramOffset = 0): void {
-    for (let charRow = 0; charRow < 24; charRow++) {
-      for (let col = 0; col < 32; col++) {
-        if (!mask[charRow * 32 + col]) continue;
+  blankCells(
+    memory: Uint8Array, mask: boolean[], vramOffset = 0,
+    cellWidth = 8, cellHeight = 8, cols = 32, rows = 24,
+    xOffset = 0, yOffset = 0,
+  ): void {
+    const screenW = this.screenWidth;
+    for (let row = 0; row < rows; row++) {
+      const pixelY = row * cellHeight + yOffset;
+      const attrRow = Math.min(23, Math.max(0, pixelY >> 3));
+      for (let col = 0; col < cols; col++) {
+        if (!mask[row * cols + col]) continue;
 
-        const attr = memory[vramAttrAddr(charRow << 3, col) - vramOffset];
+        const startPx = col * cellWidth + xOffset;
+        const attrCol = Math.min(31, startPx >> 3);
+        const attr = memory[vramAttrAddr(attrRow << 3, attrCol) - vramOffset];
         const [, paperRGBA] = this.decodeAttr(attr);
 
-        for (let py = 0; py < 8; py++) {
-          const y = charRow * 8 + py;
+        for (let py = 0; py < cellHeight; py++) {
+          const y = pixelY + py;
+          if (y < 0 || y >= 192) continue;
           const screenY = y + this.borderTop;
-          const px = this.borderLeft + (col << 3);
-          const baseIdx = screenY * this.screenWidth + px;
-          for (let x = 0; x < 8; x++) {
+          const px = this.borderLeft + startPx;
+          const baseIdx = screenY * screenW + px;
+          for (let x = 0; x < cellWidth; x++) {
+            if (startPx + x >= 256) break;
             this.pixels32[baseIdx + x] = paperRGBA;
           }
         }

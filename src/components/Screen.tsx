@@ -3,7 +3,7 @@
  */
 
 import { createEffect, createSignal, onMount, onCleanup } from 'solid-js';
-import { setCanvas, spectrum, transcribeMode, transcribeHtml } from '@/emulator.ts';
+import { setCanvas, spectrum, transcribeMode, transcribeHtml, transcribeGrid } from '@/emulator.ts';
 import { renderer, scale, borderSize, ocrFont, ocrFontSize, ocrLineHeight, ocrTracking, ocrOffsetX, ocrOffsetY, ocrScaleX, ocrScaleY } from '@/store/settings.ts';
 
 export function Screen() {
@@ -46,10 +46,11 @@ export function Screen() {
   });
 
 
-  // When font settings change, force re-measure (after fonts load)
+  // When font settings or the transcribe grid change, force re-measure
+  // (the grid changes the natural width — e.g. 32 vs 51 chars wide).
   createEffect(() => {
     ocrFont(); ocrFontSize(); ocrLineHeight(); ocrTracking(); ocrScaleX(); ocrScaleY();
-    // Wait for fonts to be ready before clearing cache
+    transcribeGrid();
     document.fonts.ready.then(() => {
       natSize = { w: 0, h: 0 };
     });

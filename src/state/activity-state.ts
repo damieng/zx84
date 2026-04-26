@@ -71,3 +71,8 @@ export const setTranscribeText = _transcribeText[1];
 const _transcribeHtml = createSignal('');
 export const transcribeHtml = _transcribeHtml[0];
 export const setTranscribeHtml = _transcribeHtml[1];
+
+/** Cell grid currently driving the transcribe overlay (e.g. '32x24', '51x24'). */
+const _transcribeGrid = createSignal('32x24');
+export const transcribeGrid = _transcribeGrid[0];
+export const setTranscribeGrid = _transcribeGrid[1];

@@ -21,8 +21,8 @@ import { TapeDeck } from '@/tape/tap.ts';
 import { UPD765A } from '@/cores/upd765a.ts';
 import type { DskImage } from '@/plus3/dsk.ts';
 import { Contention } from '@/contention.ts';
-import { ScreenText } from '@/debug/screen-text.ts';
-import type { FontSource, OcrResult } from '@/debug/screen-text.ts';
+import { ScreenText, OCR_GRIDS, detectGrid } from '@/debug/screen-text.ts';
+import type { FontSource, OcrResult, OcrGridName } from '@/debug/screen-text.ts';
 import { trapTapeLoad } from '@/tape/tape-loader.ts';
 import { LoaderDetector } from '@/tape/loader-detect.ts';
 import { installMemoryHooks, wirePortIO } from '@/io-ports.ts';
@@ -877,16 +877,44 @@ export class Spectrum {
     return basicRom.subarray(0x3D00, 0x3D00 + 768);
   }
 
-  ocrScreen(extraFonts?: FontSource[]): string {
-    return this.screenText.ocr(this.memory.snapshot(), this.romFont, extraFonts);
+  ocrScreen(extraFonts?: FontSource[], grid: OcrGridName = '32x24'): string {
+    return this.screenText.ocr(
+      this.memory.screenBank, this.memory.snapshot(), this.allRamBanks(),
+      this.romFont, OCR_GRIDS[grid], extraFonts,
+    );
   }
 
-  ocrScreenStyled(extraFonts?: FontSource[]): OcrResult {
+  ocrScreenStyled(
+    extraFonts?: FontSource[],
+    grid: OcrGridName | 'auto' = 'auto',
+  ): OcrResult {
+    const screenBankIdx = (this.memory.port7FFD & 0x08) ? 7 : 5;
+    const resolved: OcrGridName = grid === 'auto'
+      ? detectGrid(this.memory.screenBank, `bank ${screenBankIdx}`) : grid;
     return this.screenText.ocrStyled(
-      this.memory.snapshot(), this.romFont,
-      this.ula.palette, this.ula.flashState,
-      extraFonts,
+      this.memory.screenBank, this.memory.snapshot(), this.allRamBanks(),
+      this.romFont, this.ula.palette, this.ula.flashState,
+      resolved, extraFonts,
     );
+  }
+
+  /** All 8 RAM banks — handed to OCR for heuristic font detection. */
+  private allRamBanks(): readonly Uint8Array[] {
+    const banks: Uint8Array[] = [];
+    for (let i = 0; i < 8; i++) banks.push(this.memory.getRamBank(i));
+    return banks;
+  }
+
+  /** OCR entry point for the MCP server. Detects the cell grid automatically
+   *  when `mode` is 'auto', then runs OCR with the chosen grid. The returned
+   *  string is prefixed with the grid label (e.g. "[51x24]\n...") so callers
+   *  can see which grid was used. */
+  ocrScreenForMcp(mode: OcrGridName | 'auto' = 'auto'): string {
+    const screenBankIdx = (this.memory.port7FFD & 0x08) ? 7 : 5;
+    const grid: OcrGridName = mode === 'auto'
+      ? detectGrid(this.memory.screenBank, `bank ${screenBankIdx}`) : mode;
+    const text = this.ocrScreen(undefined, grid);
+    return `[${grid}]\n${text}`;
   }
 
   /** Disassemble a single instruction at `pc` without a full memory snapshot. */

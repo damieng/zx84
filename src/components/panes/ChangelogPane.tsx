@@ -2,6 +2,15 @@ import { createSignal, Show } from 'solid-js';
 
 const CHANGELOG: { version: string; items: string[] }[] = [
   {
+    version: '0.2.10',
+    items: [
+      'OCR text mode now reads the bank the ULA actually displays — fixes garbled output under +3 all-RAM paging modes (CP/M Plus, custom loaders)',
+      'OCR auto-detects the character grid by tile-repetition: 32×24 standard, 51×24 CP/M Plus, 64×24 Tasword 64',
+      'Active font is located by heuristic RAM scan when not the ROM font, so non-Spectrum-BASIC screens transcribe too',
+      'In-canvas text overlay rescales to whatever grid was detected',
+      'MCP `ocr` tool takes an optional `mode` parameter (auto | 32x24 | 51x24 | 64x24) and prefixes the result with the chosen grid',
+    ]
+  }, {
     version: '0.2.9',
     items: [
       'Memory pane no longer drops your selection on its periodic refresh, and skips updates entirely while paused for debugging',

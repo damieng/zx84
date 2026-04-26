@@ -1349,12 +1349,9 @@ server.tool(
 // -- ocr --
 server.tool(
   'ocr',
-  'OCR the screen bitmap (character recognition).',
-  {},
-  async () => {
-    spec.screenText.activate();
-    return text(spec.ocrScreen());
-  },
+  'OCR the screen bitmap. mode: auto (default) | 32x24 | 51x24 (CP/M Plus) | 64x24 (Tasword).',
+  { mode: z.enum(['auto', '32x24', '51x24', '64x24']).optional().describe('Cell grid (default: auto-detect).') },
+  async ({ mode }) => text(spec.ocrScreenForMcp(mode ?? 'auto')),
 );
 
 // -- model --

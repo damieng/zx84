@@ -20,7 +20,7 @@ import {
   setBanksHtml, setDriveAStatus, setDriveBStatus, setShowTrapLog, setDisasmText,
   setCurrentDiskInfo, setCurrentDiskInfoB,
   setClockSpeedText,
-  setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText, setTranscribeHtml,
+  setTapePosition, tapePaused, setTapePaused, tapePlaying, setTapePlaying, transcribeMode, setTranscribeText, setTranscribeHtml, setTranscribeGrid,
   setLedKbd, setLedKemp, setLedEar, setLedLoad, setLedText,
   setLedBeep, setLedAy, setLedDsk, setLedRainbow, setLedMouse, setLedTapeTurbo,
   setStatus, setEmulationPaused, setTracing,
@@ -400,12 +400,16 @@ export function onFrame(): void {
           return { label: e.label, data };
         });
       }
-      const result = spectrum!.ocrScreenStyled(cachedExtraFonts);
+      const result = spectrum!.ocrScreenStyled(cachedExtraFonts, 'auto');
       setTranscribeText(result.text);
       setTranscribeHtml(result.html);
+      setTranscribeGrid(result.grid);
       // Blank matched character cells in the framebuffer and re-upload
       if (result.mask.length > 0) {
-        spectrum!.ula.blankCells(spectrum!.memory.screenBank, result.mask, 0x4000);
+        spectrum!.ula.blankCells(
+          spectrum!.memory.screenBank, result.mask, 0x4000,
+          result.cellWidth, result.cellHeight, result.cols, result.rows,
+        );
         if (spectrum!.display) spectrum!.display.updateTexture(spectrum!.ula.pixels);
       }
     } else {
